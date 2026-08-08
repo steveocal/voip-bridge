@@ -1,0 +1,26 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "voip-bridge"
+main = "src/index.ts"
+compatibility_date = "2025-08-01"
+
+[[durable_objects.bindings]]
+name = "CALL_STATE"
+class_name = "CallState"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["CallState"]
+
+# Secrets (set with: wrangler secret put <name>)
+# ODOO_URL, ODOO_DB, ODOO_USER, ODOO_PASS
+# ASTERISK_URL, ASTERISK_USER, ASTERISK_PASS
+
+[vars]
+ODOO_URL = "https://infraredheaterpanels.co.uk"
+ODOO_DB = "www.infraredheaterpanels.co.uk"
+ASTERISK_URL = "http://64.176.181.195:8088"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "voip-bridge-db"
+database_id = "create-me"
