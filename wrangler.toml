@@ -21,6 +21,6 @@ ODOO_DB = "www.infraredheaterpanels.co.uk"
 ASTERISK_URL = "http://64.176.181.195:8088"
 
 [[d1_databases]]
-binding = "voip-bridge-binding"
+binding = "DB"
 database_name = "voip-bridge-d1"
 database_id = "c00b456b-d58b-4e45-8335-b790392a2869"
