@@ -8,8 +8,8 @@ name = "CALL_STATE"
 class_name = "CallState"
 
 [[migrations]]
-tag = "v1"
-new_classes = ["CallState"]
+tag = "v2"
+new_sqlite_classes = ["CallState"]
 
 # Secrets (set with: wrangler secret put <name>)
 # ODOO_URL, ODOO_DB, ODOO_USER, ODOO_PASS
@@ -21,6 +21,6 @@ ODOO_DB = "www.infraredheaterpanels.co.uk"
 ASTERISK_URL = "http://64.176.181.195:8088"
 
 [[d1_databases]]
-binding = "DB"
-database_name = "voip-bridge-db"
-database_id = "create-me"
+binding = "voip-bridge-binding"
+database_name = "voip-bridge-d1"
+database_id = "c00b456b-d58b-4e45-8335-b790392a2869"
