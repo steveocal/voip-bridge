@@ -1,7 +1,9 @@
 #:schema node_modules/wrangler/config-schema.json
 name = "voip-bridge"
 main = "src/index.ts"
-compatibility_date = "2025-08-01"
+compatibility_date = "2025-08-08"
+workers_dev = true
+preview_urls = false
 
 [[durable_objects.bindings]]
 name = "CALL_STATE"
@@ -16,11 +18,13 @@ new_sqlite_classes = ["CallState"]
 # ASTERISK_URL, ASTERISK_USER, ASTERISK_PASS
 
 [vars]
-ODOO_URL = "https://infraredheaterpanels.co.uk"
+ODOO_URL = "https://www.infraredheaterpanels.co.uk"
 ODOO_DB = "www.infraredheaterpanels.co.uk"
-ASTERISK_URL = "http://64.176.181.195:8088"
+ASTERISK_URL = "http://64.176.181.195.nip.io:8088"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "voip-bridge-d1"
 database_id = "c00b456b-d58b-4e45-8335-b790392a2869"
+
+
