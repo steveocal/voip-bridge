@@ -248,10 +248,16 @@ export async function lookupCaller(env: Env, number: string) {
 export interface Contact {
   id: number;
   name: string;
+  company_type?: string;
+  is_company?: boolean;
   phone?: string;
   mobile?: string;
   email?: string;
-  is_company?: boolean;
+  website?: string;
+  vat?: string;
+  function?: string;
+  city?: string;
+  active?: boolean;
 }
 
 /** Live search of res.partner in Odoo, with write-through cache to D1. */
@@ -275,34 +281,48 @@ export async function searchContacts(env: Env, query = "", limit = 50): Promise<
   try {
     const result = await odooCall(env, uid, "res.partner", "search_read",
       [domain],
-      { fields: ["id", "name", "phone", "mobile", "email", "is_company"], limit });
+      { fields: ["id", "name", "company_type", "is_company", "phone", "mobile", "email", "website", "vat", "function", "city", "active"], limit });
 
     // Normalize: Odoo returns `false` for empty char fields — coerce to "".
     const contacts = ((result.parsed ?? []) as unknown as Contact[]).map(c => ({
       id: c.id,
       name: c.name ? String(c.name) : "",
+      company_type: c.company_type ? String(c.company_type) : "",
+      is_company: !!c.is_company,
       phone: c.phone ? String(c.phone) : "",
       mobile: c.mobile ? String(c.mobile) : "",
       email: c.email ? String(c.email) : "",
-      is_company: !!c.is_company,
+      website: c.website ? String(c.website) : "",
+      vat: c.vat ? String(c.vat) : "",
+      function: c.function ? String(c.function) : "",
+      city: c.city ? String(c.city) : "",
+      active: c.active === undefined ? true : !!c.active,
     }));
 
     // Write-through cache: upsert into D1 contacts table (best-effort).
     try {
       for (const c of contacts) {
         await env.DB.prepare(
-          `INSERT INTO contacts (odoo_id, name, phone, mobile, email, is_company, updated_at)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-           ON CONFLICT(odoo_id) DO UPDATE SET
-             name=excluded.name, phone=excluded.phone, mobile=excluded.mobile,
-             email=excluded.email, is_company=excluded.is_company, updated_at=excluded.updated_at`
+          `INSERT INTO contacts (id, name, company_type, is_company, phone, mobile, email, website, vat, function, city, active, updated_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+           ON CONFLICT(id) DO UPDATE SET
+             name=excluded.name, company_type=excluded.company_type, is_company=excluded.is_company,
+             phone=excluded.phone, mobile=excluded.mobile, email=excluded.email, website=excluded.website,
+             vat=excluded.vat, function=excluded.function, city=excluded.city, active=excluded.active,
+             updated_at=excluded.updated_at`
         ).bind(
           c.id,
           c.name,
+          c.company_type,
+          c.is_company ? 1 : 0,
           c.phone,
           c.mobile,
           c.email,
-          c.is_company ? 1 : 0,
+          c.website,
+          c.vat,
+          c.function,
+          c.city,
+          c.active ? 1 : 0,
           Date.now(),
         ).run();
       }
@@ -315,7 +335,7 @@ export async function searchContacts(env: Env, query = "", limit = 50): Promise<
     console.error("Odoo contact search failed:", e);
     // Fall back to whatever is in the D1 cache.
     const cached = await env.DB.prepare(
-      `SELECT odoo_id AS id, name, phone, mobile, email, is_company
+      `SELECT id, name, company_type, is_company, phone, mobile, email, website, vat, function, city, active
        FROM contacts WHERE name LIKE ?1 OR phone LIKE ?1 OR mobile LIKE ?1 OR email LIKE ?1
        ORDER BY name LIMIT ?2`
     ).bind(`%${query}%`, limit).all<Record<string, unknown>>();

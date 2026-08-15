@@ -27,6 +27,12 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
       body: JSON.stringify({ callId, caller, did, partnerId: (partner as any)?.id, partnerName: (partner as any)?.name }),
     }));
     trackCall(callId, caller, (partner as any)?.id);
+    // Log the call in D1 as soon as it rings (so missed calls are captured too).
+    await env.DB.prepare(
+      `INSERT INTO call_log (call_id, phone_number, did, direction, state, start_date)
+       VALUES (?1, ?2, ?3, 'incoming', 'calling', ?4)
+       ON CONFLICT(call_id) DO UPDATE SET phone_number=excluded.phone_number, did=excluded.did`
+    ).bind(callId, caller, did, Date.now()).run();
     return Response.json({ action: "ring", caller, partner: (partner as any)?.name ?? null });
   }
 
@@ -35,19 +41,19 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
       method: "POST",
       body: JSON.stringify({ callId, status: "answered", answerTime: Date.now() }),
     }));
-    await env.DB.prepare("INSERT INTO call_log (call_id, caller, did, status, start_time) VALUES (?1, ?2, ?3, 'answered', ?4)")
-      .bind(callId, caller, did, Date.now()).run();
+    await env.DB.prepare("UPDATE call_log SET state='ongoing' WHERE call_id=?1").bind(callId).run();
     return Response.json({ action: "answered" });
   }
 
   if (event === "hangup") {
     const duration = parseInt(params.get("duration") ?? "0");
+    const state = duration > 0 ? "terminated" : "missed";
     await stub.fetch(new Request("https://do/update", {
       method: "POST",
       body: JSON.stringify({ callId, status: "hungup", endTime: Date.now() }),
     }));
-    await env.DB.prepare("UPDATE call_log SET status='hungup', end_time=?1, duration=?2 WHERE call_id=?3")
-      .bind(Date.now(), duration, callId).run();
+    await env.DB.prepare("UPDATE call_log SET state=?1, end_date=?2 WHERE call_id=?3")
+      .bind(state, Date.now(), callId).run();
     ctx.waitUntil(logCompletedCall(env, callId, caller, did, duration));
     return Response.json({ action: "hangup", duration });
   }
@@ -129,7 +135,9 @@ async function handleCallHistory(request: Request, env: Env): Promise<Response> 
   const url = new URL(request.url);
   const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50") || 50, 200);
   const rows = await env.DB.prepare(
-    "SELECT call_id, caller, did, status, start_time, end_time, duration FROM call_log ORDER BY start_time DESC LIMIT ?1"
+    `SELECT call_id, phone_number, did, direction, state, start_date, end_date,
+       CASE WHEN end_date > start_date THEN (end_date - start_date) / 1000 ELSE 0 END AS duration
+     FROM call_log ORDER BY start_date DESC LIMIT ?1`
   ).bind(limit).all<Record<string, unknown>>();
   return Response.json({ calls: rows.results || [] });
 }
@@ -154,13 +162,13 @@ async function handleContactDetail(env: Env, id: number): Promise<Response> {
   if (uid) {
     const result = await odooCall(env, uid, "res.partner", "search_read",
       [[["id", "=", id]]],
-      { fields: ["id", "name", "phone", "mobile", "email", "is_company"], limit: 1 }) as { parsed: Array<Record<string, unknown>> };
+      { fields: ["id", "name", "company_type", "is_company", "phone", "mobile", "email", "website", "vat", "function", "city", "active"], limit: 1 }) as { parsed: Array<Record<string, unknown>> };
     contact = (((result.parsed || [])[0] ?? null) as unknown as Contact) || null;
   }
   if (!contact) {
     // Fall back to D1 cache.
     const cached = await env.DB.prepare(
-      "SELECT odoo_id AS id, name, phone, mobile, email, is_company FROM contacts WHERE odoo_id = ?1"
+      "SELECT id, name, company_type, is_company, phone, mobile, email, website, vat, function, city, active FROM contacts WHERE id = ?1"
     ).bind(id).first<Record<string, unknown>>();
     contact = cached ? (cached as unknown as Contact) : null;
   }
@@ -173,18 +181,20 @@ async function handleContactDetail(env: Env, id: number): Promise<Response> {
     const d = digitsOf(p).slice(-7);
     if (d.length < 7) continue;
     const rows = await env.DB.prepare(
-      "SELECT caller, did, status, start_time, end_time, duration FROM call_log WHERE caller LIKE ?1 ORDER BY start_time DESC LIMIT 20"
+      `SELECT phone_number, did, direction, state, start_date, end_date,
+         CASE WHEN end_date > start_date THEN (end_date - start_date) / 1000 ELSE 0 END AS duration
+       FROM call_log WHERE phone_number LIKE ?1 ORDER BY start_date DESC LIMIT 20`
     ).bind(`%${d}%`).all<Record<string, unknown>>();
     for (const r of rows.results || []) calls.push(r);
   }
-  // De-dupe by start_time+caller, sort desc.
+  // De-dupe by start_date+phone_number, sort desc.
   const seen = new Set<string>();
   const unique = calls.filter(r => {
-    const k = `${r.start_time}-${r.caller}`;
+    const k = `${r.start_date}-${r.phone_number}`;
     if (seen.has(k)) return false;
     seen.add(k);
     return true;
-  }).sort((a, b) => (b.start_time as number) - (a.start_time as number));
+  }).sort((a, b) => (b.start_date as number) - (a.start_date as number));
 
   return Response.json({ contact, calls: unique });
 }

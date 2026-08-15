@@ -1,31 +1,57 @@
 -- voip-bridge D1 schema
 -- Apply: npx wrangler d1 execute voip-bridge-d1 --remote --file=./schema.sql
+--
+-- Tables mirror Odoo models so the D1 cache maps 1:1 to Odoo fields.
+--   contacts  ↔  res.partner   (basic fields)
+--   call_log  ↔  voip.call     (all stored fields + local Asterisk keys)
+-- Datetimes are stored as epoch milliseconds (INTEGER), matching Odoo datetime.
 
--- Call log (existing table — idempotent)
-CREATE TABLE IF NOT EXISTS call_log (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  call_id TEXT,
-  caller TEXT,
-  did TEXT,
-  status TEXT,
-  start_time INTEGER,
-  end_time INTEGER,
-  duration INTEGER
-);
-
--- Contacts cache (Phase 1) — write-through from Odoo res.partner
+-- ── Contacts (↔ Odoo res.partner) ─────────────────────────────
 CREATE TABLE IF NOT EXISTS contacts (
-  odoo_id INTEGER PRIMARY KEY,
-  name TEXT,
-  phone TEXT,
-  mobile TEXT,
-  email TEXT,
-  is_company INTEGER DEFAULT 0,
-  updated_at INTEGER
+  id INTEGER PRIMARY KEY,          -- res.partner.id
+  name TEXT NOT NULL,              -- res.partner.name
+  company_type TEXT,               -- res.partner.company_type ('person' | 'company')
+  is_company INTEGER DEFAULT 0,    -- res.partner.is_company
+  phone TEXT,                      -- res.partner.phone
+  mobile TEXT,                     -- res.partner.mobile
+  email TEXT,                      -- res.partner.email
+  website TEXT,                    -- res.partner.website
+  vat TEXT,                        -- res.partner.vat
+  function TEXT,                   -- res.partner.function (job position)
+  city TEXT,                       -- res.partner.city
+  active INTEGER DEFAULT 1,        -- res.partner.active
+  updated_at INTEGER               -- last sync (epoch ms)
 );
 CREATE INDEX IF NOT EXISTS idx_contacts_name ON contacts(name);
+CREATE INDEX IF NOT EXISTS idx_contacts_phone ON contacts(phone);
+CREATE INDEX IF NOT EXISTS idx_contacts_mobile ON contacts(mobile);
 
--- Email cache (Phase 2 — placeholder)
+-- ── Call log (↔ Odoo voip.call) ───────────────────────────────
+-- voip.call fields mapped; extra local-only columns (call_id, did, odoo_id)
+-- are Asterisk/dedup keys that voip.call does not have.
+-- Computed voip.call fields (display_name, activity_name) are omitted.
+CREATE TABLE IF NOT EXISTS call_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,  -- local D1 row id
+  odoo_id INTEGER,                       -- voip.call.id (set when synced back to Odoo)
+  call_id TEXT UNIQUE,                   -- Asterisk UNIQUEID (local dedup key; not in voip.call)
+  did TEXT,                              -- our DID (local; voip.call has no "our number" field)
+  phone_number TEXT,                     -- voip.call.phone_number (the other party)
+  direction TEXT,                        -- voip.call.direction ('incoming' | 'outgoing')
+  state TEXT,                            -- voip.call.state ('aborted'|'calling'|'missed'|'ongoing'|'rejected'|'terminated')
+  partner_id INTEGER,                    -- voip.call.partner_id → contacts.id
+  user_id INTEGER,                       -- voip.call.user_id → res.users.id
+  start_date INTEGER,                    -- voip.call.start_date (epoch ms)
+  end_date INTEGER,                      -- voip.call.end_date (epoch ms)
+  create_date INTEGER,                   -- voip.call.create_date (epoch ms)
+  create_uid INTEGER,                    -- voip.call.create_uid → res.users.id
+  write_date INTEGER,                    -- voip.call.write_date (epoch ms)
+  write_uid INTEGER                      -- voip.call.write_uid → res.users.id
+);
+CREATE INDEX IF NOT EXISTS idx_call_log_phone ON call_log(phone_number);
+CREATE INDEX IF NOT EXISTS idx_call_log_start ON call_log(start_date);
+CREATE INDEX IF NOT EXISTS idx_call_log_partner ON call_log(partner_id);
+
+-- ── Email cache (Phase 2 — placeholder) ───────────────────────
 CREATE TABLE IF NOT EXISTS emails (
   id TEXT PRIMARY KEY,
   contact_id INTEGER,

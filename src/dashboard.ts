@@ -311,9 +311,9 @@ function loadHistory() {
     var calls = d.calls || [];
     if (!calls.length) { el.innerHTML = '<div class="empty">No calls yet</div>'; return; }
     el.innerHTML = calls.map(function(c) {
-      var icon = (c.status === "answered") ? "🟢" : (c.duration ? "🔵" : "🔴");
-      var who = c.caller && c.caller !== "unknown" ? c.caller : (c.did || "unknown");
-      var when = c.start_time ? fmtTime(c.start_time) : "";
+      var icon = (c.state === "missed" || c.state === "rejected" || c.state === "aborted") ? "🔴" : (c.state === "calling" ? "🟡" : "🟢");
+      var who = c.phone_number && c.phone_number !== "unknown" ? c.phone_number : (c.did || "unknown");
+      var when = c.start_date ? fmtTime(c.start_date) : "";
       var dur = c.duration ? " · " + Math.round(c.duration) + "s" : "";
       var dialable = /^[+0-9*#]/.test(who);
       return '<div class="hist-row"' + (dialable ? ' onclick="dialOut(\'' + who + '\')"' : '') + '><span class="ic">' + icon + '</span><div><div class="who">' + esc(who) + '</div>' + (c.did ? '<div class="sub">→ ' + esc(c.did) + '</div>' : '') + '</div><div class="meta">' + when + dur + '</div></div>';
