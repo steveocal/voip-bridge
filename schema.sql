@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS call_log (
 CREATE INDEX IF NOT EXISTS idx_call_log_phone ON call_log(phone_number);
 CREATE INDEX IF NOT EXISTS idx_call_log_start ON call_log(start_date);
 CREATE INDEX IF NOT EXISTS idx_call_log_partner ON call_log(partner_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_call_log_odoo ON call_log(odoo_id);
 
 -- ── Email cache (Phase 2 — placeholder) ───────────────────────
 CREATE TABLE IF NOT EXISTS emails (

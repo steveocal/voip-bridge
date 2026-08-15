@@ -1,4 +1,4 @@
-import type { Env } from "./types";
+import type { Env, D1PreparedStatement } from "./types";
 
 // ── Odoo XML-RPC client (hand-rolled, no library) ────────────
 
@@ -284,48 +284,11 @@ export async function searchContacts(env: Env, query = "", limit = 50): Promise<
       { fields: ["id", "name", "company_type", "is_company", "phone", "mobile", "email", "website", "vat", "function", "city", "active"], limit });
 
     // Normalize: Odoo returns `false` for empty char fields — coerce to "".
-    const contacts = ((result.parsed ?? []) as unknown as Contact[]).map(c => ({
-      id: c.id,
-      name: c.name ? String(c.name) : "",
-      company_type: c.company_type ? String(c.company_type) : "",
-      is_company: !!c.is_company,
-      phone: c.phone ? String(c.phone) : "",
-      mobile: c.mobile ? String(c.mobile) : "",
-      email: c.email ? String(c.email) : "",
-      website: c.website ? String(c.website) : "",
-      vat: c.vat ? String(c.vat) : "",
-      function: c.function ? String(c.function) : "",
-      city: c.city ? String(c.city) : "",
-      active: c.active === undefined ? true : !!c.active,
-    }));
+    const contacts = ((result.parsed ?? []) as unknown as Contact[]).map(normalizeContact);
 
     // Write-through cache: upsert into D1 contacts table (best-effort).
     try {
-      for (const c of contacts) {
-        await env.DB.prepare(
-          `INSERT INTO contacts (id, name, company_type, is_company, phone, mobile, email, website, vat, function, city, active, updated_at)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
-           ON CONFLICT(id) DO UPDATE SET
-             name=excluded.name, company_type=excluded.company_type, is_company=excluded.is_company,
-             phone=excluded.phone, mobile=excluded.mobile, email=excluded.email, website=excluded.website,
-             vat=excluded.vat, function=excluded.function, city=excluded.city, active=excluded.active,
-             updated_at=excluded.updated_at`
-        ).bind(
-          c.id,
-          c.name,
-          c.company_type,
-          c.is_company ? 1 : 0,
-          c.phone,
-          c.mobile,
-          c.email,
-          c.website,
-          c.vat,
-          c.function,
-          c.city,
-          c.active ? 1 : 0,
-          Date.now(),
-        ).run();
-      }
+      await upsertContacts(env, contacts);
     } catch (e) {
       console.error("Contact cache write failed:", e);
     }
@@ -341,6 +304,120 @@ export async function searchContacts(env: Env, query = "", limit = 50): Promise<
     ).bind(`%${query}%`, limit).all<Record<string, unknown>>();
     return (cached.results || []) as unknown as Contact[];
   }
+}
+
+// ── Contact normalization + bulk upsert ───────────────────────
+
+/** Coerce Odoo's `false`-for-empty values into clean strings/bools. */
+function normalizeContact(c: Contact): Contact {
+  return {
+    id: c.id,
+    name: c.name ? String(c.name) : "",
+    company_type: c.company_type ? String(c.company_type) : "",
+    is_company: !!c.is_company,
+    phone: c.phone ? String(c.phone) : "",
+    mobile: c.mobile ? String(c.mobile) : "",
+    email: c.email ? String(c.email) : "",
+    website: c.website ? String(c.website) : "",
+    vat: c.vat ? String(c.vat) : "",
+    function: c.function ? String(c.function) : "",
+    city: c.city ? String(c.city) : "",
+    active: c.active === undefined ? true : !!c.active,
+  };
+}
+
+/** Upsert a batch of contacts into D1. D1 caps bound params at 100/query, so
+ * each statement carries ≤7 rows (91 params) and statements run via batch(). */
+async function upsertContacts(env: Env, contacts: Contact[]): Promise<void> {
+  if (!contacts.length) return;
+  const cols = ["id", "name", "company_type", "is_company", "phone", "mobile", "email", "website", "vat", "function", "city", "active", "updated_at"];
+  const now = Date.now();
+  const statements: D1PreparedStatement[] = [];
+  for (let i = 0; i < contacts.length; i += 7) {
+    const chunk = contacts.slice(i, i + 7);
+    const rowPh = chunk.map(() => `(${cols.map(() => "?").join(",")})`).join(",");
+    const sql = `INSERT INTO contacts (${cols.join(",")}) VALUES ${rowPh}
+    ON CONFLICT(id) DO UPDATE SET
+      name=excluded.name, company_type=excluded.company_type, is_company=excluded.is_company,
+      phone=excluded.phone, mobile=excluded.mobile, email=excluded.email, website=excluded.website,
+      vat=excluded.vat, function=excluded.function, city=excluded.city, active=excluded.active,
+      updated_at=excluded.updated_at`;
+    const params: unknown[] = [];
+    for (const c of chunk) {
+      params.push(c.id, c.name, c.company_type ?? "", c.is_company ? 1 : 0, c.phone ?? "", c.mobile ?? "", c.email ?? "", c.website ?? "", c.vat ?? "", c.function ?? "", c.city ?? "", c.active ? 1 : 0, now);
+    }
+    statements.push(env.DB.prepare(sql).bind(...params));
+  }
+  for (let i = 0; i < statements.length; i += 100) {
+    await env.DB.batch(statements.slice(i, i + 100));
+  }
+}
+
+// ── Bulk sync: Odoo → D1 ──────────────────────────────────────
+
+/** Coerce a value to string ("" for false/null/undefined). */
+function s(v: unknown): string { return v ? String(v) : ""; }
+
+/** Extract the id from a many2one ([id, name] array) or scalar, else null. */
+function idOrNull(v: unknown): number | null {
+  if (Array.isArray(v)) return typeof v[0] === "number" ? v[0] : null;
+  if (typeof v === "number") return v;
+  return null;
+}
+
+/** Odoo datetime string ("YYYY-MM-DD HH:MM:SS", UTC) → epoch ms, else null. */
+function dt(v: unknown): number | null {
+  if (!v) return null;
+  const t = Date.parse(String(v).replace(" ", "T") + "Z");
+  return Number.isNaN(t) ? null : t;
+}
+
+/** Bulk-sync all active res.partner rows into the D1 contacts cache. */
+export async function syncContacts(env: Env): Promise<{ total: number; synced: number }> {
+  const uid = await odooAuth(env);
+  if (!uid) return { total: 0, synced: 0 };
+  const fields = ["id", "name", "company_type", "is_company", "phone", "mobile", "email", "website", "vat", "function", "city", "active"];
+  const BATCH = 500;
+  let offset = 0, synced = 0;
+  for (;;) {
+    const r = await odooCall(env, uid, "res.partner", "search_read",
+      [[]], { fields, limit: BATCH, offset, order: "id" });
+    const partners = ((r.parsed ?? []) as unknown as Contact[]);
+    if (!partners.length) break;
+    await upsertContacts(env, partners.map(normalizeContact));
+    synced += partners.length;
+    if (partners.length < BATCH) break;
+    offset += BATCH;
+  }
+  return { total: synced, synced };
+}
+
+/** Sync the most recent N voip.call rows into the D1 call_log cache. */
+export async function syncCallLog(env: Env, limit = 100): Promise<number> {
+  const uid = await odooAuth(env);
+  if (!uid) return 0;
+  const fields = ["id", "phone_number", "direction", "state", "partner_id", "user_id", "start_date", "end_date", "create_date", "write_date"];
+  const r = await odooCall(env, uid, "voip.call", "search_read",
+    [[]], { fields, limit, order: "create_date desc" });
+  const calls = ((r.parsed ?? []) as unknown as Array<Record<string, unknown>>);
+  const statements: D1PreparedStatement[] = [];
+  for (const c of calls) {
+    statements.push(env.DB.prepare(
+      `INSERT INTO call_log (odoo_id, phone_number, direction, state, partner_id, user_id, start_date, end_date, create_date, write_date)
+       VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)
+       ON CONFLICT(odoo_id) DO UPDATE SET
+         phone_number=excluded.phone_number, direction=excluded.direction, state=excluded.state,
+         partner_id=excluded.partner_id, user_id=excluded.user_id, start_date=excluded.start_date,
+         end_date=excluded.end_date, create_date=excluded.create_date, write_date=excluded.write_date`
+    ).bind(
+      c.id as number,
+      s(c.phone_number), s(c.direction), s(c.state),
+      idOrNull(c.partner_id), idOrNull(c.user_id),
+      dt(c.start_date), dt(c.end_date), dt(c.create_date), dt(c.write_date),
+    ));
+  }
+  if (statements.length) await env.DB.batch(statements);
+  return calls.length;
 }
 
 // ── Call data tracking for Odoo logging on hangup ─────────────

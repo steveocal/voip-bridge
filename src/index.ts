@@ -1,5 +1,5 @@
 import type { Env, ExecutionContext } from "./types";
-import { lookupCaller, logCompletedCall, trackCall, searchContacts, odooAuth, odooCall } from "./odoo";
+import { lookupCaller, logCompletedCall, trackCall, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall } from "./odoo";
 import { ariRequest } from "./asterisk";
 import { serveDashboard } from "./dashboard";
 import type { Contact } from "./odoo";
@@ -135,9 +135,12 @@ async function handleCallHistory(request: Request, env: Env): Promise<Response> 
   const url = new URL(request.url);
   const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50") || 50, 200);
   const rows = await env.DB.prepare(
-    `SELECT call_id, phone_number, did, direction, state, start_date, end_date,
+    `SELECT call_id, phone_number, did, direction, state,
+       COALESCE(start_date, create_date) AS start_date,
+       end_date,
        CASE WHEN end_date > start_date THEN (end_date - start_date) / 1000 ELSE 0 END AS duration
-     FROM call_log ORDER BY start_date DESC LIMIT ?1`
+     FROM call_log
+     ORDER BY COALESCE(start_date, create_date) DESC LIMIT ?1`
   ).bind(limit).all<Record<string, unknown>>();
   return Response.json({ calls: rows.results || [] });
 }
@@ -150,6 +153,37 @@ async function handleContacts(request: Request, env: Env): Promise<Response> {
   const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50") || 50, 200);
   const contacts = await searchContacts(env, q, limit);
   return Response.json({ contacts });
+}
+
+// D1-cache-only contact lookup (fast type-ahead; no Odoo round-trip).
+async function handleContactsCache(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const q = (url.searchParams.get("q") ?? "").trim();
+  const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50") || 50, 200);
+  const select = "SELECT id, name, company_type, is_company, phone, mobile, email, website, vat, function, city, active FROM contacts";
+  let rows;
+  if (q) {
+    const like = `%${q}%`;
+    rows = await env.DB.prepare(
+      `${select} WHERE name LIKE ?1 OR phone LIKE ?1 OR mobile LIKE ?1 OR email LIKE ?1 ORDER BY name LIMIT ?2`
+    ).bind(like, limit).all<Record<string, unknown>>();
+  } else {
+    rows = await env.DB.prepare(
+      `${select} WHERE name != '' AND active = 1 ORDER BY name LIMIT ?1`
+    ).bind(limit).all<Record<string, unknown>>();
+  }
+  return Response.json({ contacts: rows.results || [] });
+}
+
+// Bulk sync Odoo → D1 (contacts + last N call-log records).
+async function handleSync(env: Env): Promise<Response> {
+  try {
+    const contacts = await syncContacts(env);
+    const callLog = await syncCallLog(env, 100);
+    return Response.json({ ok: true, contacts, callLog });
+  } catch (e) {
+    return Response.json({ error: String(e) }, { status: 500 });
+  }
 }
 
 function digitsOf(s: string): string {
@@ -181,9 +215,12 @@ async function handleContactDetail(env: Env, id: number): Promise<Response> {
     const d = digitsOf(p).slice(-7);
     if (d.length < 7) continue;
     const rows = await env.DB.prepare(
-      `SELECT phone_number, did, direction, state, start_date, end_date,
+      `SELECT phone_number, did, direction, state,
+         COALESCE(start_date, create_date) AS start_date,
+         end_date,
          CASE WHEN end_date > start_date THEN (end_date - start_date) / 1000 ELSE 0 END AS duration
-       FROM call_log WHERE phone_number LIKE ?1 ORDER BY start_date DESC LIMIT 20`
+       FROM call_log WHERE phone_number LIKE ?1
+       ORDER BY COALESCE(start_date, create_date) DESC LIMIT 20`
     ).bind(`%${d}%`).all<Record<string, unknown>>();
     for (const r of rows.results || []) calls.push(r);
   }
@@ -225,10 +262,12 @@ export default {
     else if (request.method === "POST" && url.pathname === "/click2call") response = await handleClick2Call(request, env);
     else if (request.method === "POST" && url.pathname === "/answer") response = await handleAnswer(request, env);
     else if (request.method === "POST" && url.pathname === "/hangup-call") response = await handleHangupCall(request, env);
+    else if (request.method === "POST" && url.pathname === "/sync") response = await handleSync(env);
     else if (request.method === "GET" && url.pathname === "/caller-lookup") response = await handleCallerLookup(request, env);
     else if (request.method === "GET" && url.pathname === "/active-calls") response = await handleActiveCalls(request, env);
     else if (request.method === "GET" && url.pathname === "/call-history") response = await handleCallHistory(request, env);
     else if (request.method === "GET" && url.pathname === "/contacts") response = await handleContacts(request, env);
+    else if (request.method === "GET" && url.pathname === "/contacts/cache") response = await handleContactsCache(request, env);
     else if (request.method === "GET" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleContactDetail(env, parseInt(url.pathname.split("/")[2]));
     else if (url.pathname === "/") response = Response.json({ service: "voip-bridge", routes: ["/call-event", "/click2call", "/caller-lookup", "/active-calls", "/answer", "/hangup-call", "/call-history", "/contacts", "/contacts/:id"] });
     else if (url.pathname === "/dashboard") response = serveDashboard();

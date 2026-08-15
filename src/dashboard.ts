@@ -328,12 +328,12 @@ function fmtTime(ts) {
   return sameDay ? hh + ":" + mm : d.toLocaleDateString(undefined, { day: "numeric", month: "short" }) + " " + hh + ":" + mm;
 }
 
-// ── contacts ───────────────────────────────────────────────────
+// ── contacts (D1 cache, debounced type-ahead) ─────────────────
+var contactTimer = null;
 function loadContacts(q) {
   var el = document.getElementById("contacts-list");
-  if (!q) { el.innerHTML = '<div class="empty">Type to search</div>'; return; }
   el.innerHTML = '<div class="empty">Loading…</div>';
-  fetch(API + "/contacts?q=" + encodeURIComponent(q) + "&limit=60").then(function(r){return r.json();}).then(function(d){
+  fetch(API + "/contacts/cache?q=" + encodeURIComponent(q) + "&limit=100").then(function(r){return r.json();}).then(function(d){
     var list = d.contacts || [];
     if (!list.length) { el.innerHTML = '<div class="empty">No contacts found</div>'; return; }
     el.innerHTML = list.map(function(c) {
@@ -344,7 +344,8 @@ function loadContacts(q) {
 }
 document.getElementById("contact-search").addEventListener("input", function(e) {
   var q = e.target.value.trim();
-  if (q) loadContacts(q); else loadContacts("");
+  if (contactTimer) clearTimeout(contactTimer);
+  contactTimer = setTimeout(function() { loadContacts(q); }, 250);
 });
 
 // ── softphone init ─────────────────────────────────────────────

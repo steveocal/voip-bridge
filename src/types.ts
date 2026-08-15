@@ -37,6 +37,7 @@ declare class DurableObjectStorage {
 declare class D1Database {
   prepare(query: string): D1PreparedStatement;
   exec(query: string): Promise<D1Result>;
+  batch(statements: D1PreparedStatement[]): Promise<D1Result[]>;
 }
 
 declare class D1PreparedStatement {
@@ -46,6 +47,7 @@ declare class D1PreparedStatement {
   run(): Promise<D1Result>;
   raw<T = unknown[]>(): Promise<T[]>;
 }
+export type { D1PreparedStatement };
 
 interface D1Result<T = Record<string, unknown>> {
   results?: T[];
