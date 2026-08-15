@@ -52,6 +52,15 @@ CREATE INDEX IF NOT EXISTS idx_call_log_start ON call_log(start_date);
 CREATE INDEX IF NOT EXISTS idx_call_log_partner ON call_log(partner_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_call_log_odoo ON call_log(odoo_id);
 
+-- ── App settings (key-value) ──────────────────────────────────
+-- Server-side persistence for dashboard settings (connection URL, Dev Mode, …)
+-- so they survive across browsers/devices, not just localStorage.
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT,
+  updated_at INTEGER
+);
+
 -- ── Email cache (Phase 2 — placeholder) ───────────────────────
 CREATE TABLE IF NOT EXISTS emails (
   id TEXT PRIMARY KEY,

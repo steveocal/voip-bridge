@@ -1,4 +1,4 @@
-import type { Env, ExecutionContext } from "./types";
+import type { Env, ExecutionContext, D1PreparedStatement } from "./types";
 import { lookupCaller, logCompletedCall, trackCall, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall } from "./odoo";
 import { ariRequest } from "./asterisk";
 import { serveDashboard } from "./dashboard";
@@ -186,6 +186,30 @@ async function handleSync(env: Env): Promise<Response> {
   }
 }
 
+// Read all app settings (key-value) from D1.
+async function handleGetSettings(env: Env): Promise<Response> {
+  const rows = await env.DB.prepare("SELECT key, value FROM settings")
+    .all<{ key: string; value: string }>();
+  const settings: Record<string, string> = {};
+  for (const r of rows.results || []) settings[r.key] = r.value;
+  return Response.json({ settings });
+}
+
+// Upsert app settings (JSON body of key → value).
+async function handleSetSettings(request: Request, env: Env): Promise<Response> {
+  let body: Record<string, unknown>;
+  try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
+  const statements: D1PreparedStatement[] = [];
+  for (const [k, v] of Object.entries(body)) {
+    if (typeof v !== "string" && typeof v !== "number" && typeof v !== "boolean") continue;
+    statements.push(env.DB.prepare(
+      "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at"
+    ).bind(k, String(v), Date.now()));
+  }
+  if (statements.length) await env.DB.batch(statements);
+  return Response.json({ ok: true, count: statements.length });
+}
+
 function digitsOf(s: string): string {
   return (s || "").replace(/\D/g, "");
 }
@@ -263,6 +287,8 @@ export default {
     else if (request.method === "POST" && url.pathname === "/answer") response = await handleAnswer(request, env);
     else if (request.method === "POST" && url.pathname === "/hangup-call") response = await handleHangupCall(request, env);
     else if (request.method === "POST" && url.pathname === "/sync") response = await handleSync(env);
+    else if (request.method === "GET" && url.pathname === "/settings") response = await handleGetSettings(env);
+    else if (request.method === "POST" && url.pathname === "/settings") response = await handleSetSettings(request, env);
     else if (request.method === "GET" && url.pathname === "/caller-lookup") response = await handleCallerLookup(request, env);
     else if (request.method === "GET" && url.pathname === "/active-calls") response = await handleActiveCalls(request, env);
     else if (request.method === "GET" && url.pathname === "/call-history") response = await handleCallHistory(request, env);

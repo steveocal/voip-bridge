@@ -7,7 +7,6 @@ export function serveDashboard(): Response {
 <meta name="theme-color" content="#0b0f19">
 <title>VoIP Bridge</title>
 <link rel="manifest" href="data:application/json,${encodeURIComponent(JSON.stringify({name:"VoIP Bridge",short_name:"VoIP",start_url:"/dashboard",display:"standalone",background_color:"#0b0f19",theme_color:"#0b0f19",icons:[{src:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📞%3C/text%3E%3C/svg%3E",sizes:"100x100",type:"image/svg+xml"}]}))}">
-<script src="https://cdn.jsdelivr.net/npm/sip.js@0.16.0/dist/sip.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
@@ -214,6 +213,26 @@ function saveSettings() {
     localStorage.setItem("vb_devMode", settings.devMode ? "1" : "0");
     localStorage.setItem("vb_serverUrl", settings.serverUrl);
   } catch (e) {}
+  try {
+    fetch(API + "/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ serverUrl: settings.serverUrl, devMode: settings.devMode ? "1" : "0" })
+    });
+  } catch (e) {}
+}
+
+// Load sip.js lazily so the page renders even if the CDN is slow/unreachable.
+function loadSipJs() {
+  return new Promise(function(resolve, reject) {
+    if (typeof SIP !== "undefined") { resolve(); return; }
+    var s = document.createElement("script");
+    s.src = "https://cdn.jsdelivr.net/npm/sip.js@0.16.0/dist/sip.min.js";
+    s.onload = function() { resolve(); };
+    s.onerror = function() { reject(new Error("sip.js CDN failed")); };
+    document.head.appendChild(s);
+    setTimeout(function() { if (typeof SIP === "undefined") reject(new Error("sip.js load timeout")); }, 15000);
+  });
 }
 
 var SIP_CFG = {
@@ -223,6 +242,7 @@ var SIP_CFG = {
 };
 
 var sipUA, sipSession, currentCall, heldSession, muted = false, onHold = false;
+var regTimer = null, REG_TIMEOUT_MS = 8000;
 
 // ── audio unlock (WebRTC autoplay policy) ──────────────────────
 var audioUnlocked = false;
@@ -420,6 +440,7 @@ function closeSettings() {
   document.getElementById("settings-modal").classList.add("hidden");
 }
 function teardownSoftphone() {
+  clearTimeout(regTimer);
   try { if (sipSession) sipSession.dispose(); } catch (e) {}
   try { if (sipUA) sipUA.stop(); } catch (e) {}
   sipUA = null; sipSession = null; currentCall = null;
@@ -458,8 +479,8 @@ function initSoftphone() {
 
   var registerer = new SIP.Registerer(sipUA, { expires: 3600 });
   registerer.stateChange.on(function(state) {
-    if (state === SIP.RegistererState.Registered) setStatus("✅ Registered", false);
-    else if (state === SIP.RegistererState.Unregistered) setStatus("❌ Unregistered", true);
+    if (state === SIP.RegistererState.Registered) { clearTimeout(regTimer); setStatus("✅ Registered", false); }
+    else if (state === SIP.RegistererState.Unregistered) { clearTimeout(regTimer); setStatus("❌ Unregistered", true); }
     else setStatus("⏳ " + state, false);
   });
 
@@ -489,13 +510,31 @@ function initSoftphone() {
   };
 
   sipUA.start().then(function() { registerer.register(); });
+
+  // If the server never answers, stop hanging and surface a clear error.
+  clearTimeout(regTimer);
+  regTimer = setTimeout(function() {
+    setStatus("❌ Server unreachable (timeout)", true);
+    try { sipUA.stop(); } catch (e) {}
+    sipUA = null;
+  }, REG_TIMEOUT_MS);
 }
 
 // ── boot ───────────────────────────────────────────────────────
-document.addEventListener("DOMContentLoaded", function() {
-  if (settings.devMode) { setStatus("🛠 Dev mode", false); }
-  else { initSoftphone(); }
-});
+function applyBoot() {
+  if (settings.devMode) { setStatus("🛠 Dev mode", false); return; }
+  loadSipJs().then(initSoftphone).catch(function(e) { setStatus("❌ " + e.message, true); });
+}
+function boot() {
+  // Merge server-side settings (D1) over localStorage, then start.
+  fetch(API + "/settings").then(function(r){return r.json();}).then(function(d){
+    var s = d.settings || {};
+    if (s.devMode === "1") settings.devMode = true;
+    if (s.serverUrl) settings.serverUrl = s.serverUrl;
+    applyBoot();
+  }).catch(applyBoot);
+}
+document.addEventListener("DOMContentLoaded", boot);
 </script>
 </body>
 </html>`;
