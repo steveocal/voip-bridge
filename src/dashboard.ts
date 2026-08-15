@@ -66,6 +66,28 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .menu-btn{flex:1;background:none;border:none;color:#64748b;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;font-size:10px}
 .menu-btn .ico{font-size:20px}
 .menu-btn.active{color:#3b82f6}
+/* menu + settings */
+.menu-icon{background:none;border:none;color:#e8ecf4;font-size:22px;cursor:pointer;padding:4px;line-height:1;flex-shrink:0}
+.menu-drawer{position:fixed;top:64px;right:12px;background:#141b2e;border:1px solid #1f2a44;border-radius:12px;padding:6px;z-index:40;min-width:170px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.menu-drawer button{display:block;width:100%;text-align:left;background:none;border:none;color:#e8ecf4;padding:12px 14px;font-size:15px;border-radius:8px;cursor:pointer}
+.menu-drawer button:active{background:#1f2a44}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px}
+.modal-card{background:#101827;border:1px solid #1f2a44;border-radius:16px;padding:20px;width:100%;max-width:360px}
+.modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;font-size:17px;font-weight:700}
+.modal-head button{background:none;border:none;color:#8b95a9;font-size:18px;cursor:pointer}
+.set-field{margin-bottom:16px}
+.set-field label{display:block;font-size:12px;color:#8b95a9;margin-bottom:6px}
+.set-field input[type=text]{width:100%;padding:12px 14px;border:none;border-radius:10px;background:#141b2e;color:#fff;font-size:15px;outline:none}
+.switch-row{display:flex;align-items:center;justify-content:space-between;padding:4px 0;margin-bottom:16px}
+.switch-row span{font-size:15px}
+.switch{position:relative;width:48px;height:28px;flex-shrink:0}
+.switch input{opacity:0;width:0;height:0}
+.switch .track{position:absolute;inset:0;background:#334155;border-radius:28px;cursor:pointer;transition:background .15s}
+.switch .track::before{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;background:#fff;border-radius:50%;transition:transform .15s}
+.switch input:checked + .track{background:#3b82f6}
+.switch input:checked + .track::before{transform:translateX(20px)}
+.save-btn{width:100%;padding:13px;border:none;border-radius:12px;background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;font-size:16px;font-weight:600;cursor:pointer}
+.dev-hint{font-size:12px;color:#8b95a9;margin-top:10px;text-align:center}
 </style>
 </head>
 <body>
@@ -77,6 +99,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
       <div class="caller-id">Caller ID: +44 7898 117226</div>
     </div>
     <div class="reg-status" id="phone-status">Loading…</div>
+    <button class="menu-icon" onclick="toggleMenu()" aria-label="Menu">☰</button>
   </header>
 
   <div class="call-banner hidden" id="call-banner">
@@ -152,13 +175,48 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
   </nav>
 </div>
 
+<div class="menu-drawer hidden" id="menu-drawer">
+  <button onclick="openSettings()">⚙️ Settings</button>
+</div>
+
+<div class="modal hidden" id="settings-modal">
+  <div class="modal-card">
+    <div class="modal-head"><span>⚙️ Settings</span><button onclick="closeSettings()">✕</button></div>
+    <div class="set-field">
+      <label>Connection URL</label>
+      <input id="set-server" type="text" placeholder="wss://host/ws" autocomplete="off" autocapitalize="off" spellcheck="false">
+    </div>
+    <div class="switch-row">
+      <span>Dev Mode</span>
+      <label class="switch"><input type="checkbox" id="set-dev"><span class="track"></span></label>
+    </div>
+    <button class="save-btn" onclick="saveAndApply()">Save</button>
+    <div class="dev-hint">Dev Mode skips the server connection.</div>
+  </div>
+</div>
+
 <script>
 // ── config ─────────────────────────────────────────────────────
 var API = "https://voip-bridge.wandering-mode-c597.workers.dev";
-var wsProto = location.protocol === "https:" ? "wss" : "ws";
-var wsHost = "64.176.181.195.nip.io";
+var DEFAULT_WS = "wss://64.176.181.195.nip.io/ws";
+var settings = loadSettings();
+
+function loadSettings() {
+  try {
+    return {
+      devMode: localStorage.getItem("vb_devMode") === "1",
+      serverUrl: localStorage.getItem("vb_serverUrl") || DEFAULT_WS
+    };
+  } catch (e) { return { devMode: false, serverUrl: DEFAULT_WS }; }
+}
+function saveSettings() {
+  try {
+    localStorage.setItem("vb_devMode", settings.devMode ? "1" : "0");
+    localStorage.setItem("vb_serverUrl", settings.serverUrl);
+  } catch (e) {}
+}
+
 var SIP_CFG = {
-  wsUri: wsProto + "://" + wsHost + "/ws",
   uri: "sip:201@64.176.181.195",
   password: "webphone201",
   callerId: "+44 7898 117226"
@@ -348,6 +406,41 @@ document.getElementById("contact-search").addEventListener("input", function(e) 
   contactTimer = setTimeout(function() { loadContacts(q); }, 250);
 });
 
+// ── menu + settings ────────────────────────────────────────────
+function toggleMenu() {
+  document.getElementById("menu-drawer").classList.toggle("hidden");
+}
+function openSettings() {
+  document.getElementById("menu-drawer").classList.add("hidden");
+  document.getElementById("set-server").value = settings.serverUrl;
+  document.getElementById("set-dev").checked = settings.devMode;
+  document.getElementById("settings-modal").classList.remove("hidden");
+}
+function closeSettings() {
+  document.getElementById("settings-modal").classList.add("hidden");
+}
+function teardownSoftphone() {
+  try { if (sipSession) sipSession.dispose(); } catch (e) {}
+  try { if (sipUA) sipUA.stop(); } catch (e) {}
+  sipUA = null; sipSession = null; currentCall = null;
+  renderCallUI();
+}
+function saveAndApply() {
+  settings.serverUrl = (document.getElementById("set-server").value || "").trim() || DEFAULT_WS;
+  settings.devMode = document.getElementById("set-dev").checked;
+  saveSettings();
+  closeSettings();
+  teardownSoftphone();
+  if (settings.devMode) { setStatus("🛠 Dev mode", false); }
+  else { initSoftphone(); }
+}
+document.addEventListener("click", function(e) {
+  var d = document.getElementById("menu-drawer");
+  if (!d.classList.contains("hidden") && !e.target.closest(".menu-icon") && !e.target.closest("#menu-drawer")) {
+    d.classList.add("hidden");
+  }
+});
+
 // ── softphone init ─────────────────────────────────────────────
 function initSoftphone() {
   var el = document.getElementById("phone-status");
@@ -356,7 +449,7 @@ function initSoftphone() {
   try {
     sipUA = new SIP.UserAgent({
       uri: SIP.UserAgent.makeURI(SIP_CFG.uri),
-      transportOptions: { server: SIP_CFG.wsUri },
+      transportOptions: { server: settings.serverUrl },
       authorizationUsername: "201",
       authorizationPassword: SIP_CFG.password,
       sessionDescriptionHandlerFactoryOptions: { constraints: { audio: true, video: false } }
@@ -399,7 +492,10 @@ function initSoftphone() {
 }
 
 // ── boot ───────────────────────────────────────────────────────
-document.addEventListener("DOMContentLoaded", initSoftphone);
+document.addEventListener("DOMContentLoaded", function() {
+  if (settings.devMode) { setStatus("🛠 Dev mode", false); }
+  else { initSoftphone(); }
+});
 </script>
 </body>
 </html>`;
