@@ -317,7 +317,7 @@ function searchSuggestions(q) {
     if (!list.length) { el.innerHTML = ""; return; }
     el.innerHTML = list.map(function(c) {
       var num = c.mobile || c.phone || "";
-      return '<div class="sugg-row" onclick="pickSuggestion(\'' + esc(num) + '\', \'' + esc(c.name) + '\')"><div><div class="n">' + esc(c.name) + '</div>' + (num ? '<div class="s">' + esc(num) + '</div>' : '') + '</div>' + (num ? '<span class="call">📞</span>' : '') + '</div>';
+      return '<div class="sugg-row" onclick="pickSuggestion(\\'' + esc(num) + '\\', \\'' + esc(c.name) + '\\')"><div><div class="n">' + esc(c.name) + '</div>' + (num ? '<div class="s">' + esc(num) + '</div>' : '') + '</div>' + (num ? '<span class="call">📞</span>' : '') + '</div>';
     }).join("");
   }).catch(function(){});
 }
@@ -394,7 +394,7 @@ function loadHistory() {
       var when = c.start_date ? fmtTime(c.start_date) : "";
       var dur = c.duration ? " · " + Math.round(c.duration) + "s" : "";
       var dialable = /^[+0-9*#]/.test(who);
-      return '<div class="hist-row"' + (dialable ? ' onclick="dialOut(\'' + who + '\')"' : '') + '><span class="ic">' + icon + '</span><div><div class="who">' + esc(who) + '</div>' + (c.did ? '<div class="sub">→ ' + esc(c.did) + '</div>' : '') + '</div><div class="meta">' + when + dur + '</div></div>';
+      return '<div class="hist-row"' + (dialable ? ' onclick="dialOut(\\'' + who + '\\')"' : '') + '><span class="ic">' + icon + '</span><div><div class="who">' + esc(who) + '</div>' + (c.did ? '<div class="sub">→ ' + esc(c.did) + '</div>' : '') + '</div><div class="meta">' + when + dur + '</div></div>';
     }).join("");
   }).catch(function(){ el.innerHTML = '<div class="empty">Error loading history</div>'; });
 }
@@ -416,7 +416,7 @@ function loadContacts(q) {
     if (!list.length) { el.innerHTML = '<div class="empty">No contacts found</div>'; return; }
     el.innerHTML = list.map(function(c) {
       var num = c.mobile || c.phone || "";
-      return '<div class="contact-row"><div><div class="cname">' + esc(c.name) + (c.is_company ? " 🏢" : "") + '</div>' + (num ? '<div class="sub">' + esc(num) + '</div>' : '') + (c.email ? '<div class="sub">' + esc(c.email) + '</div>' : '') + '</div>' + (num ? '<button class="mini-call" onclick="dialOut(\'' + esc(num) + '\')">📞</button>' : '') + '</div>';
+      return '<div class="contact-row"><div><div class="cname">' + esc(c.name) + (c.is_company ? " 🏢" : "") + '</div>' + (num ? '<div class="sub">' + esc(num) + '</div>' : '') + (c.email ? '<div class="sub">' + esc(c.email) + '</div>' : '') + '</div>' + (num ? '<button class="mini-call" onclick="dialOut(\\'' + esc(num) + '\\')">📞</button>' : '') + '</div>';
     }).join("");
   }).catch(function(){ el.innerHTML = '<div class="empty">Error</div>'; });
 }
