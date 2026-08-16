@@ -92,3 +92,119 @@ export async function searchGmailMessages(env: Env, email: string, limit = 30): 
   const results = await Promise.all(ids.map(id => getMessage(token, id)));
   return results.filter((m): m is Message => m !== null);
 }
+
+// ── Full body + send ───────────────────────────────────────────
+
+function b64urlToUtf8(s: string): string {
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = (4 - (b64.length % 4)) % 4;
+  const bin = atob(b64 + "=".repeat(pad));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
+// Recursively extract the best text body (text/plain preferred, else text/html).
+function extractText(payload: unknown): string {
+  const p = payload as { body?: { data?: string }; mimeType?: string; parts?: unknown[] } | undefined;
+  if (!p) return "";
+  if (p.body && p.body.data) return b64urlToUtf8(p.body.data);
+  if (Array.isArray(p.parts)) {
+    for (const part of p.parts) {
+      const pp = part as { mimeType?: string; body?: { data?: string } };
+      if (pp.mimeType === "text/plain" && pp.body && pp.body.data) return b64urlToUtf8(pp.body.data);
+    }
+    for (const part of p.parts) {
+      const pp = part as { mimeType?: string; body?: { data?: string } };
+      if (pp.mimeType === "text/html" && pp.body && pp.body.data) return b64urlToUtf8(pp.body.data);
+    }
+    for (const part of p.parts) {
+      const r = extractText(part);
+      if (r) return r;
+    }
+  }
+  return "";
+}
+
+/** Fetch the full decoded body of a Gmail message (format=full). */
+export async function getGmailBody(env: Env, gmailId: string): Promise<string> {
+  const token = await getAccessToken(env);
+  if (!token) return "";
+  const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${gmailId}?format=full`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) return "";
+  const d = await res.json() as { payload?: unknown };
+  return extractText(d.payload);
+}
+
+async function getThreadContext(token: string, gmailId: string): Promise<{ threadId?: string; messageId?: string; references?: string } | null> {
+  const url = new URL(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${gmailId}`);
+  url.searchParams.set("format", "metadata");
+  url.searchParams.append("metadataHeaders", "Message-ID");
+  url.searchParams.append("metadataHeaders", "References");
+  const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) return null;
+  const d = await res.json() as { threadId?: string; payload?: { headers?: Array<{ name: string; value: string }> } };
+  const headers: Record<string, string> = {};
+  for (const h of d.payload?.headers ?? []) headers[h.name.toLowerCase()] = h.value;
+  return { threadId: d.threadId, messageId: headers["message-id"], references: headers["references"] };
+}
+
+function utf8Bin(s: string): string {
+  const bytes = new TextEncoder().encode(s);
+  let b = "";
+  for (const x of bytes) b += String.fromCharCode(x);
+  return b;
+}
+function b64std(s: string): string { return btoa(utf8Bin(s)); }
+function b64url(s: string): string { return b64std(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); }
+
+function encodeHeader(s: string): string {
+  if (/^[\x20-\x7e]*$/.test(s)) return s;
+  return "=?UTF-8?B?" + b64std(s) + "?=";
+}
+
+export interface SendOptions {
+  to: string;
+  subject?: string;
+  body?: string;
+  replyToGmailId?: string;
+}
+
+/** Send (or reply to) an email via the Gmail API. */
+export async function sendGmailMessage(env: Env, opts: SendOptions): Promise<{ ok: boolean; id?: string; threadId?: string; error?: string }> {
+  const token = await getAccessToken(env);
+  if (!token) return { ok: false, error: "no gmail token" };
+
+  let inReplyTo = "", references = "", threadId: string | undefined;
+  if (opts.replyToGmailId) {
+    const ctx = await getThreadContext(token, opts.replyToGmailId);
+    if (ctx) {
+      inReplyTo = ctx.messageId || "";
+      references = ctx.references ? ctx.references + " " + (ctx.messageId || "") : (ctx.messageId || "");
+      threadId = ctx.threadId;
+    }
+  }
+
+  const parts = [
+    "From: Steve <steve@systecgroup.info>",
+    "To: " + opts.to,
+    "Subject: " + encodeHeader(opts.subject || ""),
+  ];
+  if (inReplyTo) parts.push("In-Reply-To: <" + inReplyTo + ">");
+  if (references.trim()) parts.push("References: " + references.trim());
+  parts.push("MIME-Version: 1.0", 'Content-Type: text/plain; charset="UTF-8"', "Content-Transfer-Encoding: 8bit", "", (opts.body || "").replace(/\r\n/g, "\n"));
+  const raw = parts.join("\r\n");
+
+  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ raw: b64url(raw), ...(threadId ? { threadId } : {}) }),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    return { ok: false, error: "gmail send " + res.status + " " + t.slice(0, 200) };
+  }
+  const d = await res.json() as { id?: string; threadId?: string };
+  return { ok: true, id: d.id, threadId: d.threadId };
+}

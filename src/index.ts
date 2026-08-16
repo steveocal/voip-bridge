@@ -1,6 +1,6 @@
 import type { Env, ExecutionContext, D1PreparedStatement } from "./types";
 import { lookupCaller, logCompletedCall, trackCall, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages } from "./odoo";
-import { searchGmailMessages } from "./gmail";
+import { searchGmailMessages, getGmailBody, sendGmailMessage } from "./gmail";
 import { ariRequest } from "./asterisk";
 import { serveDashboard } from "./dashboard";
 import type { Contact } from "./odoo";
@@ -136,7 +136,7 @@ async function handleCallHistory(request: Request, env: Env): Promise<Response> 
   const url = new URL(request.url);
   const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50") || 50, 200);
   const q = (url.searchParams.get("q") ?? "").trim();
-  const select = `SELECT c.call_id, c.phone_number, c.did, c.direction, c.state,
+  const select = `SELECT c.id, c.call_id, c.phone_number, c.did, c.direction, c.state,
        COALESCE(c.start_date, c.create_date) AS start_date,
        c.end_date,
        CASE WHEN c.end_date > c.start_date THEN (c.end_date - c.start_date) / 1000 ELSE 0 END AS duration,
@@ -205,6 +205,36 @@ async function handleMessages(request: Request, env: Env): Promise<Response> {
     gmailOk,
     messages: rows.results || [],
   });
+}
+
+// ── Message detail + send ─────────────────────────────────────
+
+async function handleMessageDetail(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const id = parseInt(url.searchParams.get("id") ?? "0");
+  if (!id) return Response.json({ error: "missing id" }, { status: 400 });
+  const row = await env.DB.prepare("SELECT * FROM messages WHERE id = ?1")
+    .bind(id).first<Record<string, unknown>>();
+  if (!row) return Response.json({ error: "not found" }, { status: 404 });
+  // Gmail messages only store a snippet — pull the full decoded body on demand.
+  if (row.source === "gmail" && row.gmail_id) {
+    const body = await getGmailBody(env, String(row.gmail_id));
+    if (body) row.body = body;
+  }
+  return Response.json({ message: row });
+}
+
+async function handleSendMessage(request: Request, env: Env): Promise<Response> {
+  let body: { to?: string; subject?: string; body?: string; replyToGmailId?: string };
+  try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
+  if (!body.to || !String(body.to).trim()) return Response.json({ error: "missing recipient" }, { status: 400 });
+  const res = await sendGmailMessage(env, {
+    to: String(body.to).trim(),
+    subject: body.subject ?? "",
+    body: body.body ?? "",
+    replyToGmailId: body.replyToGmailId,
+  });
+  return Response.json(res, { status: res.ok ? 200 : 502 });
 }
 
 // ── Phase 1: Contacts ──────────────────────────────────────────
@@ -355,6 +385,8 @@ export default {
     else if (request.method === "GET" && url.pathname === "/active-calls") response = await handleActiveCalls(request, env);
     else if (request.method === "GET" && url.pathname === "/call-history") response = await handleCallHistory(request, env);
     else if (request.method === "GET" && url.pathname === "/messages") response = await handleMessages(request, env);
+    else if (request.method === "GET" && url.pathname === "/message") response = await handleMessageDetail(request, env);
+    else if (request.method === "POST" && url.pathname === "/send-message") response = await handleSendMessage(request, env);
     else if (request.method === "GET" && url.pathname === "/contacts") response = await handleContacts(request, env);
     else if (request.method === "GET" && url.pathname === "/contacts/cache") response = await handleContactsCache(request, env);
     else if (request.method === "GET" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleContactDetail(env, parseInt(url.pathname.split("/")[2]));

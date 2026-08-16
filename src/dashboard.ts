@@ -95,6 +95,41 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .switch input:checked + .track::before{transform:translateX(20px)}
 .save-btn{width:100%;padding:13px;border:none;border-radius:12px;background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;font-size:16px;font-weight:600;cursor:pointer}
 .dev-hint{font-size:12px;color:#8b95a9;margin-top:10px;text-align:center}
+/* desktop full-screen */
+@media (min-width:900px){
+  .app{max-width:1200px}
+  .dialpad{max-width:380px;margin:0 auto}
+  .detail-card{max-width:760px}
+  .compose-card{max-width:720px}
+}
+/* selection highlight */
+.hist-row.selected,.msg-row.selected{background:#13203a;border-radius:10px}
+/* action bar */
+.action-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:76px;background:#141b2e;border:1px solid #1f2a44;border-radius:14px;padding:8px;display:flex;gap:8px;z-index:45;box-shadow:0 8px 30px rgba(0,0,0,.6);max-width:94vw}
+.action-bar button{background:#1f2a44;border:none;color:#e8ecf4;padding:10px 16px;border-radius:10px;font-size:14px;cursor:pointer;white-space:nowrap}
+.action-bar button.primary{background:linear-gradient(135deg,#3b82f6,#2563eb)}
+.action-bar button.green{background:linear-gradient(135deg,#34d399,#10b981);color:#04210f}
+.action-bar button.x{background:none;padding:10px;color:#8b95a9}
+/* full-screen detail + compose modals */
+.full-modal{position:fixed;inset:0;background:rgba(5,8,16,.86);z-index:60;display:flex;flex-direction:column;overflow:hidden;padding:16px}
+.detail-card{background:#101827;border:1px solid #1f2a44;border-radius:16px;margin:auto;width:100%;max-width:720px;max-height:92vh;display:flex;flex-direction:column;overflow:hidden}
+.detail-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #1f2a44;flex-shrink:0}
+.detail-head .t{font-size:17px;font-weight:700}
+.detail-head button{background:none;border:none;color:#8b95a9;font-size:20px;cursor:pointer}
+.detail-body{flex:1;overflow-y:auto;padding:18px 20px;line-height:1.55}
+.detail-foot{display:flex;gap:10px;padding:14px 20px;border-top:1px solid #1f2a44;flex-shrink:0;flex-wrap:wrap}
+.detail-foot button{flex:1;min-width:110px;padding:12px;border:none;border-radius:12px;font-size:15px;font-weight:600;cursor:pointer;background:#1f2a44;color:#e8ecf4}
+.detail-foot button.primary{background:linear-gradient(135deg,#3b82f6,#2563eb)}
+.detail-foot button.green{background:linear-gradient(135deg,#34d399,#10b981);color:#04210f}
+.detail-row{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid #1a2238;font-size:14px}
+.detail-row .k{color:#8b95a9;flex-shrink:0}
+.detail-row .v{text-align:right;word-break:break-word}
+.msg-body{margin-top:14px;font-size:15px;color:#e8ecf4;white-space:pre-wrap;word-break:break-word}
+.compose-card{background:#101827;border:1px solid #1f2a44;border-radius:16px;margin:auto;width:100%;max-width:640px;display:flex;flex-direction:column;overflow:hidden;max-height:92vh}
+.compose-field{padding:12px 20px;border-bottom:1px solid #1a2238}
+.compose-field label{display:block;font-size:11px;color:#8b95a9;margin-bottom:4px}
+.compose-field input,.compose-field textarea{width:100%;background:none;border:none;color:#fff;font-size:15px;outline:none;resize:none;font-family:inherit}
+.compose-field textarea{min-height:220px}
 </style>
 </head>
 <body>
@@ -183,6 +218,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
     <button class="menu-btn" data-view="contacts" onclick="switchView('contacts')"><span class="ico">👥</span><span>Contacts</span></button>
     <button class="menu-btn" data-view="messages" onclick="switchView('messages')"><span class="ico">💬</span><span>Messages</span></button>
   </nav>
+  <div class="action-bar hidden" id="action-bar"></div>
 </div>
 
 <div class="menu-drawer hidden" id="menu-drawer">
@@ -202,6 +238,27 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
     </div>
     <button class="save-btn" onclick="saveAndApply()">Save</button>
     <div class="dev-hint">Dev Mode skips the server connection.</div>
+  </div>
+</div>
+
+<div class="full-modal hidden" id="detail-modal">
+  <div class="detail-card">
+    <div class="detail-head"><span class="t" id="detail-title">Detail</span><button onclick="closeDetail()">✕</button></div>
+    <div class="detail-body" id="detail-body"></div>
+    <div class="detail-foot" id="detail-foot"></div>
+  </div>
+</div>
+
+<div class="full-modal hidden" id="compose-modal">
+  <div class="compose-card">
+    <div class="detail-head"><span class="t" id="compose-title">✉️ New Message</span><button onclick="closeCompose()">✕</button></div>
+    <div class="compose-field"><label>To</label><input id="comp-to" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+    <div class="compose-field"><label>Subject</label><input id="comp-subject" type="text" autocomplete="off"></div>
+    <div class="compose-field"><label>Message</label><textarea id="comp-body"></textarea></div>
+    <div class="detail-foot">
+      <button class="primary" id="comp-send" onclick="sendCompose()">Send</button>
+      <button onclick="closeCompose()">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -406,6 +463,7 @@ function loadHistory() {
   }).catch(function(){ el.innerHTML = '<div class="empty">Error loading history</div>'; });
 }
 function renderHistory(calls) {
+  callsCache = {};
   var html = "", day = "";
   for (var i = 0; i < calls.length; i++) {
     var c = calls[i];
@@ -426,8 +484,9 @@ function renderHistoryRow(c) {
   var sub = name ? num : (c.did && c.did !== num ? "→ " + c.did : "");
   var dur = (c.duration > 0) ? " · " + fmtDur(c.duration) : "";
   var when = c.start_date ? fmtTime(c.start_date) : "";
-  var dialable = /^[+0-9*#]/.test(num);
-  return '<div class="hist-row"' + (dialable ? ' data-dial="' + esc(num) + '"' : '') + '><span class="ic">' + icon + '</span><div><div class="who">' + arrow + ' ' + esc(who) + '</div>' + (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div><div class="meta">' + when + dur + '</div></div>';
+  var key = "h-" + c.id;
+  callsCache[key] = c;
+  return '<div class="hist-row" data-key="' + esc(key) + '"><span class="ic">' + icon + '</span><div><div class="who">' + arrow + ' ' + esc(who) + '</div>' + (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div><div class="meta">' + when + dur + '</div></div>';
 }
 function fmtDur(sec) {
   sec = Math.round(sec || 0);
@@ -448,7 +507,10 @@ document.getElementById("history-search").addEventListener("input", function(e) 
 });
 document.getElementById("history-list").addEventListener("click", function(e) {
   var row = e.target.closest(".hist-row");
-  if (row && row.getAttribute("data-dial")) dialOut(row.getAttribute("data-dial"));
+  if (!row) return;
+  var c = callsCache[row.getAttribute("data-key")];
+  if (!c) return;
+  rowClick(row.getAttribute("data-key"), "call", c, function() { openCallFull(c); });
 });
 function fmtTime(ts) {
   var d = new Date(ts);
@@ -472,7 +534,7 @@ function loadContacts(q) {
     el.innerHTML = list.map(function(c) {
       var num = c.mobile || c.phone || "";
       var sel = (activeContact && activeContact.id === c.id) ? " selected" : "";
-      return '<div class="contact-row' + sel + '" data-id="' + esc(c.id) + '"><div><div class="cname">' + esc(c.name) + (c.is_company ? " 🏢" : "") + '</div>' + (num ? '<div class="sub">' + esc(num) + '</div>' : '') + (c.email ? '<div class="sub">' + esc(c.email) + '</div>' : '') + '</div>' + (num ? '<button class="mini-call" data-num="' + esc(num) + '">📞</button>' : '') + '</div>';
+      return '<div class="contact-row' + sel + '" data-id="' + esc(c.id) + '" data-key="c-' + esc(c.id) + '"><div><div class="cname">' + esc(c.name) + (c.is_company ? " 🏢" : "") + '</div>' + (num ? '<div class="sub">' + esc(num) + '</div>' : '') + (c.email ? '<div class="sub">' + esc(c.email) + '</div>' : '') + '</div>' + (num ? '<button class="mini-call" data-num="' + esc(num) + '">📞</button>' : '') + '</div>';
     }).join("");
   }).catch(function(){ el.innerHTML = '<div class="empty">Error</div>'; });
 }
@@ -485,21 +547,174 @@ document.getElementById("contacts-list").addEventListener("click", function(e) {
   var mini = e.target.closest(".mini-call");
   if (mini) { prepareDial(mini.getAttribute("data-num")); return; }
   var row = e.target.closest(".contact-row");
-  if (row) { var c = contactsCache[row.getAttribute("data-id")]; if (c) selectContact(c); }
+  if (!row) return;
+  var c = contactsCache[row.getAttribute("data-id")];
+  if (!c) return;
+  rowClick(row.getAttribute("data-key"), "contact", c, function() { openContactFull(c); });
 });
 
 // ── contact selection + messages ───────────────────────────────
 var activeContact = null;
-function selectContact(c) {
-  activeContact = { id: c.id, name: c.name, email: c.email || "", phone: c.phone || c.mobile || "" };
-  var rows = document.querySelectorAll("#contacts-list .contact-row");
-  for (var i = 0; i < rows.length; i++) rows[i].classList.toggle("selected", rows[i].getAttribute("data-id") == c.id);
-  switchView("messages");
-}
 function prepareDial(num) {
   document.getElementById("dial-input").value = num || "";
   document.getElementById("dial-suggestions").innerHTML = "";
   switchView("dial");
+}
+function openMessages() { switchView("messages"); }
+
+// ── selection (click = select, double-click = open) ─────────────
+var selected = null;
+var clickTimer = null, pendingKey = null;
+var callsCache = {};
+var messagesCache = {};
+var NL = String.fromCharCode(10);
+
+function rowClick(key, type, data, openFn) {
+  if (clickTimer && pendingKey === key) {
+    clearTimeout(clickTimer); clickTimer = null; pendingKey = null;
+    openFn();
+    return;
+  }
+  selectItem(type, data, key);
+  pendingKey = key;
+  if (clickTimer) clearTimeout(clickTimer);
+  clickTimer = setTimeout(function() { clickTimer = null; pendingKey = null; }, 300);
+}
+function selectItem(type, data, key) {
+  selected = { type: type, data: data };
+  var rows = document.querySelectorAll(".hist-row.selected,.contact-row.selected,.msg-row.selected");
+  for (var i = 0; i < rows.length; i++) rows[i].classList.remove("selected");
+  var el = document.querySelector('[data-key="' + key + '"]');
+  if (el) el.classList.add("selected");
+  if (type === "contact") activeContact = { id: data.id, name: data.name, email: data.email || "", phone: data.phone || data.mobile || "" };
+  renderActionBar();
+}
+function deselect() {
+  selected = null;
+  var rows = document.querySelectorAll(".hist-row.selected,.contact-row.selected,.msg-row.selected");
+  for (var i = 0; i < rows.length; i++) rows[i].classList.remove("selected");
+  document.getElementById("action-bar").classList.add("hidden");
+}
+function renderActionBar() {
+  var bar = document.getElementById("action-bar");
+  if (!selected) { bar.classList.add("hidden"); bar.innerHTML = ""; return; }
+  var h = "";
+  if (selected.type === "contact") {
+    var c = selected.data;
+    var num = c.phone || c.mobile || "";
+    h = (num ? '<button class="green" onclick="prepareDialSelected()">📞 Dial</button>' : '') + '<button onclick="openMessages()">💬 Messages</button>' + '<button class="primary" onclick="openContactFull()">👤 Open</button>';
+  } else if (selected.type === "message") {
+    h = '<button onclick="replyMessage()">↩ Reply</button>' + '<button class="primary" onclick="openMessageFull()">📖 Open</button>';
+  } else if (selected.type === "call") {
+    var n = selected.data.phone_number;
+    h = (n && /^[+0-9*#]/.test(n) ? '<button class="green" onclick="dialBackSelected()">📞 Call back</button>' : '') + '<button class="primary" onclick="openCallFull()">📖 Open</button>';
+  }
+  h += '<button class="x" onclick="deselect()">✕</button>';
+  bar.innerHTML = h;
+  bar.classList.remove("hidden");
+}
+function prepareDialSelected() { var c = selected && selected.data; prepareDial(c ? (c.phone || c.mobile || "") : ""); }
+function dialBackSelected() { var c = selected && selected.data; if (c && c.phone_number) dialOut(c.phone_number); }
+
+// ── detail views (full-screen) ─────────────────────────────────
+function openDetail() { document.getElementById("detail-modal").classList.remove("hidden"); }
+function closeDetail() { document.getElementById("detail-modal").classList.add("hidden"); }
+function setDetail(title, bodyHtml, footHtml) {
+  document.getElementById("detail-title").textContent = title;
+  document.getElementById("detail-body").innerHTML = bodyHtml;
+  document.getElementById("detail-foot").innerHTML = footHtml || "";
+  openDetail();
+}
+function openContactFull(c) {
+  c = c || (selected && selected.data);
+  if (!c) return;
+  var rows = "";
+  var fields = [["Phone", c.phone], ["Mobile", c.mobile], ["Email", c.email], ["Website", c.website], ["VAT", c.vat], ["Role", c.function], ["City", c.city]];
+  for (var i = 0; i < fields.length; i++) {
+    if (fields[i][1]) rows += '<div class="detail-row"><span class="k">' + fields[i][0] + '</span><span class="v">' + esc(fields[i][1]) + '</span></div>';
+  }
+  var foot = '<button class="green" onclick="prepareDialSelected()">📞 Dial</button><button onclick="openMessages()">💬 Messages</button><button class="primary" onclick="newMessage()">✉️ Message</button>';
+  setDetail((c.is_company ? "🏢 " : "👤 ") + c.name, rows || '<div class="empty">No details</div>', foot);
+}
+function openCallFull(c) {
+  c = c || (selected && selected.data);
+  if (!c) return;
+  var dur = c.duration > 0 ? fmtDur(c.duration) : "—";
+  var when = c.start_date ? new Date(c.start_date).toLocaleString() : "—";
+  var rows = '<div class="detail-row"><span class="k">Number</span><span class="v">' + esc(c.phone_number || c.did || "unknown") + '</span></div>'
+    + '<div class="detail-row"><span class="k">Direction</span><span class="v">' + esc(c.direction || "incoming") + '</span></div>'
+    + '<div class="detail-row"><span class="k">State</span><span class="v">' + esc(c.state || "") + '</span></div>'
+    + '<div class="detail-row"><span class="k">When</span><span class="v">' + esc(when) + '</span></div>'
+    + '<div class="detail-row"><span class="k">Duration</span><span class="v">' + esc(dur) + '</span></div>'
+    + (c.partner_name ? '<div class="detail-row"><span class="k">Contact</span><span class="v">' + esc(c.partner_name) + '</span></div>' : '');
+  var foot = '<button class="green" onclick="dialBackSelected()">📞 Call back</button>';
+  setDetail("📞 Call", rows, foot);
+}
+function openMessageFull(m) {
+  m = m || (selected && selected.data);
+  if (!m) return;
+  if (m.source === "gmail" && !m._full) { fetchMessageFull(m); return; }
+  renderMessageFull(m);
+}
+function fetchMessageFull(m) {
+  fetch(API + "/message?id=" + encodeURIComponent(m.id)).then(function(r){ return r.json(); }).then(function(d){
+    if (d.message) { m.body = d.message.body; m.email_from = d.message.email_from; m.subject = d.message.subject; m._full = true; }
+    renderMessageFull(m);
+  }).catch(function(){ renderMessageFull(m); });
+}
+function renderMessageFull(m) {
+  var body = String(m.body || "").replace(/<[^>]*>/g, " ");
+  var rows = '<div class="detail-row"><span class="k">From</span><span class="v">' + esc(m.email_from || "—") + '</span></div>'
+    + '<div class="detail-row"><span class="k">Subject</span><span class="v">' + esc(m.subject || "(no subject)") + '</span></div>'
+    + '<div class="detail-row"><span class="k">When</span><span class="v">' + esc(m.date ? new Date(m.date).toLocaleString() : "—") + '</span></div>'
+    + '<div class="msg-body">' + esc(body) + '</div>';
+  var foot = '<button onclick="replyMessage()">↩ Reply</button><button class="primary" onclick="newMessage()">✉️ New Message</button>';
+  setDetail("✉️ " + (m.subject || "Message"), rows, foot);
+}
+function extractEmail(s) {
+  var m = String(s || "").match(/[A-Za-z0-9_.+-]+@[A-Za-z0-9_.-]+[.][A-Za-z]+/);
+  return m ? m[0] : "";
+}
+function replyMessage() {
+  var m = selected && selected.data;
+  if (!m) return;
+  var to = extractEmail(m.email_from) || (activeContact && activeContact.email) || "";
+  var subject = (m.subject || "").replace(/^Re:[ ]*/i, "");
+  var quote = String(m.body || "").replace(/<[^>]*>/g, " ").replace(/ +/g, " ").trim();
+  var body = NL + NL + (m.date ? "On " + new Date(m.date).toLocaleString() + ", " + (m.email_from || "") + " wrote:" + NL : "") + "> " + quote.split(NL).join(NL + "> ");
+  openCompose(to, "Re: " + subject, body);
+  closeDetail();
+}
+function newMessage() {
+  var to = (activeContact && activeContact.email) || "";
+  if (!to && selected && selected.type === "message") to = extractEmail(selected.data.email_from);
+  openCompose(to, "", "");
+  closeDetail();
+}
+function openCompose(to, subject, body) {
+  document.getElementById("comp-to").value = to || "";
+  document.getElementById("comp-subject").value = subject || "";
+  document.getElementById("comp-body").value = body || "";
+  document.getElementById("compose-title").textContent = "✉️ " + (subject && subject.indexOf("Re:") === 0 ? "Reply" : "New Message");
+  document.getElementById("compose-modal").classList.remove("hidden");
+}
+function closeCompose() { document.getElementById("compose-modal").classList.add("hidden"); }
+function sendCompose() {
+  var to = document.getElementById("comp-to").value.trim();
+  var subject = document.getElementById("comp-subject").value.trim();
+  var body = document.getElementById("comp-body").value;
+  if (!to) { alert("Recipient (To) is required"); return; }
+  var m = (selected && selected.type === "message") ? selected.data : null;
+  var payload = { to: to, subject: subject, body: body };
+  if (m && m.source === "gmail" && m.gmail_id) payload.replyToGmailId = m.gmail_id;
+  var btn = document.getElementById("comp-send");
+  if (btn) { btn.textContent = "Sending…"; btn.disabled = true; }
+  fetch(API + "/send-message", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+    .then(function(r){ return r.json(); }).then(function(d){
+      if (btn) { btn.textContent = "Send"; btn.disabled = false; }
+      if (d.ok) { closeCompose(); if (activeContact) loadMessages(); }
+      else alert("Send failed: " + (d.error || "unknown"));
+    }).catch(function(e){ if (btn) { btn.textContent = "Send"; btn.disabled = false; } alert("Send failed: " + e.message); });
 }
 function loadMessages() {
   var el = document.getElementById("messages-list");
@@ -510,6 +725,7 @@ function loadMessages() {
   }
   document.getElementById("msg-title").textContent = "💬 " + activeContact.name;
   el.innerHTML = '<div class="empty">Downloading messages…</div>';
+  messagesCache = {};
   fetch(API + "/messages?contact=" + encodeURIComponent(activeContact.id) + "&limit=50").then(function(r){return r.json();}).then(function(d){
     var msgs = d.messages || [];
     if (!msgs.length) { el.innerHTML = '<div class="empty">No messages found</div>'; return; }
@@ -522,9 +738,18 @@ function renderMessageRow(m) {
   var who = m.email_from || (m.direction === "outgoing" ? "Us" : "Contact");
   var title = m.subject || (isGmail ? "Gmail" : "Message");
   var when = m.date ? fmtTime(m.date) : "";
-  var body = String(m.body || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-  return '<div class="msg-row"><span class="ic">' + (isGmail ? "✉️" : "💬") + '</span><div><div class="who">' + dir + ' ' + esc(who) + '</div><div class="subj">' + esc(title) + '</div>' + (body ? '<div class="sub">' + esc(body.slice(0, 120)) + '</div>' : '') + '</div><div class="meta">' + when + '</div></div>';
+  var body = String(m.body || "").replace(/<[^>]*>/g, " ").replace(/ +/g, " ").trim();
+  var key = "m-" + m.id;
+  messagesCache[key] = m;
+  return '<div class="msg-row" data-key="' + esc(key) + '"><span class="ic">' + (isGmail ? "✉️" : "💬") + '</span><div><div class="who">' + dir + ' ' + esc(who) + '</div><div class="subj">' + esc(title) + '</div>' + (body ? '<div class="sub">' + esc(body.slice(0, 120)) + '</div>' : '') + '</div><div class="meta">' + when + '</div></div>';
 }
+document.getElementById("messages-list").addEventListener("click", function(e) {
+  var row = e.target.closest(".msg-row");
+  if (!row) return;
+  var m = messagesCache[row.getAttribute("data-key")];
+  if (!m) return;
+  rowClick(row.getAttribute("data-key"), "message", m, function() { openMessageFull(m); });
+});
 
 // ── menu + settings ────────────────────────────────────────────
 function toggleMenu() {
