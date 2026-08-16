@@ -61,6 +61,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .contact-row .mini-call{margin-left:auto;width:38px;height:38px;border-radius:50%;border:none;background:#10b981;color:#fff;font-size:16px;cursor:pointer}
 .empty{color:#4b5568;text-align:center;padding:28px 0;font-size:14px}
 .day-head{font-size:11px;font-weight:700;letter-spacing:.5px;color:#64748b;text-transform:uppercase;padding:14px 4px 6px;position:sticky;top:0;background:transparent}
+.contact-row.selected{background:#13203a;border-radius:10px;padding-left:8px;padding-right:8px}
+.msg-row{display:flex;align-items:flex-start;gap:12px;padding:12px 4px;border-bottom:1px solid #1a2238}
+.msg-row .ic{font-size:18px}
+.msg-row .who{font-size:14px;font-weight:600}
+.msg-row .subj{font-size:13px;color:#cbd5e1;margin-top:1px}
+.msg-row .sub{font-size:12px;color:#8b95a9;margin-top:2px}
+.msg-row .meta{margin-left:auto;font-size:12px;color:#8b95a9;flex-shrink:0}
 /* bottom menu */
 .bottom-menu{display:flex;border-top:1px solid #1a2238;background:#0d1322;padding:6px 0 env(safe-area-inset-bottom)}
 .menu-btn{flex:1;background:none;border:none;color:#64748b;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;font-size:10px}
@@ -164,8 +171,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 
     <!-- MESSAGES VIEW -->
     <div class="view hidden" id="view-messages">
-      <h2>💬 Messages</h2>
-      <div id="messages-list"><div class="empty">No messages yet</div></div>
+      <h2 id="msg-title">💬 Messages</h2>
+      <div id="messages-list"><div class="empty">Select a contact to view messages</div></div>
     </div>
   </div>
 
@@ -270,6 +277,7 @@ function switchView(name) {
   if (b) b.classList.add("active");
   if (name === "history") loadHistory();
   if (name === "contacts") loadContacts(document.getElementById("contact-search").value);
+  if (name === "messages") loadMessages();
 }
 
 // ── dialpad input ──────────────────────────────────────────────
@@ -452,15 +460,19 @@ function fmtTime(ts) {
 
 // ── contacts (D1 cache, debounced type-ahead) ─────────────────
 var contactTimer = null;
+var contactsCache = {};
 function loadContacts(q) {
   var el = document.getElementById("contacts-list");
   el.innerHTML = '<div class="empty">Loading…</div>';
   fetch(API + "/contacts/cache?q=" + encodeURIComponent(q) + "&limit=100").then(function(r){return r.json();}).then(function(d){
     var list = d.contacts || [];
+    contactsCache = {};
+    for (var i = 0; i < list.length; i++) contactsCache[list[i].id] = list[i];
     if (!list.length) { el.innerHTML = '<div class="empty">No contacts found</div>'; return; }
     el.innerHTML = list.map(function(c) {
       var num = c.mobile || c.phone || "";
-      return '<div class="contact-row"><div><div class="cname">' + esc(c.name) + (c.is_company ? " 🏢" : "") + '</div>' + (num ? '<div class="sub">' + esc(num) + '</div>' : '') + (c.email ? '<div class="sub">' + esc(c.email) + '</div>' : '') + '</div>' + (num ? '<button class="mini-call" onclick="dialOut(\\'' + esc(num) + '\\')">📞</button>' : '') + '</div>';
+      var sel = (activeContact && activeContact.id === c.id) ? " selected" : "";
+      return '<div class="contact-row' + sel + '" data-id="' + esc(c.id) + '"><div><div class="cname">' + esc(c.name) + (c.is_company ? " 🏢" : "") + '</div>' + (num ? '<div class="sub">' + esc(num) + '</div>' : '') + (c.email ? '<div class="sub">' + esc(c.email) + '</div>' : '') + '</div>' + (num ? '<button class="mini-call" data-num="' + esc(num) + '">📞</button>' : '') + '</div>';
     }).join("");
   }).catch(function(){ el.innerHTML = '<div class="empty">Error</div>'; });
 }
@@ -469,6 +481,50 @@ document.getElementById("contact-search").addEventListener("input", function(e) 
   if (contactTimer) clearTimeout(contactTimer);
   contactTimer = setTimeout(function() { loadContacts(q); }, 250);
 });
+document.getElementById("contacts-list").addEventListener("click", function(e) {
+  var mini = e.target.closest(".mini-call");
+  if (mini) { prepareDial(mini.getAttribute("data-num")); return; }
+  var row = e.target.closest(".contact-row");
+  if (row) { var c = contactsCache[row.getAttribute("data-id")]; if (c) selectContact(c); }
+});
+
+// ── contact selection + messages ───────────────────────────────
+var activeContact = null;
+function selectContact(c) {
+  activeContact = { id: c.id, name: c.name, email: c.email || "", phone: c.phone || c.mobile || "" };
+  var rows = document.querySelectorAll("#contacts-list .contact-row");
+  for (var i = 0; i < rows.length; i++) rows[i].classList.toggle("selected", rows[i].getAttribute("data-id") == c.id);
+  switchView("messages");
+}
+function prepareDial(num) {
+  document.getElementById("dial-input").value = num || "";
+  document.getElementById("dial-suggestions").innerHTML = "";
+  switchView("dial");
+}
+function loadMessages() {
+  var el = document.getElementById("messages-list");
+  if (!activeContact) {
+    document.getElementById("msg-title").textContent = "💬 Messages";
+    el.innerHTML = '<div class="empty">Select a contact to view messages</div>';
+    return;
+  }
+  document.getElementById("msg-title").textContent = "💬 " + activeContact.name;
+  el.innerHTML = '<div class="empty">Downloading messages…</div>';
+  fetch(API + "/messages?contact=" + encodeURIComponent(activeContact.id) + "&limit=50").then(function(r){return r.json();}).then(function(d){
+    var msgs = d.messages || [];
+    if (!msgs.length) { el.innerHTML = '<div class="empty">No messages found</div>'; return; }
+    el.innerHTML = msgs.map(function(m) { return renderMessageRow(m); }).join("");
+  }).catch(function(){ el.innerHTML = '<div class="empty">Error loading messages</div>'; });
+}
+function renderMessageRow(m) {
+  var dir = m.direction === "outgoing" ? "⬆" : "⬇";
+  var isGmail = m.source === "gmail";
+  var who = m.email_from || (m.direction === "outgoing" ? "Us" : "Contact");
+  var title = m.subject || (isGmail ? "Gmail" : "Message");
+  var when = m.date ? fmtTime(m.date) : "";
+  var body = String(m.body || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  return '<div class="msg-row"><span class="ic">' + (isGmail ? "✉️" : "💬") + '</span><div><div class="who">' + dir + ' ' + esc(who) + '</div><div class="subj">' + esc(title) + '</div>' + (body ? '<div class="sub">' + esc(body.slice(0, 120)) + '</div>' : '') + '</div><div class="meta">' + when + '</div></div>';
+}
 
 // ── menu + settings ────────────────────────────────────────────
 function toggleMenu() {

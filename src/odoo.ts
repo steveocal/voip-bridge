@@ -458,3 +458,81 @@ export async function logCompletedCall(env: Env, callId: string, caller: string,
     console.error("logCompletedCall failed:", e);
   }
 }
+
+// ── Contact messages (↔ Odoo mail.message) ────────────────────
+
+export interface Message {
+  id?: number;
+  odoo_id?: number;
+  gmail_id?: string;
+  contact_id?: number;
+  res_model?: string;
+  res_id?: number;
+  subject?: string;
+  body?: string;
+  email_from?: string;
+  author_id?: number;
+  message_type?: string;
+  direction?: string;
+  source?: string;
+  date?: number;
+}
+
+// Our own outbound mail domains — used to infer message direction.
+const OUR_SENDER = /(infraredheaterpanels\.co\.uk|infracool\.co\.uk|ihproducts\.co\.uk|systecgroup\.info)/i;
+
+function directionFor(emailFrom: string): string | undefined {
+  if (!emailFrom) return undefined;
+  return OUR_SENDER.test(emailFrom) ? "outgoing" : "incoming";
+}
+
+/** Search Odoo mail.message for a partner thread (model='res.partner',
+ *  res_id=partnerId), normalize, and write-through cache into D1. */
+export async function searchContactMessages(env: Env, partnerId: number, limit = 50): Promise<Message[]> {
+  const uid = await odooAuth(env);
+  if (!uid) return [];
+  const fields = ["id", "model", "res_id", "subject", "body", "email_from", "author_id", "message_type", "date"];
+  const r = await odooCall(env, uid, "mail.message", "search_read",
+    [["&", ["model", "=", "res.partner"], ["res_id", "=", partnerId]]],
+    { fields, limit, order: "date desc" });
+  const msgs = ((r.parsed ?? []) as unknown as Array<Record<string, unknown>>);
+  const out: Message[] = msgs.map(m => ({
+    odoo_id: m.id as number,
+    contact_id: partnerId,
+    res_model: s(m.model),
+    res_id: typeof m.res_id === "number" ? m.res_id : undefined,
+    subject: s(m.subject),
+    body: s(m.body),
+    email_from: s(m.email_from),
+    author_id: idOrNull(m.author_id) ?? undefined,
+    message_type: s(m.message_type),
+    direction: directionFor(s(m.email_from)),
+    source: "odoo",
+    date: dt(m.date) ?? undefined,
+  }));
+  await upsertMessages(env, out);
+  return out;
+}
+
+/** Upsert messages (Odoo or Gmail) into D1. D1 caps bound params at 100/query,
+ *  so each statement is a single row (≤13 params) — no chunking needed. */
+export async function upsertMessages(env: Env, msgs: Message[]): Promise<void> {
+  if (!msgs.length) return;
+  const statements: D1PreparedStatement[] = [];
+  for (const m of msgs) {
+    if (m.odoo_id != null) {
+      statements.push(env.DB.prepare(
+        `INSERT INTO messages (odoo_id, contact_id, res_model, res_id, subject, body, email_from, author_id, message_type, direction, source, date, updated_at)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,'odoo',?11,?12)
+         ON CONFLICT(odoo_id) DO UPDATE SET subject=excluded.subject, body=excluded.body, email_from=excluded.email_from, message_type=excluded.message_type, direction=excluded.direction, date=excluded.date, updated_at=excluded.updated_at`
+      ).bind(m.odoo_id, m.contact_id ?? null, m.res_model ?? "", m.res_id ?? null, m.subject ?? "", m.body ?? "", m.email_from ?? "", m.author_id ?? null, m.message_type ?? "", m.direction ?? "", m.date ?? null, Date.now()));
+    } else if (m.gmail_id != null) {
+      statements.push(env.DB.prepare(
+        `INSERT INTO messages (gmail_id, contact_id, subject, body, email_from, direction, source, date, updated_at)
+         VALUES (?1,?2,?3,?4,?5,?6,'gmail',?7,?8)
+         ON CONFLICT(gmail_id) DO UPDATE SET subject=excluded.subject, body=excluded.body, email_from=excluded.email_from, direction=excluded.direction, date=excluded.date, updated_at=excluded.updated_at`
+      ).bind(m.gmail_id, m.contact_id ?? null, m.subject ?? "", m.body ?? "", m.email_from ?? "", m.direction ?? "", m.date ?? null, Date.now()));
+    }
+  }
+  if (statements.length) await env.DB.batch(statements);
+}

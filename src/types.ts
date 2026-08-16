@@ -70,4 +70,7 @@ export interface Env {
   ASTERISK_URL: string;
   ASTERISK_USER: string;
   ASTERISK_PASS: string;
+  GOOGLE_CLIENT_ID: string;
+  GOOGLE_CLIENT_SECRET: string;
+  GOOGLE_REFRESH_TOKEN: string;
 }

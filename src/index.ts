@@ -1,5 +1,6 @@
 import type { Env, ExecutionContext, D1PreparedStatement } from "./types";
-import { lookupCaller, logCompletedCall, trackCall, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall } from "./odoo";
+import { lookupCaller, logCompletedCall, trackCall, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages } from "./odoo";
+import { searchGmailMessages } from "./gmail";
 import { ariRequest } from "./asterisk";
 import { serveDashboard } from "./dashboard";
 import type { Contact } from "./odoo";
@@ -158,6 +159,54 @@ async function handleCallHistory(request: Request, env: Env): Promise<Response> 
   return Response.json({ calls: rows.results || [] });
 }
 
+// ── Contact messages (Odoo mail.message + Gmail) ──────────────
+
+async function handleMessages(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const contactId = parseInt(url.searchParams.get("contact") ?? "0");
+  if (!contactId) return Response.json({ error: "missing contact id" }, { status: 400 });
+  const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50") || 50, 100);
+
+  const contact = await env.DB.prepare("SELECT id, name, email FROM contacts WHERE id = ?1")
+    .bind(contactId).first<{ id: number; name: string; email: string }>();
+  if (!contact) return Response.json({ error: "contact not found" }, { status: 404 });
+
+  // Download + cache Odoo messages (best-effort).
+  let odooOk = false;
+  try {
+    await searchContactMessages(env, contactId, limit);
+    odooOk = true;
+  } catch (e) {
+    console.error("Odoo message sync failed:", e);
+  }
+
+  // Download + cache Gmail messages (best-effort).
+  let gmailOk = false;
+  const email = (contact.email || "").trim();
+  if (email) {
+    try {
+      const g = await searchGmailMessages(env, email, limit);
+      await upsertMessages(env, g.map(m => ({ ...m, contact_id: contactId })));
+      gmailOk = true;
+    } catch (e) {
+      console.error("Gmail message sync failed:", e);
+    }
+  }
+
+  // Return merged messages from D1 (cache), newest first.
+  const rows = await env.DB.prepare(
+    `SELECT id, odoo_id, gmail_id, contact_id, subject, body, email_from, author_id, message_type, direction, source, date
+     FROM messages WHERE contact_id = ?1 ORDER BY COALESCE(date, 0) DESC LIMIT ?2`
+  ).bind(contactId, limit * 2).all<Record<string, unknown>>();
+
+  return Response.json({
+    contact: { id: contact.id, name: contact.name, email: contact.email },
+    odooOk,
+    gmailOk,
+    messages: rows.results || [],
+  });
+}
+
 // ── Phase 1: Contacts ──────────────────────────────────────────
 
 async function handleContacts(request: Request, env: Env): Promise<Response> {
@@ -305,6 +354,7 @@ export default {
     else if (request.method === "GET" && url.pathname === "/caller-lookup") response = await handleCallerLookup(request, env);
     else if (request.method === "GET" && url.pathname === "/active-calls") response = await handleActiveCalls(request, env);
     else if (request.method === "GET" && url.pathname === "/call-history") response = await handleCallHistory(request, env);
+    else if (request.method === "GET" && url.pathname === "/messages") response = await handleMessages(request, env);
     else if (request.method === "GET" && url.pathname === "/contacts") response = await handleContacts(request, env);
     else if (request.method === "GET" && url.pathname === "/contacts/cache") response = await handleContactsCache(request, env);
     else if (request.method === "GET" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleContactDetail(env, parseInt(url.pathname.split("/")[2]));

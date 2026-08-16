@@ -61,14 +61,26 @@ CREATE TABLE IF NOT EXISTS settings (
   updated_at INTEGER
 );
 
--- ── Email cache (Phase 2 — placeholder) ───────────────────────
-CREATE TABLE IF NOT EXISTS emails (
-  id TEXT PRIMARY KEY,
-  contact_id INTEGER,
-  direction TEXT,
-  subject TEXT,
-  body TEXT,
-  from_addr TEXT,
-  to_addr TEXT,
-  timestamp INTEGER
+-- ── Messages (↔ Odoo mail.message + Gmail) ──────────────────
+-- Mirrors Odoo mail.message fields; also stores Gmail-thread messages.
+--   source = 'odoo' | 'gmail'; odoo_id / gmail_id are the external keys.
+CREATE TABLE IF NOT EXISTS messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,  -- local D1 row id
+  odoo_id INTEGER,                       -- mail.message.id (set when source='odoo')
+  gmail_id TEXT,                         -- Gmail message id (set when source='gmail')
+  contact_id INTEGER NOT NULL,           -- res.partner.id this thread belongs to
+  res_model TEXT,                        -- mail.message.model
+  res_id INTEGER,                        -- mail.message.res_id
+  subject TEXT,                          -- mail.message.subject
+  body TEXT,                             -- mail.message.body (HTML) / Gmail snippet
+  email_from TEXT,                       -- mail.message.email_from / Gmail From header
+  author_id INTEGER,                     -- mail.message.author_id → res.partner.id
+  message_type TEXT,                     -- 'email'|'comment'|'notification'|'sms'
+  direction TEXT,                        -- 'incoming' | 'outgoing'
+  source TEXT NOT NULL DEFAULT 'odoo',   -- 'odoo' | 'gmail'
+  date INTEGER,                          -- epoch ms
+  updated_at INTEGER
 );
+CREATE INDEX IF NOT EXISTS idx_messages_contact ON messages(contact_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_odoo ON messages(odoo_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_gmail ON messages(gmail_id);
