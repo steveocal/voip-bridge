@@ -60,6 +60,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .hist-row .meta{margin-left:auto;font-size:12px;color:#8b95a9;text-align:right}
 .contact-row .mini-call{margin-left:auto;width:38px;height:38px;border-radius:50%;border:none;background:#10b981;color:#fff;font-size:16px;cursor:pointer}
 .empty{color:#4b5568;text-align:center;padding:28px 0;font-size:14px}
+.day-head{font-size:11px;font-weight:700;letter-spacing:.5px;color:#64748b;text-transform:uppercase;padding:14px 4px 6px;position:sticky;top:0;background:transparent}
 /* bottom menu */
 .bottom-menu{display:flex;border-top:1px solid #1a2238;background:#0d1322;padding:6px 0 env(safe-area-inset-bottom)}
 .menu-btn{flex:1;background:none;border:none;color:#64748b;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;font-size:10px}
@@ -140,6 +141,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
     <!-- HISTORY VIEW -->
     <div class="view hidden" id="view-history">
       <h2>🕐 History</h2>
+      <div class="entry">
+        <input id="history-search" type="text" placeholder="Search calls (name / number)" autocomplete="off" autocapitalize="off">
+      </div>
       <div id="history-list"><div class="empty">Loading…</div></div>
     </div>
 
@@ -382,22 +386,62 @@ function setStatus(msg, isErr) {
 }
 
 // ── history ────────────────────────────────────────────────────
+var historyTimer = null;
 function loadHistory() {
+  var q = document.getElementById("history-search").value.trim();
   var el = document.getElementById("history-list");
   el.innerHTML = '<div class="empty">Loading…</div>';
-  fetch(API + "/call-history?limit=100").then(function(r){return r.json();}).then(function(d){
+  fetch(API + "/call-history?limit=200&q=" + encodeURIComponent(q)).then(function(r){return r.json();}).then(function(d){
     var calls = d.calls || [];
-    if (!calls.length) { el.innerHTML = '<div class="empty">No calls yet</div>'; return; }
-    el.innerHTML = calls.map(function(c) {
-      var icon = (c.state === "missed" || c.state === "rejected" || c.state === "aborted") ? "🔴" : (c.state === "calling" ? "🟡" : "🟢");
-      var who = c.phone_number && c.phone_number !== "unknown" ? c.phone_number : (c.did || "unknown");
-      var when = c.start_date ? fmtTime(c.start_date) : "";
-      var dur = c.duration ? " · " + Math.round(c.duration) + "s" : "";
-      var dialable = /^[+0-9*#]/.test(who);
-      return '<div class="hist-row"' + (dialable ? ' onclick="dialOut(\\'' + who + '\\')"' : '') + '><span class="ic">' + icon + '</span><div><div class="who">' + esc(who) + '</div>' + (c.did ? '<div class="sub">→ ' + esc(c.did) + '</div>' : '') + '</div><div class="meta">' + when + dur + '</div></div>';
-    }).join("");
+    if (!calls.length) { el.innerHTML = '<div class="empty">' + (q ? "No matching calls" : "No calls yet") + '</div>'; return; }
+    el.innerHTML = renderHistory(calls);
   }).catch(function(){ el.innerHTML = '<div class="empty">Error loading history</div>'; });
 }
+function renderHistory(calls) {
+  var html = "", day = "";
+  for (var i = 0; i < calls.length; i++) {
+    var c = calls[i];
+    var dayKey = c.start_date ? fmtDay(c.start_date) : "";
+    if (dayKey && dayKey !== day) { day = dayKey; html += '<div class="day-head">' + day + '</div>'; }
+    html += renderHistoryRow(c);
+  }
+  return html;
+}
+function renderHistoryRow(c) {
+  var dir = c.direction === "outgoing" ? "out" : "in";
+  var missed = c.state === "missed" || c.state === "rejected" || c.state === "aborted";
+  var icon = missed ? "🔴" : (dir === "out" ? "🟦" : "🟢");
+  var arrow = dir === "out" ? "⬆" : "⬇";
+  var name = (c.partner_name || "").trim();
+  var num = (c.phone_number && c.phone_number !== "unknown") ? String(c.phone_number) : (c.did || "unknown");
+  var who = name || num;
+  var sub = name ? num : (c.did && c.did !== num ? "→ " + c.did : "");
+  var dur = (c.duration > 0) ? " · " + fmtDur(c.duration) : "";
+  var when = c.start_date ? fmtTime(c.start_date) : "";
+  var dialable = /^[+0-9*#]/.test(num);
+  return '<div class="hist-row"' + (dialable ? ' data-dial="' + esc(num) + '"' : '') + '><span class="ic">' + icon + '</span><div><div class="who">' + arrow + ' ' + esc(who) + '</div>' + (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div><div class="meta">' + when + dur + '</div></div>';
+}
+function fmtDur(sec) {
+  sec = Math.round(sec || 0);
+  if (sec < 60) return sec + "s";
+  var m = Math.floor(sec / 60), s = sec % 60;
+  return m + ":" + ("0" + s).slice(-2);
+}
+function fmtDay(ts) {
+  var d = new Date(ts), now = new Date();
+  if (d.toDateString() === now.toDateString()) return "Today";
+  var y = new Date(now); y.setDate(now.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return "Yesterday";
+  return d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
+}
+document.getElementById("history-search").addEventListener("input", function(e) {
+  if (historyTimer) clearTimeout(historyTimer);
+  historyTimer = setTimeout(loadHistory, 250);
+});
+document.getElementById("history-list").addEventListener("click", function(e) {
+  var row = e.target.closest(".hist-row");
+  if (row && row.getAttribute("data-dial")) dialOut(row.getAttribute("data-dial"));
+});
 function fmtTime(ts) {
   var d = new Date(ts);
   var now = new Date();

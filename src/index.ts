@@ -29,10 +29,10 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
     trackCall(callId, caller, (partner as any)?.id);
     // Log the call in D1 as soon as it rings (so missed calls are captured too).
     await env.DB.prepare(
-      `INSERT INTO call_log (call_id, phone_number, did, direction, state, start_date)
-       VALUES (?1, ?2, ?3, 'incoming', 'calling', ?4)
-       ON CONFLICT(call_id) DO UPDATE SET phone_number=excluded.phone_number, did=excluded.did`
-    ).bind(callId, caller, did, Date.now()).run();
+      `INSERT INTO call_log (call_id, phone_number, did, direction, state, start_date, partner_id)
+       VALUES (?1, ?2, ?3, 'incoming', 'calling', ?4, ?5)
+       ON CONFLICT(call_id) DO UPDATE SET phone_number=excluded.phone_number, did=excluded.did, partner_id=excluded.partner_id`
+    ).bind(callId, caller, did, Date.now(), (partner as any)?.id ?? null).run();
     return Response.json({ action: "ring", caller, partner: (partner as any)?.name ?? null });
   }
 
@@ -134,14 +134,27 @@ async function handleActiveCalls(_request: Request, env: Env): Promise<Response>
 async function handleCallHistory(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50") || 50, 200);
-  const rows = await env.DB.prepare(
-    `SELECT call_id, phone_number, did, direction, state,
-       COALESCE(start_date, create_date) AS start_date,
-       end_date,
-       CASE WHEN end_date > start_date THEN (end_date - start_date) / 1000 ELSE 0 END AS duration
-     FROM call_log
-     ORDER BY COALESCE(start_date, create_date) DESC LIMIT ?1`
-  ).bind(limit).all<Record<string, unknown>>();
+  const q = (url.searchParams.get("q") ?? "").trim();
+  const select = `SELECT c.call_id, c.phone_number, c.did, c.direction, c.state,
+       COALESCE(c.start_date, c.create_date) AS start_date,
+       c.end_date,
+       CASE WHEN c.end_date > c.start_date THEN (c.end_date - c.start_date) / 1000 ELSE 0 END AS duration,
+       COALESCE(p.name, '') AS partner_name
+     FROM call_log c
+     LEFT JOIN contacts p ON p.id = c.partner_id`;
+  let rows;
+  if (q) {
+    const like = `%${q}%`;
+    rows = await env.DB.prepare(
+      `${select}
+       WHERE c.phone_number LIKE ?1 OR c.did LIKE ?1 OR p.name LIKE ?1
+       ORDER BY COALESCE(c.start_date, c.create_date) DESC LIMIT ?2`
+    ).bind(like, limit).all<Record<string, unknown>>();
+  } else {
+    rows = await env.DB.prepare(
+      `${select} ORDER BY COALESCE(c.start_date, c.create_date) DESC LIMIT ?1`
+    ).bind(limit).all<Record<string, unknown>>();
+  }
   return Response.json({ calls: rows.results || [] });
 }
 
