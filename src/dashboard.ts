@@ -291,13 +291,20 @@ function saveSettings() {
 }
 
 // Load sip.js lazily so the page renders even if the CDN is slow/unreachable.
+// Self-hosted on the Worker (/sip.min.js); falls back to jsdelivr if needed.
 function loadSipJs() {
   return new Promise(function(resolve, reject) {
     if (typeof SIP !== "undefined") { resolve(); return; }
     var s = document.createElement("script");
-    s.src = "https://cdn.jsdelivr.net/npm/sip.js@0.16.0/dist/sip.min.js";
+    s.src = API + "/sip.min.js";
     s.onload = function() { resolve(); };
-    s.onerror = function() { reject(new Error("sip.js CDN failed")); };
+    s.onerror = function() {
+      var s2 = document.createElement("script");
+      s2.src = "https://cdn.jsdelivr.net/npm/sip.js@0.16.0/dist/sip.min.js";
+      s2.onload = function() { resolve(); };
+      s2.onerror = function() { reject(new Error("sip.js CDN failed")); };
+      document.head.appendChild(s2);
+    };
     document.head.appendChild(s);
     setTimeout(function() { if (typeof SIP === "undefined") reject(new Error("sip.js load timeout")); }, 15000);
   });
