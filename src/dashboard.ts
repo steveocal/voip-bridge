@@ -664,8 +664,9 @@ function openMessageFull(m) {
   renderMessageFull(m);
 }
 function fetchMessageFull(m) {
-  fetch(API + "/message?id=" + encodeURIComponent(m.id)).then(function(r){ return r.json(); }).then(function(d){
-    if (d.message) { m.body = d.message.body; m.email_from = d.message.email_from; m.subject = d.message.subject; m._full = true; }
+  var key = (m.id != null) ? ("id=" + encodeURIComponent(m.id)) : ("gmail_id=" + encodeURIComponent(m.gmail_id));
+  fetch(API + "/message?" + key).then(function(r){ return r.json(); }).then(function(d){
+    if (d.message) { m.body = d.message.body; m.email_from = m.email_from || d.message.email_from; m.subject = m.subject || d.message.subject; m._full = true; }
     renderMessageFull(m);
   }).catch(function(){ renderMessageFull(m); });
 }
@@ -726,8 +727,14 @@ function sendCompose() {
 function loadMessages() {
   var el = document.getElementById("messages-list");
   if (!activeContact) {
-    document.getElementById("msg-title").textContent = "💬 Messages";
-    el.innerHTML = '<div class="empty">Select a contact to view messages</div>';
+    document.getElementById("msg-title").textContent = "📥 Recent emails (7 days)";
+    el.innerHTML = '<div class="empty">Downloading recent emails…</div>';
+    messagesCache = {};
+    fetch(API + "/messages/recent?days=7&limit=50").then(function(r){return r.json();}).then(function(d){
+      var msgs = d.messages || [];
+      if (!msgs.length) { el.innerHTML = '<div class="empty">No emails in the last week</div>'; return; }
+      el.innerHTML = msgs.map(function(m) { return renderMessageRow(m); }).join("");
+    }).catch(function(){ el.innerHTML = '<div class="empty">Error loading emails</div>'; });
     return;
   }
   document.getElementById("msg-title").textContent = "💬 " + activeContact.name;
@@ -746,7 +753,7 @@ function renderMessageRow(m) {
   var title = m.subject || (isGmail ? "Gmail" : "Message");
   var when = m.date ? fmtTime(m.date) : "";
   var body = String(m.body || "").replace(/<[^>]*>/g, " ").replace(/ +/g, " ").trim();
-  var key = "m-" + m.id;
+  var key = "m-" + (m.id != null ? m.id : "g" + m.gmail_id);
   messagesCache[key] = m;
   return '<div class="msg-row" data-key="' + esc(key) + '"><span class="ic">' + (isGmail ? "✉️" : "💬") + '</span><div><div class="who">' + dir + ' ' + esc(who) + '</div><div class="subj">' + esc(title) + '</div>' + (body ? '<div class="sub">' + esc(body.slice(0, 120)) + '</div>' : '') + '</div><div class="meta">' + when + '</div></div>';
 }

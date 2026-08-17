@@ -1,9 +1,9 @@
 import type { Env, ExecutionContext, D1PreparedStatement } from "./types";
 import { lookupCaller, logCompletedCall, trackCall, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages } from "./odoo";
-import { searchGmailMessages, getGmailBody, sendGmailMessage } from "./gmail";
+import { searchGmailMessages, searchRecentGmailMessages, getGmailBody, sendGmailMessage } from "./gmail";
 import { ariRequest } from "./asterisk";
 import { serveDashboard } from "./dashboard";
-import type { Contact } from "./odoo";
+import type { Contact, Message } from "./odoo";
 
 // Durable Object class must be exported from the entrypoint module.
 export { CallState } from "./callstate";
@@ -207,12 +207,39 @@ async function handleMessages(request: Request, env: Env): Promise<Response> {
   });
 }
 
+// Recent Gmail messages across all senders (last N days) — for the Messages
+// tab when no contact is selected.
+async function handleRecentMessages(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const days = Math.max(1, Math.min(parseInt(url.searchParams.get("days") ?? "7") || 7, 30));
+  const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50") || 50, 100);
+
+  let gmailOk = false;
+  let messages: Message[] = [];
+  try {
+    messages = await searchRecentGmailMessages(env, days, limit);
+    gmailOk = true;
+  } catch (e) {
+    console.error("Recent Gmail sync failed:", e);
+  }
+  return Response.json({ days, gmailOk, messages });
+}
+
 // ── Message detail + send ─────────────────────────────────────
 
 async function handleMessageDetail(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const id = parseInt(url.searchParams.get("id") ?? "0");
+  const gmailId = url.searchParams.get("gmail_id") ?? "";
+
+  // Live recent Gmail message (no D1 row yet) — return its full decoded body.
+  if (!id && gmailId) {
+    const body = await getGmailBody(env, gmailId);
+    if (!body) return Response.json({ error: "body unavailable" }, { status: 404 });
+    return Response.json({ message: { gmail_id: gmailId, source: "gmail", body } });
+  }
   if (!id) return Response.json({ error: "missing id" }, { status: 400 });
+
   const row = await env.DB.prepare("SELECT * FROM messages WHERE id = ?1")
     .bind(id).first<Record<string, unknown>>();
   if (!row) return Response.json({ error: "not found" }, { status: 404 });
@@ -385,6 +412,7 @@ export default {
     else if (request.method === "GET" && url.pathname === "/active-calls") response = await handleActiveCalls(request, env);
     else if (request.method === "GET" && url.pathname === "/call-history") response = await handleCallHistory(request, env);
     else if (request.method === "GET" && url.pathname === "/messages") response = await handleMessages(request, env);
+    else if (request.method === "GET" && url.pathname === "/messages/recent") response = await handleRecentMessages(request, env);
     else if (request.method === "GET" && url.pathname === "/message") response = await handleMessageDetail(request, env);
     else if (request.method === "POST" && url.pathname === "/send-message") response = await handleSendMessage(request, env);
     else if (request.method === "GET" && url.pathname === "/contacts") response = await handleContacts(request, env);
