@@ -85,6 +85,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .set-field{margin-bottom:16px}
 .set-field label{display:block;font-size:12px;color:#8b95a9;margin-bottom:6px}
 .set-field input[type=text]{width:100%;padding:12px 14px;border:none;border-radius:10px;background:#141b2e;color:#fff;font-size:15px;outline:none}
+.acc-select{width:100%;padding:12px 14px;border:none;border-radius:10px;background:#141b2e;color:#fff;font-size:15px;outline:none;appearance:none;-webkit-appearance:none}
+.acc-actions{display:flex;gap:8px;margin-bottom:16px}
+.acc-actions button{flex:1;padding:11px;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer}
+.acc-save{background:linear-gradient(135deg,#34d399,#10b981);color:#04210f}
+.acc-delete{background:#3f1d1d;color:#fca5a5}
+.acc-new{background:#1f2a44;color:#e8ecf4}
 .switch-row{display:flex;align-items:center;justify-content:space-between;padding:4px 0;margin-bottom:16px}
 .switch-row span{font-size:15px}
 .switch{position:relative;width:48px;height:28px;flex-shrink:0}
@@ -137,8 +143,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
   <header class="topbar">
     <div class="avatar">👤</div>
     <div class="identity">
-      <div class="user-name">Ext 201</div>
-      <div class="caller-id">Caller ID: +44 7898 117226</div>
+      <div class="user-name" id="acc-name-display">Ext 201</div>
+      <div class="caller-id" id="acc-caller-display">Caller ID: +44 7898 117226</div>
     </div>
     <div class="reg-status" id="phone-status">Loading…</div>
     <button class="menu-icon" onclick="toggleMenu()" aria-label="Menu">☰</button>
@@ -228,16 +234,60 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 <div class="modal hidden" id="settings-modal">
   <div class="modal-card">
     <div class="modal-head"><span>⚙️ Settings</span><button onclick="closeSettings()">✕</button></div>
+
     <div class="set-field">
-      <label>Connection URL</label>
-      <input id="set-server" type="text" placeholder="wss://host/ws" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <label>SIP Account</label>
+      <select id="set-account" class="acc-select" onchange="onAccountSelect()"></select>
     </div>
+
+    <div id="account-editor" class="hidden">
+      <div class="set-field">
+        <label>Name</label>
+        <input id="acc-name" type="text" placeholder="Asterisk (WebPhone 201)" autocomplete="off">
+      </div>
+      <div class="set-field">
+        <label>Username</label>
+        <input id="acc-username" type="text" placeholder="201" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </div>
+      <div class="set-field">
+        <label>Password</label>
+        <input id="acc-password" type="text" placeholder="webphone201" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </div>
+      <div class="set-field">
+        <label>Proxy / Server</label>
+        <input id="acc-server" type="text" placeholder="wss://host/ws" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </div>
+      <div class="set-field">
+        <label>Transport</label>
+        <select id="acc-transport" class="acc-select">
+          <option value="wss">WSS (secure WebSocket)</option>
+          <option value="ws">WS (WebSocket)</option>
+          <option value="udp">UDP</option>
+          <option value="tcp">TCP</option>
+          <option value="tls">TLS</option>
+        </select>
+      </div>
+      <div class="set-field">
+        <label>Domain (SIP URI host)</label>
+        <input id="acc-domain" type="text" placeholder="64.176.181.195" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </div>
+      <div class="set-field">
+        <label>Caller ID</label>
+        <input id="acc-callerid" type="text" placeholder="+44 7898 117226" autocomplete="off">
+      </div>
+      <div class="acc-actions">
+        <button class="acc-save" onclick="saveAccount()">💾 Save account</button>
+        <button class="acc-delete" onclick="deleteAccount()">🗑 Delete</button>
+        <button class="acc-new" onclick="newAccount()">＋ New</button>
+      </div>
+    </div>
+
     <div class="switch-row">
       <span>Dev Mode</span>
       <label class="switch"><input type="checkbox" id="set-dev"><span class="track"></span></label>
     </div>
-    <button class="save-btn" onclick="saveAndApply()">Save</button>
-    <div class="dev-hint">Dev Mode skips the server connection.</div>
+    <button class="save-btn" onclick="applyAndReconnect()">Save &amp; Reconnect</button>
+    <div class="dev-hint">Dev Mode skips the server connection. Browser softphones only support WSS/WS — Twilio SIP Domains don't accept WebSocket, so a direct-Twilio account won't register here (use Linphone for that).</div>
   </div>
 </div>
 
@@ -267,25 +317,57 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 var API = "https://voip-bridge.wandering-mode-c597.workers.dev";
 var DEFAULT_WS = "wss://64.176.181.195.nip.io/ws";
 var settings = loadSettings();
+var accounts = loadAccounts();
+var activeAccountId = localStorage.getItem("vb_activeAccount") || "";
 
-function loadSettings() {
-  try {
-    return {
-      devMode: localStorage.getItem("vb_devMode") === "1",
-      serverUrl: localStorage.getItem("vb_serverUrl") || DEFAULT_WS
-    };
-  } catch (e) { return { devMode: false, serverUrl: DEFAULT_WS }; }
+function defaultAccounts() {
+  return [
+    { id: "asterisk", name: "Asterisk (WebPhone 201)", username: "201", password: "webphone201", server: DEFAULT_WS, transport: "wss", domain: "64.176.181.195", callerId: "+44 7898 117226" }
+  ];
 }
-function saveSettings() {
+function loadAccounts() {
   try {
-    localStorage.setItem("vb_devMode", settings.devMode ? "1" : "0");
-    localStorage.setItem("vb_serverUrl", settings.serverUrl);
+    var raw = localStorage.getItem("vb_accounts");
+    if (raw) { var a = JSON.parse(raw); if (Array.isArray(a) && a.length) return a; }
+  } catch (e) {}
+  return defaultAccounts();
+}
+function activeAccount() {
+  if (activeAccountId) {
+    for (var i = 0; i < accounts.length; i++) if (accounts[i].id === activeAccountId) return accounts[i];
+  }
+  return accounts[0] || null;
+}
+function persistAccounts() {
+  try {
+    localStorage.setItem("vb_accounts", JSON.stringify(accounts));
+    localStorage.setItem("vb_activeAccount", activeAccountId);
   } catch (e) {}
   try {
     fetch(API + "/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ serverUrl: settings.serverUrl, devMode: settings.devMode ? "1" : "0" })
+      body: JSON.stringify({ accounts: JSON.stringify(accounts), activeAccount: activeAccountId })
+    });
+  } catch (e) {}
+}
+
+function loadSettings() {
+  try {
+    return {
+      devMode: localStorage.getItem("vb_devMode") === "1"
+    };
+  } catch (e) { return { devMode: false }; }
+}
+function saveSettings() {
+  try {
+    localStorage.setItem("vb_devMode", settings.devMode ? "1" : "0");
+  } catch (e) {}
+  try {
+    fetch(API + "/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ devMode: settings.devMode ? "1" : "0" })
     });
   } catch (e) {}
 }
@@ -310,11 +392,7 @@ function loadSipJs() {
   });
 }
 
-var SIP_CFG = {
-  uri: "sip:201@64.176.181.195",
-  password: "webphone201",
-  callerId: "+44 7898 117226"
-};
+// ── softphone runtime state ────────────────────────────────────
 
 var sipUA, sipSession, currentCall, heldSession, muted = false, onHold = false;
 var regTimer = null, REG_TIMEOUT_MS = 8000;
@@ -416,7 +494,9 @@ function dialOut(num) {
   num = String(num).replace(/[^+0-9*#]/g, "");
   if (num.startsWith("0")) num = "+44" + num.slice(1);
   if (!sipUA) { setStatus("❌ Not registered", true); return; }
-  var target = SIP.UserAgent.makeURI("sip:" + num + "@64.176.181.195");
+  var acc = activeAccount();
+  var domain = (acc && acc.domain) || "64.176.181.195";
+  var target = SIP.UserAgent.makeURI("sip:" + num + "@" + domain);
   var inviter = new SIP.Inviter(sipUA, target, { sessionDescriptionHandlerOptions: { constraints: { audio: true, video: false } } });
   sipSession = inviter;
   currentCall = { id: inviter.request.callId, dir: "out", remote: num, state: "calling" };
@@ -771,12 +851,104 @@ function toggleMenu() {
 }
 function openSettings() {
   document.getElementById("menu-drawer").classList.add("hidden");
-  document.getElementById("set-server").value = settings.serverUrl;
   document.getElementById("set-dev").checked = settings.devMode;
+  renderAccountSelect();
   document.getElementById("settings-modal").classList.remove("hidden");
 }
 function closeSettings() {
   document.getElementById("settings-modal").classList.add("hidden");
+}
+
+// ── SIP account management ─────────────────────────────────────
+var editingAccountId = null;
+function renderAccountSelect() {
+  var sel = document.getElementById("set-account");
+  var active = activeAccount();
+  editingAccountId = active ? active.id : null;
+  var html = "";
+  for (var i = 0; i < accounts.length; i++) {
+    var a = accounts[i];
+    html += '<option value="' + esc(a.id) + '"' + (activeAccountId === a.id ? " selected" : "") + '>' + esc(a.name) + ' — ' + esc(a.username) + '@' + esc(a.domain) + '</option>';
+  }
+  html += '<option value="__new">＋ New account…</option>';
+  sel.innerHTML = html;
+  if (active) loadAccountIntoForm(active);
+  document.getElementById("account-editor").classList.remove("hidden");
+}
+function loadAccountIntoForm(a) {
+  document.getElementById("acc-name").value = a.name || "";
+  document.getElementById("acc-username").value = a.username || "";
+  document.getElementById("acc-password").value = a.password || "";
+  document.getElementById("acc-server").value = a.server || "";
+  document.getElementById("acc-transport").value = a.transport || "wss";
+  document.getElementById("acc-domain").value = a.domain || "";
+  document.getElementById("acc-callerid").value = a.callerId || "";
+}
+function onAccountSelect() {
+  var id = document.getElementById("set-account").value;
+  if (id === "__new") { newAccount(); return; }
+  activeAccountId = id;
+  var a = activeAccount();
+  editingAccountId = id;
+  if (a) loadAccountIntoForm(a);
+}
+function newAccount() {
+  activeAccountId = "";
+  editingAccountId = "__new";
+  var a = { id: "", name: "New account", username: "", password: "", server: DEFAULT_WS, transport: "wss", domain: "", callerId: "" };
+  loadAccountIntoForm(a);
+  var sel = document.getElementById("set-account");
+  sel.value = "__new";
+}
+function saveAccount() {
+  var a = {
+    id: editingAccountId === "__new" ? "acc-" + Date.now() : editingAccountId,
+    name: document.getElementById("acc-name").value.trim() || "Account",
+    username: document.getElementById("acc-username").value.trim(),
+    password: document.getElementById("acc-password").value,
+    server: document.getElementById("acc-server").value.trim() || DEFAULT_WS,
+    transport: document.getElementById("acc-transport").value,
+    domain: document.getElementById("acc-domain").value.trim() || "64.176.181.195",
+    callerId: document.getElementById("acc-callerid").value.trim()
+  };
+  if (!a.username) { alert("Username is required"); return; }
+  var found = -1;
+  for (var i = 0; i < accounts.length; i++) if (accounts[i].id === a.id) { found = i; break; }
+  if (found >= 0) accounts[found] = a; else accounts.push(a);
+  activeAccountId = a.id;
+  editingAccountId = a.id;
+  persistAccounts();
+  renderAccountSelect();
+  updateAccountHeader();
+  setStatus("💾 Saved — reconnect to apply", false);
+}
+function deleteAccount() {
+  if (accounts.length <= 1) { alert("Need at least one account"); return; }
+  var id = editingAccountId === "__new" ? null : editingAccountId;
+  if (!id) return;
+  var next = [];
+  for (var i = 0; i < accounts.length; i++) if (accounts[i].id !== id) next.push(accounts[i]);
+  accounts = next;
+  if (activeAccountId === id) activeAccountId = accounts[0].id;
+  persistAccounts();
+  renderAccountSelect();
+  updateAccountHeader();
+}
+function updateAccountHeader() {
+  var a = activeAccount();
+  if (!a) return;
+  document.getElementById("acc-name-display").textContent = a.name;
+  document.getElementById("acc-caller-display").textContent = "Caller ID: " + (a.callerId || "—");
+}
+function applyAndReconnect() {
+  // persist any pending form edit before reconnecting
+  if (editingAccountId) saveAccount();
+  settings.devMode = document.getElementById("set-dev").checked;
+  saveSettings();
+  closeSettings();
+  teardownSoftphone();
+  if (settings.devMode) { setStatus("🛠 Dev mode", false); }
+  else { initSoftphone(); }
 }
 function teardownSoftphone() {
   clearTimeout(regTimer);
@@ -784,15 +956,6 @@ function teardownSoftphone() {
   try { if (sipUA) sipUA.stop(); } catch (e) {}
   sipUA = null; sipSession = null; currentCall = null;
   renderCallUI();
-}
-function saveAndApply() {
-  settings.serverUrl = (document.getElementById("set-server").value || "").trim() || DEFAULT_WS;
-  settings.devMode = document.getElementById("set-dev").checked;
-  saveSettings();
-  closeSettings();
-  teardownSoftphone();
-  if (settings.devMode) { setStatus("🛠 Dev mode", false); }
-  else { initSoftphone(); }
 }
 document.addEventListener("click", function(e) {
   var d = document.getElementById("menu-drawer");
@@ -805,13 +968,16 @@ document.addEventListener("click", function(e) {
 function initSoftphone() {
   var el = document.getElementById("phone-status");
   if (typeof SIP === "undefined") { setStatus("❌ sip.js missing", true); return; }
+  var acc = activeAccount();
+  if (!acc) { setStatus("❌ No SIP account configured", true); return; }
+  updateAccountHeader();
   setStatus("Connecting…", false);
   try {
     sipUA = new SIP.UserAgent({
-      uri: SIP.UserAgent.makeURI(SIP_CFG.uri),
-      transportOptions: { server: settings.serverUrl },
-      authorizationUsername: "201",
-      authorizationPassword: SIP_CFG.password,
+      uri: SIP.UserAgent.makeURI("sip:" + acc.username + "@" + (acc.domain || "64.176.181.195")),
+      transportOptions: { server: acc.server || DEFAULT_WS },
+      authorizationUsername: acc.username,
+      authorizationPassword: acc.password,
       sessionDescriptionHandlerFactoryOptions: { constraints: { audio: true, video: false } }
     });
   } catch(e) { setStatus("❌ Init: " + e.message, true); return; }
@@ -861,6 +1027,7 @@ function initSoftphone() {
 
 // ── boot ───────────────────────────────────────────────────────
 function applyBoot() {
+  updateAccountHeader();
   if (settings.devMode) { setStatus("🛠 Dev mode", false); return; }
   loadSipJs().then(initSoftphone).catch(function(e) { setStatus("❌ " + e.message, true); });
 }
@@ -869,7 +1036,13 @@ function boot() {
   fetch(API + "/settings").then(function(r){return r.json();}).then(function(d){
     var s = d.settings || {};
     if (s.devMode === "1") settings.devMode = true;
-    if (s.serverUrl) settings.serverUrl = s.serverUrl;
+    if (s.accounts) {
+      try {
+        var remote = JSON.parse(s.accounts);
+        if (Array.isArray(remote) && remote.length) accounts = remote;
+      } catch (e) {}
+    }
+    if (s.activeAccount) activeAccountId = s.activeAccount;
     applyBoot();
   }).catch(applyBoot);
 }
