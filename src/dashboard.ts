@@ -505,6 +505,7 @@ function dialOut(num) {
     if (state === SIP.SessionState.Established) { currentCall.state = "active"; renderCallUI(); }
     if (state === SIP.SessionState.Terminated) resetCall();
   });
+  attachRemoteAudio(inviter);
   inviter.invite();
 }
 function hangup() { if (sipSession) { sipSession.dispose(); } resetCall(); }
@@ -965,6 +966,35 @@ document.addEventListener("click", function(e) {
 });
 
 // ── softphone init ─────────────────────────────────────────────
+// Wire the remote audio track to an <audio> element so we can actually hear
+// the other party. sip.js does NOT auto-play remote media — both the inbound
+// (Invitation) and outbound (Inviter) paths must do this, or calls are one-way
+// (you hear nothing on the outbound leg). Works for both, with a retry loop
+// because the peer connection is created asynchronously during invite/answer.
+function attachRemoteAudio(session) {
+  var tries = 0;
+  function wire() {
+    var pc = null;
+    try { pc = session.sessionDescriptionHandler && session.sessionDescriptionHandler.peerConnection; } catch (e) {}
+    if (pc && pc.ontrack !== undefined) {
+      pc.ontrack = function(evt) {
+        if (evt.track && evt.track.kind === "audio") {
+          var stream = evt.streams && evt.streams[0];
+          if (stream) {
+            var a = document.createElement("audio");
+            a.autoplay = true; a.srcObject = stream;
+            a.play().catch(function(){});
+            document.body.appendChild(a);
+          }
+        }
+      };
+      return;
+    }
+    if (++tries < 50) setTimeout(wire, 100);
+  }
+  wire();
+}
+
 function initSoftphone() {
   var el = document.getElementById("phone-status");
   if (typeof SIP === "undefined") { setStatus("❌ sip.js missing", true); return; }
@@ -998,16 +1028,7 @@ function initSoftphone() {
         if (state === SIP.SessionState.Established) { currentCall.state = "active"; renderCallUI(); }
         if (state === SIP.SessionState.Terminated) resetCall();
       });
-      if (inv.sessionDescriptionHandler && inv.sessionDescriptionHandler.peerConnection) {
-        inv.sessionDescriptionHandler.peerConnection.ontrack = function(evt) {
-          if (evt.track.kind === "audio") {
-            var a = document.createElement("audio");
-            a.autoplay = true; a.srcObject = evt.streams[0];
-            a.play().catch(function(){});
-            document.body.appendChild(a);
-          }
-        };
-      }
+      attachRemoteAudio(inv);
       inv.accept({ sessionDescriptionHandlerOptions: { constraints: { audio: true, video: false } } });
       var ac = new (window.AudioContext || window.webkitAudioContext)();
       ac.resume().catch(function(){});
