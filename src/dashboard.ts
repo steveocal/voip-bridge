@@ -505,7 +505,7 @@ function dialOut(num) {
     if (state === SIP.SessionState.Established) { currentCall.state = "active"; renderCallUI(); }
     if (state === SIP.SessionState.Terminated) resetCall();
   });
-  inviter.send();
+  inviter.invite();
 }
 function hangup() { if (sipSession) { sipSession.dispose(); } resetCall(); }
 function resetCall() {
