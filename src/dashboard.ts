@@ -490,9 +490,10 @@ function initCallNotesEditor() {
     target: document.getElementById("call-notes"),
     menubar: false,
     statusbar: false,
-    plugins: "lists link autolink",
-    toolbar: "bold italic | bullist numlist | link | removeformat",
-    height: 130,
+    plugins: "lists link table code fullscreen autolink",
+    toolbar: "undo redo | blocks | bold italic underline | forecolor backcolor | bullist numlist | link table | blockquote | removeformat | code fullscreen",
+    height: 180,
+    branding: false,
     skin: "oxide-dark",
     content_css: "dark"
   });
@@ -506,9 +507,10 @@ function initComposeEditor() {
     target: el,
     menubar: false,
     statusbar: false,
-    plugins: "lists link autolink code",
-    toolbar: "undo redo | bold italic underline strikethrough | bullist numlist | link blockquote | removeformat | code",
-    height: 260,
+    plugins: "lists link table code fullscreen autolink",
+    toolbar: "undo redo | blocks | bold italic underline strikethrough | forecolor backcolor | bullist numlist | link table | blockquote | removeformat | code fullscreen",
+    height: 320,
+    branding: false,
     skin: "oxide-dark",
     content_css: "dark"
   });
