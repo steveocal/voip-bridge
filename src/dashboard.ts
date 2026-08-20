@@ -1364,5 +1364,5 @@ document.addEventListener("DOMContentLoaded", boot);
 </script>
 </body>
 </html>`;
-  return new Response(html, { headers: { "Content-Type": "text/html;charset=utf-8" } });
+  return new Response(html, { headers: { "Content-Type": "text/html;charset=utf-8", "Cache-Control": "no-store, no-cache, must-revalidate" } });
 }

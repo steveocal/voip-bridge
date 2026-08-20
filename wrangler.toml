@@ -1,5 +1,6 @@
 #:schema node_modules/wrangler/config-schema.json
 name = "voip-bridge"
+account_id = "59045fe3aa5350d597a6f0671225e3ad"
 main = "src/index.ts"
 compatibility_date = "2025-08-08"
 workers_dev = true
