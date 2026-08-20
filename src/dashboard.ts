@@ -161,6 +161,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .qt-row .txt{flex:1;color:#ececec}
 /* settings textarea */
 .set-field textarea{width:100%;padding:12px 14px;border:none;border-radius:10px;background:#1a1a1a;color:#fff;font-size:14px;outline:none;resize:none;font-family:inherit;line-height:1.5;min-height:110px}
+/* TinyMCE dark editors */
+.tox-tinymce{border-radius:10px}
+.compose-field .tox-tinymce{border:0}
+.notes-wrap .tox-tinymce{border-color:#2c2c2c}
 </style>
 </head>
 <body>
@@ -459,6 +463,62 @@ function loadSipJs() {
   });
 }
 
+// ── TinyMCE rich text (call notes + email compose) ─────────────
+// Self-hosted on the Worker (/tinymce); falls back to jsdelivr.
+var tinyMceLoadPromise = null;
+function loadTinyMce() {
+  if (typeof tinymce !== "undefined") return Promise.resolve();
+  if (!tinyMceLoadPromise) {
+    tinyMceLoadPromise = new Promise(function(resolve, reject) {
+      var s = document.createElement("script");
+      s.src = API + "/tinymce/tinymce.min.js";
+      s.onload = function() { resolve(); };
+      s.onerror = function() {
+        var s2 = document.createElement("script");
+        s2.src = "https://cdn.jsdelivr.net/npm/tinymce@8.8.2/tinymce.min.js";
+        s2.onload = function() { resolve(); };
+        s2.onerror = function() { reject(new Error("tinymce load failed")); };
+        document.head.appendChild(s2);
+      };
+      document.head.appendChild(s);
+    });
+  }
+  return tinyMceLoadPromise;
+}
+
+var tinyReady = { "call-notes": false, "comp-body": false };
+
+function initCallNotesEditor() {
+  if (tinyReady["call-notes"]) return;
+  tinyReady["call-notes"] = true;
+  tinymce.init({
+    target: document.getElementById("call-notes"),
+    menubar: false,
+    statusbar: false,
+    plugins: "lists link autolink",
+    toolbar: "bold italic | bullist numlist | link | removeformat",
+    height: 130,
+    skin: "oxide-dark",
+    content_css: "dark"
+  });
+}
+
+function initComposeEditor() {
+  var el = document.getElementById("comp-body");
+  if (tinyReady["comp-body"]) { tinymce.get("comp-body").setContent(el.value); return; }
+  tinyReady["comp-body"] = true;
+  tinymce.init({
+    target: el,
+    menubar: false,
+    statusbar: false,
+    plugins: "lists link autolink code",
+    toolbar: "undo redo | bold italic underline strikethrough | bullist numlist | link blockquote | removeformat | code",
+    height: 260,
+    skin: "oxide-dark",
+    content_css: "dark"
+  });
+}
+
 // ── softphone runtime state ────────────────────────────────────
 
 var sipUA, sipSession, currentCall, heldSession, muted = false, onHold = false;
@@ -617,14 +677,21 @@ document.getElementById("qt-list").addEventListener("click", function(e) {
 
 // ── call notes ─────────────────────────────────────────────────
 function addNoteLine(text) {
-  var ta = document.getElementById("call-notes");
-  var cur = ta.value;
-  ta.value = cur ? (cur + String.fromCharCode(10) + text) : text;
-  ta.scrollTop = ta.scrollHeight;
+  var ed = (typeof tinymce !== "undefined") ? tinymce.get("call-notes") : null;
+  if (ed) {
+    var cur = ed.getContent();
+    ed.setContent(cur ? (cur + "<br>" + esc(text)) : esc(text));
+  } else {
+    var ta = document.getElementById("call-notes");
+    var cur = ta.value;
+    ta.value = cur ? (cur + String.fromCharCode(10) + text) : text;
+    ta.scrollTop = ta.scrollHeight;
+  }
 }
 function showNotes(show) {
   document.getElementById("notes-wrap").classList.toggle("hidden", !show);
-  if (!show) closeQuickText();
+  if (!show) { closeQuickText(); return; }
+  if (!tinyReady["call-notes"]) loadTinyMce().then(initCallNotesEditor).catch(function() {});
 }
 
 // Keyboard: digits/* send DTMF during a call; # opens quick text.
@@ -1007,12 +1074,13 @@ function openCompose(to, subject, body) {
   document.getElementById("comp-body").value = body || "";
   document.getElementById("compose-title").textContent = "✉️ " + (subject && subject.indexOf("Re:") === 0 ? "Reply" : "New Message");
   document.getElementById("compose-modal").classList.remove("hidden");
+  loadTinyMce().then(initComposeEditor).catch(function() {});
 }
 function closeCompose() { document.getElementById("compose-modal").classList.add("hidden"); }
 function sendCompose() {
   var to = document.getElementById("comp-to").value.trim();
   var subject = document.getElementById("comp-subject").value.trim();
-  var body = document.getElementById("comp-body").value;
+  var body = (typeof tinymce !== "undefined" && tinymce.get("comp-body")) ? tinymce.get("comp-body").getContent() : document.getElementById("comp-body").value;
   if (!to) { alert("Recipient (To) is required"); return; }
   var m = (selected && selected.type === "message") ? selected.data : null;
   var payload = { to: to, subject: subject, body: body };
