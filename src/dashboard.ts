@@ -464,22 +464,17 @@ function loadSipJs() {
 }
 
 // ── TinyMCE rich text (call notes + email compose) ─────────────
-// Self-hosted on the Worker (/tinymce); falls back to jsdelivr.
+// Open-source (GPL) build from jsDelivr — no API key, no domain nag.
+// Loaded lazily on first use.
 var tinyMceLoadPromise = null;
 function loadTinyMce() {
   if (typeof tinymce !== "undefined") return Promise.resolve();
   if (!tinyMceLoadPromise) {
     tinyMceLoadPromise = new Promise(function(resolve, reject) {
       var s = document.createElement("script");
-      s.src = API + "/tinymce/tinymce.min.js";
+      s.src = "https://cdn.jsdelivr.net/npm/tinymce@6/tinymce.min.js";
       s.onload = function() { resolve(); };
-      s.onerror = function() {
-        var s2 = document.createElement("script");
-        s2.src = "https://cdn.jsdelivr.net/npm/tinymce@8.8.2/tinymce.min.js";
-        s2.onload = function() { resolve(); };
-        s2.onerror = function() { reject(new Error("tinymce load failed")); };
-        document.head.appendChild(s2);
-      };
+      s.onerror = function() { reject(new Error("tinymce load failed")); };
       document.head.appendChild(s);
     });
   }
@@ -499,8 +494,7 @@ function initCallNotesEditor() {
     toolbar: "bold italic | bullist numlist | link | removeformat",
     height: 130,
     skin: "oxide-dark",
-    content_css: "dark",
-    license_key: "gpl"
+    content_css: "dark"
   });
 }
 
@@ -516,8 +510,7 @@ function initComposeEditor() {
     toolbar: "undo redo | bold italic underline strikethrough | bullist numlist | link blockquote | removeformat | code",
     height: 260,
     skin: "oxide-dark",
-    content_css: "dark",
-    license_key: "gpl"
+    content_css: "dark"
   });
 }
 
