@@ -499,7 +499,8 @@ function initCallNotesEditor() {
     toolbar: "bold italic | bullist numlist | link | removeformat",
     height: 130,
     skin: "oxide-dark",
-    content_css: "dark"
+    content_css: "dark",
+    license_key: "gpl"
   });
 }
 
@@ -515,7 +516,8 @@ function initComposeEditor() {
     toolbar: "undo redo | bold italic underline strikethrough | bullist numlist | link blockquote | removeformat | code",
     height: 260,
     skin: "oxide-dark",
-    content_css: "dark"
+    content_css: "dark",
+    license_key: "gpl"
   });
 }
 
