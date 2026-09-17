@@ -45,7 +45,10 @@ CREATE TABLE IF NOT EXISTS call_log (
   create_date INTEGER,                   -- voip.call.create_date (epoch ms)
   create_uid INTEGER,                    -- voip.call.create_uid → res.users.id
   write_date INTEGER,                    -- voip.call.write_date (epoch ms)
-  write_uid INTEGER                      -- voip.call.write_uid → res.users.id
+  write_uid INTEGER,                     -- voip.call.write_uid → res.users.id
+  notes_html TEXT,                       -- local-only: combined call-notes editor + jot sketch (HTML)
+  jot_svg TEXT,                          -- local-only: jot sketch, rendered SVG (display)
+  jot_json TEXT                          -- local-only: jot sketch, Excalidraw scene (elements+appState, re-editable)
 );
 CREATE INDEX IF NOT EXISTS idx_call_log_phone ON call_log(phone_number);
 CREATE INDEX IF NOT EXISTS idx_call_log_start ON call_log(start_date);

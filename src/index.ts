@@ -17,6 +17,10 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
   const callId = params.get("callId") ?? crypto.randomUUID();
   const caller = params.get("caller") ?? "unknown";
   const did = params.get("did") ?? "";
+  // Server-side (Asterisk AGI) hits never pass direction — those are always
+  // inbound DID rings, so default to 'incoming'. The browser softphone
+  // passes 'outgoing' for calls it originates itself.
+  const direction = params.get("direction") === "outgoing" ? "outgoing" : "incoming";
 
   const doId = env.CALL_STATE.idFromName("global");
   const stub = env.CALL_STATE.get(doId);
@@ -31,9 +35,9 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
     // Log the call in D1 as soon as it rings (so missed calls are captured too).
     await env.DB.prepare(
       `INSERT INTO call_log (call_id, phone_number, did, direction, state, start_date, partner_id)
-       VALUES (?1, ?2, ?3, 'incoming', 'calling', ?4, ?5)
-       ON CONFLICT(call_id) DO UPDATE SET phone_number=excluded.phone_number, did=excluded.did, partner_id=excluded.partner_id`
-    ).bind(callId, caller, did, Date.now(), (partner as any)?.id ?? null).run();
+       VALUES (?1, ?2, ?3, ?4, 'calling', ?5, ?6)
+       ON CONFLICT(call_id) DO UPDATE SET phone_number=excluded.phone_number, did=excluded.did, direction=excluded.direction, partner_id=excluded.partner_id`
+    ).bind(callId, caller, did, direction, Date.now(), (partner as any)?.id ?? null).run();
     return Response.json({ action: "ring", caller, partner: (partner as any)?.name ?? null });
   }
 
@@ -48,7 +52,7 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
 
   if (event === "hangup") {
     const duration = parseInt(params.get("duration") ?? "0");
-    const state = duration > 0 ? "terminated" : "missed";
+    const state = duration > 0 ? "terminated" : (direction === "outgoing" ? "aborted" : "missed");
     await stub.fetch(new Request("https://do/update", {
       method: "POST",
       body: JSON.stringify({ callId, status: "hungup", endTime: Date.now() }),
@@ -140,7 +144,8 @@ async function handleCallHistory(request: Request, env: Env): Promise<Response> 
        COALESCE(c.start_date, c.create_date) AS start_date,
        c.end_date,
        CASE WHEN c.end_date > c.start_date THEN (c.end_date - c.start_date) / 1000 ELSE 0 END AS duration,
-       COALESCE(p.name, '') AS partner_name
+       COALESCE(p.name, '') AS partner_name,
+       CASE WHEN COALESCE(c.notes_html, '') != '' THEN 1 ELSE 0 END AS has_notes
      FROM call_log c
      LEFT JOIN contacts p ON p.id = c.partner_id`;
   let rows;
@@ -157,6 +162,33 @@ async function handleCallHistory(request: Request, env: Env): Promise<Response> 
     ).bind(limit).all<Record<string, unknown>>();
   }
   return Response.json({ calls: rows.results || [] });
+}
+
+// Combined call-notes editor + jot sketch (HTML / SVG / Excalidraw JSON),
+// keyed by call_id. Saved on demand from the dashboard, and loaded when a
+// call-history item is reopened so the notes + sketch can be edited further.
+
+async function handleGetCallNotes(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const callId = url.searchParams.get("call_id") ?? "";
+  if (!callId) return Response.json({ error: "missing call_id" }, { status: 400 });
+  const row = await env.DB.prepare(
+    "SELECT call_id, notes_html, jot_svg, jot_json FROM call_log WHERE call_id = ?1"
+  ).bind(callId).first<Record<string, unknown>>();
+  if (!row) return Response.json({ error: "not found" }, { status: 404 });
+  return Response.json({ notes: row });
+}
+
+async function handleSaveCallNotes(request: Request, env: Env): Promise<Response> {
+  let body: { call_id?: string; notes_html?: string; jot_svg?: string; jot_json?: string };
+  try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
+  const callId = (body.call_id ?? "").trim();
+  if (!callId) return Response.json({ error: "missing call_id" }, { status: 400 });
+  const result = await env.DB.prepare(
+    `UPDATE call_log SET notes_html=?1, jot_svg=?2, jot_json=?3, write_date=?4 WHERE call_id=?5`
+  ).bind(body.notes_html ?? "", body.jot_svg ?? "", body.jot_json ?? "", Date.now(), callId).run();
+  if (!result.meta.changes) return Response.json({ error: "call not found" }, { status: 404 });
+  return Response.json({ ok: true });
 }
 
 // ── Contact messages (Odoo mail.message + Gmail) ──────────────
@@ -420,6 +452,8 @@ export default {
     else if (request.method === "GET" && url.pathname === "/caller-lookup") response = await handleCallerLookup(request, env);
     else if (request.method === "GET" && url.pathname === "/active-calls") response = await handleActiveCalls(request, env);
     else if (request.method === "GET" && url.pathname === "/call-history") response = await handleCallHistory(request, env);
+    else if (request.method === "GET" && url.pathname === "/call-notes") response = await handleGetCallNotes(request, env);
+    else if (request.method === "POST" && url.pathname === "/call-notes") response = await handleSaveCallNotes(request, env);
     else if (request.method === "GET" && url.pathname === "/quotations") response = await handleQuotations(request, env);
     else if (request.method === "GET" && url.pathname === "/messages") response = await handleMessages(request, env);
     else if (request.method === "GET" && url.pathname === "/messages/recent") response = await handleRecentMessages(request, env);
@@ -428,7 +462,7 @@ export default {
     else if (request.method === "GET" && url.pathname === "/contacts") response = await handleContacts(request, env);
     else if (request.method === "GET" && url.pathname === "/contacts/cache") response = await handleContactsCache(request, env);
     else if (request.method === "GET" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleContactDetail(env, parseInt(url.pathname.split("/")[2]));
-    else if (url.pathname === "/") response = Response.json({ service: "voip-bridge", routes: ["/call-event", "/click2call", "/caller-lookup", "/active-calls", "/answer", "/hangup-call", "/call-history", "/quotations", "/contacts", "/contacts/:id"] });
+    else if (url.pathname === "/") response = Response.json({ service: "voip-bridge", routes: ["/call-event", "/click2call", "/caller-lookup", "/active-calls", "/answer", "/hangup-call", "/call-history", "/call-notes", "/quotations", "/contacts", "/contacts/:id"] });
     else if (url.pathname === "/dashboard") response = serveDashboard();
     else response = new Response("Not found", { status: 404 });
 

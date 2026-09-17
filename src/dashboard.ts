@@ -163,8 +163,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .fav-star.on{color:#f7c948}
 /* in-call panel: caller name + tabs (Sales/Quotations, Call History, Notes, Jot) */
 .call-panel{margin:8px 16px 0;background:#1a1a1a;border:1px solid #2c2c2c;border-radius:14px;overflow:hidden}
-.cp-head{padding:12px 14px 2px}
-.cp-caller{font-size:16px;font-weight:700;color:#ececec;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cp-head{padding:12px 14px 2px;display:flex;align-items:center;gap:8px}
+.cp-caller{font-size:16px;font-weight:700;color:#ececec;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
 .cp-tabs{display:flex;border-bottom:1px solid #2c2c2c;padding:0 4px;margin-top:8px}
 .cp-tab{flex:1;background:none;border:none;color:#999;font-size:11.5px;font-weight:600;padding:10px 2px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
 .cp-tab.active{color:#4db8ff;border-bottom-color:#4db8ff}
@@ -182,6 +182,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .jot-status{font-size:12px;color:#34d399;margin-left:auto;white-space:nowrap}
 #jot-canvas{width:100%;height:420px;border-radius:10px;background:#1e1e1e;border:1px solid #2c2c2c;position:relative}
 #jot-canvas .empty{padding-top:170px}
+/* call-history detail: editable Notes + Jot */
+.hist-editor{margin-top:16px;padding-top:14px;border-top:1px solid #2c2c2c}
+#hist-jot-canvas{width:100%;height:360px;border-radius:10px;background:#1e1e1e;border:1px solid #2c2c2c;position:relative}
 .qt-panel{margin:10px 0 0;background:#111;border:1px solid #2c2c2c;border-radius:12px;padding:8px;max-height:200px;overflow-y:auto}
 .qt-panel .qt-head{font-size:11px;color:#999;text-transform:uppercase;letter-spacing:.5px;padding:4px 8px 8px}
 .qt-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;cursor:pointer;font-size:14px}
@@ -240,6 +243,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
       <div class="call-panel hidden" id="call-panel">
         <div class="cp-head">
           <div class="cp-caller" id="cp-caller-name">Unknown caller</div>
+          <button class="jot-btn" onclick="saveCallRecord()">💾 Save</button>
+          <span class="jot-status" id="cp-save-status"></span>
         </div>
         <div class="cp-tabs">
           <button class="cp-tab" data-tab="sales" onclick="switchCallTab('sales')">Sales / Quotations</button>
@@ -860,6 +865,47 @@ function saveJotToNotes() {
   }).catch(function() { setJotStatus("Save failed"); });
 }
 
+// Persist the live in-call Notes editor + Jot sketch (SVG + re-editable JSON)
+// to the call_log row created by logCallEvent("ring").
+function setCallSaveStatus(msg) {
+  var el = document.getElementById("cp-save-status");
+  if (el) el.textContent = msg;
+}
+function saveCallRecord() {
+  if (!currentCall) { setCallSaveStatus("No active call"); return; }
+  var callId = currentCall.id;
+  var ed = (typeof tinymce !== "undefined") ? tinymce.get("call-notes") : null;
+  var ta = document.getElementById("call-notes");
+  var notesHtml = ed ? ed.getContent() : (ta ? ta.value : "");
+  setCallSaveStatus("Saving…");
+
+  if (jotApi && jotExcalidrawLib) {
+    var elements = jotApi.getSceneElements();
+    var jotJson = JSON.stringify({ elements: elements, appState: jotApi.getAppState() });
+    if (elements.length) {
+      jotExcalidrawLib.exportToSvg({
+        elements: elements,
+        appState: Object.assign({}, jotApi.getAppState(), { exportBackground: true, viewBackgroundColor: "#1e1e1e" }),
+        files: jotApi.getFiles()
+      }).then(function(svg) { postCallSave(callId, notesHtml, svg.outerHTML, jotJson); })
+        .catch(function() { postCallSave(callId, notesHtml, "", jotJson); });
+    } else {
+      postCallSave(callId, notesHtml, "", jotJson);
+    }
+  } else {
+    postCallSave(callId, notesHtml, "", "");
+  }
+}
+function postCallSave(callId, notesHtml, jotSvg, jotJson) {
+  fetch(API + "/call-notes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ call_id: callId, notes_html: notesHtml, jot_svg: jotSvg, jot_json: jotJson })
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    setCallSaveStatus(d.ok ? "Saved ✓" : "Save failed");
+  }).catch(function() { setCallSaveStatus("Save failed"); });
+}
+
 function loadCallHistoryTab() {
   var el = document.getElementById("cp-pane-history");
   var num = currentCall && currentCall.remote;
@@ -935,6 +981,27 @@ function pickSuggestion(num, name) {
 function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/'/g,"&#39;").replace(/"/g,"&quot;"); }
 
 // ── call actions ───────────────────────────────────────────────
+// ── call logging (D1 call_log) ──────────────────────────────────
+// The browser softphone talks straight to Asterisk over WSS — no server-side
+// AGI hook sees these calls — so the client logs ring/answer/hangup itself
+// via the same /call-event endpoint the Asterisk-side integration uses.
+function logCallEvent(event, extra) {
+  if (!currentCall) return;
+  var body = new URLSearchParams();
+  body.set("event", event);
+  body.set("callId", currentCall.id);
+  body.set("caller", currentCall.remote || "unknown");
+  body.set("did", "");
+  body.set("direction", currentCall.dir === "out" ? "outgoing" : "incoming");
+  if (extra) { for (var k in extra) body.set(k, String(extra[k])); }
+  fetch(API + "/call-event", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() }).catch(function() {});
+}
+function logHangup() {
+  if (!currentCall) return;
+  var dur = currentCall.answeredAt ? Math.round((Date.now() - currentCall.answeredAt) / 1000) : 0;
+  logCallEvent("hangup", { duration: dur });
+}
+
 function dialAction() {
   var num = document.getElementById("dial-input").value.trim();
   if (currentCall) { hangup(); return; }
@@ -953,9 +1020,10 @@ function dialOut(num) {
   sipSession = inviter;
   currentCall = { id: inviter.request.callId, dir: "out", remote: num, state: "calling" };
   renderCallUI();
+  logCallEvent("ring");
   inviter.stateChange.on(function(state) {
-    if (state === SIP.SessionState.Established) { currentCall.state = "active"; renderCallUI(); }
-    if (state === SIP.SessionState.Terminated) resetCall();
+    if (state === SIP.SessionState.Established) { currentCall.state = "active"; currentCall.answeredAt = Date.now(); renderCallUI(); logCallEvent("answer"); }
+    if (state === SIP.SessionState.Terminated) { logHangup(); resetCall(); }
   });
   attachRemoteAudio(inviter);
   inviter.invite();
@@ -1026,9 +1094,10 @@ function renderHistoryRow(c) {
   var sub = name ? num : (c.did && c.did !== num ? "→ " + c.did : "");
   var dur = (c.duration > 0) ? " · " + fmtDur(c.duration) : "";
   var when = c.start_date ? fmtTime(c.start_date) : "";
+  var notesFlag = c.has_notes ? ' <span title="Has notes">📝</span>' : "";
   var key = "h-" + c.id;
   callsCache[key] = c;
-  return '<div class="hist-row" data-key="' + esc(key) + '"><span class="ic">' + icon + '</span><div><div class="who">' + arrow + ' ' + esc(who) + '</div>' + (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div><div class="meta">' + when + dur + '</div></div>';
+  return '<div class="hist-row" data-key="' + esc(key) + '"><span class="ic">' + icon + '</span><div><div class="who">' + arrow + ' ' + esc(who) + notesFlag + '</div>' + (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div><div class="meta">' + when + dur + '</div></div>';
 }
 function fmtDur(sec) {
   sec = Math.round(sec || 0);
@@ -1191,8 +1260,9 @@ function dialBackSelected() { var c = selected && selected.data; if (c && c.phon
 
 // ── detail views (full-screen) ─────────────────────────────────
 function openDetail() { document.getElementById("detail-modal").classList.remove("hidden"); }
-function closeDetail() { document.getElementById("detail-modal").classList.add("hidden"); }
+function closeDetail() { document.getElementById("detail-modal").classList.add("hidden"); destroyHistEditors(); }
 function setDetail(title, bodyHtml, footHtml) {
+  destroyHistEditors();
   document.getElementById("detail-title").textContent = title;
   document.getElementById("detail-body").innerHTML = bodyHtml;
   document.getElementById("detail-foot").innerHTML = footHtml || "";
@@ -1219,9 +1289,152 @@ function openCallFull(c) {
     + '<div class="detail-row"><span class="k">State</span><span class="v">' + esc(c.state || "") + '</span></div>'
     + '<div class="detail-row"><span class="k">When</span><span class="v">' + esc(when) + '</span></div>'
     + '<div class="detail-row"><span class="k">Duration</span><span class="v">' + esc(dur) + '</span></div>'
-    + (c.partner_name ? '<div class="detail-row"><span class="k">Contact</span><span class="v">' + esc(c.partner_name) + '</span></div>' : '');
-  var foot = '<button class="green" onclick="dialBackSelected()">📞 Call back</button>';
+    + (c.partner_name ? '<div class="detail-row"><span class="k">Contact</span><span class="v">' + esc(c.partner_name) + '</span></div>' : '')
+    + histEditorMarkup();
+  var foot = '<button class="green" onclick="dialBackSelected()">📞 Call back</button><button class="primary" id="hist-save-btn" onclick="saveHistEdits()">💾 Save</button>';
   setDetail("📞 Call", rows, foot);
+  loadHistEditor(c.call_id || null);
+}
+
+// ── call-history detail: editable Notes + Jot (re-opens saved data) ────
+var histOpenCallId = null, histLoadedNotes = {}, histJotData = null, activeHistTab = "notes";
+var histJotRoot = null, histJotApi = null, histJotExcalidrawLib = null;
+
+function histEditorMarkup() {
+  return '<div class="hist-editor" id="hist-editor">'
+    + '<div class="cp-tabs">'
+    +   '<button class="cp-tab active" data-tab="notes" onclick="switchHistTab(\'notes\')">Notes</button>'
+    +   '<button class="cp-tab" data-tab="jot" onclick="switchHistTab(\'jot\')">Jot</button>'
+    + '</div>'
+    + '<div class="cp-pane" id="hist-pane-notes"><div class="empty">Loading…</div></div>'
+    + '<div class="cp-pane hidden" id="hist-pane-jot">'
+    +   '<div class="jot-toolbar"><span class="jot-status" id="hist-jot-status"></span></div>'
+    +   '<div id="hist-jot-canvas"></div>'
+    + '</div>'
+    + '</div>';
+}
+
+function loadHistEditor(callId) {
+  histOpenCallId = callId;
+  histLoadedNotes = {}; histJotData = null; activeHistTab = "notes";
+  if (!callId) { renderHistNotesPane(); return; }
+  fetch(API + "/call-notes?call_id=" + encodeURIComponent(callId)).then(function(r) { return r.json(); }).then(function(d) {
+    histLoadedNotes = (d && d.notes) || {};
+    histJotData = safeParseJson(histLoadedNotes.jot_json);
+    renderHistNotesPane();
+  }).catch(function() { renderHistNotesPane(); });
+}
+
+function switchHistTab(tab) {
+  activeHistTab = tab;
+  var tabs = document.querySelectorAll("#hist-editor .cp-tab");
+  for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle("active", tabs[i].getAttribute("data-tab") === tab);
+  var panes = document.querySelectorAll("#hist-editor .cp-pane");
+  for (var j = 0; j < panes.length; j++) panes[j].classList.toggle("hidden", panes[j].id !== "hist-pane-" + tab);
+  if (tab === "jot" && !histJotRoot) initHistJotEditor(histJotData);
+}
+
+function renderHistNotesPane() {
+  var pane = document.getElementById("hist-pane-notes");
+  if (!pane) return; // detail modal closed/replaced before the fetch resolved
+  pane.innerHTML = '<textarea id="hist-notes"></textarea>';
+  loadTinyMce().then(function() { initHistNotesEditor(histLoadedNotes.notes_html || ""); })
+    .catch(function() {
+      var ta = document.getElementById("hist-notes");
+      if (ta) ta.value = stripHtml(histLoadedNotes.notes_html || "");
+    });
+}
+
+function initHistNotesEditor(html) {
+  var target = document.getElementById("hist-notes");
+  if (!target) return;
+  tinymce.init({
+    target: target,
+    menubar: false,
+    statusbar: false,
+    plugins: "lists link table code fullscreen autolink",
+    toolbar: "undo redo | blocks | bold italic underline | forecolor backcolor | bullist numlist | link table | blockquote | removeformat | code fullscreen",
+    height: 220,
+    branding: false,
+    skin: "oxide-dark",
+    content_css: "dark",
+    setup: function(editor) { editor.on("init", function() { editor.setContent(html || ""); }); }
+  });
+}
+
+function initHistJotEditor(initialData) {
+  var host = document.getElementById("hist-jot-canvas");
+  if (!host) return;
+  host.innerHTML = '<div class="empty">Loading sketchpad…</div>';
+  loadExcalidraw().then(function(mods) {
+    var React = mods[0], ReactDOMClient = mods[1], ExcalidrawLib = mods[2];
+    histJotExcalidrawLib = ExcalidrawLib;
+    host.innerHTML = "";
+    histJotRoot = ReactDOMClient.createRoot(host);
+    histJotRoot.render(React.createElement(ExcalidrawLib.Excalidraw, {
+      theme: "dark",
+      initialData: initialData || undefined,
+      excalidrawAPI: function(api) { histJotApi = api; }
+    }));
+  }).catch(function(e) {
+    host.innerHTML = '<div class="empty">Sketchpad failed to load' + (e && e.message ? ": " + esc(e.message) : "") + '</div>';
+  });
+}
+
+function destroyHistEditors() {
+  try { if (typeof tinymce !== "undefined" && tinymce.get("hist-notes")) tinymce.get("hist-notes").remove(); } catch (e) {}
+  try { if (histJotRoot) histJotRoot.unmount(); } catch (e) {}
+  histJotRoot = null; histJotApi = null;
+}
+
+function stripHtml(h) { return String(h || "").replace(/<[^>]*>/g, " ").replace(/ +/g, " ").trim(); }
+function safeParseJson(s) { if (!s) return null; try { return JSON.parse(s); } catch (e) { return null; } }
+
+function saveHistEdits() {
+  if (!histOpenCallId) { alert("This call has no call_id to save against."); return; }
+  var btn = document.getElementById("hist-save-btn");
+  if (btn) { btn.textContent = "Saving…"; btn.disabled = true; }
+  var ed = (typeof tinymce !== "undefined" && tinymce.get("hist-notes")) ? tinymce.get("hist-notes") : null;
+  var ta = document.getElementById("hist-notes");
+  var notesHtml = ed ? ed.getContent() : (ta ? ta.value : (histLoadedNotes.notes_html || ""));
+
+  if (histJotApi && histJotExcalidrawLib) {
+    var elements = histJotApi.getSceneElements();
+    var jotJson = JSON.stringify({ elements: elements, appState: histJotApi.getAppState() });
+    if (elements.length) {
+      histJotExcalidrawLib.exportToSvg({
+        elements: elements,
+        appState: Object.assign({}, histJotApi.getAppState(), { exportBackground: true, viewBackgroundColor: "#1e1e1e" }),
+        files: histJotApi.getFiles()
+      }).then(function(svg) { postHistSave(notesHtml, svg.outerHTML, jotJson); })
+        .catch(function() { postHistSave(notesHtml, histLoadedNotes.jot_svg || "", jotJson); });
+    } else {
+      postHistSave(notesHtml, "", jotJson);
+    }
+  } else {
+    postHistSave(notesHtml, histLoadedNotes.jot_svg || "", histLoadedNotes.jot_json || "");
+  }
+}
+
+function postHistSave(notesHtml, jotSvg, jotJson) {
+  fetch(API + "/call-notes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ call_id: histOpenCallId, notes_html: notesHtml, jot_svg: jotSvg, jot_json: jotJson })
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    var btn = document.getElementById("hist-save-btn");
+    if (d.ok) {
+      histLoadedNotes = { notes_html: notesHtml, jot_svg: jotSvg, jot_json: jotJson };
+      if (btn) { btn.disabled = false; btn.textContent = "Saved ✓"; setTimeout(function() { btn.textContent = "💾 Save"; }, 1500); }
+    } else {
+      if (btn) { btn.disabled = false; btn.textContent = "💾 Save"; }
+      alert("Save failed: " + (d.error || "unknown"));
+    }
+  }).catch(function() {
+    var btn = document.getElementById("hist-save-btn");
+    if (btn) { btn.disabled = false; btn.textContent = "💾 Save"; }
+    alert("Save failed");
+  });
 }
 function openMessageFull(m) {
   m = m || (selected && selected.data);
@@ -1512,9 +1725,10 @@ function initSoftphone() {
       sipSession = inv;
       currentCall = { id: inv.request.callId, dir: "in", remote: inv.remoteIdentity.uri.user || inv.remoteIdentity.displayName, state: "ringing" };
       renderCallUI();
+      logCallEvent("ring");
       inv.stateChange.on(function(state) {
-        if (state === SIP.SessionState.Established) { currentCall.state = "active"; renderCallUI(); }
-        if (state === SIP.SessionState.Terminated) resetCall();
+        if (state === SIP.SessionState.Established) { currentCall.state = "active"; currentCall.answeredAt = Date.now(); renderCallUI(); logCallEvent("answer"); }
+        if (state === SIP.SessionState.Terminated) { logHangup(); resetCall(); }
       });
       attachRemoteAudio(inv);
       inv.accept({ sessionDescriptionHandlerOptions: { constraints: { audio: true, video: false } } });
