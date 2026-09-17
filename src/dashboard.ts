@@ -865,19 +865,17 @@ var JOT_PARA_TOP = 32;
 var JOT_DOT_MAX_RAW = 6;   // raw local px — a lone stroke this small or smaller is a tap
 var JOT_DOT_SCALE = 0.5;   // fixed small render scale for a period
 var JOT_DOT_WIDTH = 8;     // layout width reserved for a period
-// Two-stroke Write-mode commands: a straight right-to-left "backstroke"
-// followed by a straight top-to-bottom "downstroke" is a backspace (undoes
-// the in-progress word, or the last committed action if nothing's in
-// progress); the same two strokes in the opposite order (down then back) is
-// Return, inserting a line break. Each stroke must be reasonably large and
-// straight (an isolated near-vertical stroke is common in ordinary
-// handwriting — e.g. "l", "t", "1" — so a lone downstroke is never enough on
-// its own; only the back+down / down+back *pair*, within JOT_GESTURE_PAIR_MS
-// of each other, triggers a command).
-var JOT_GESTURE_MIN_LEN = 30;         // logical px — minimum net travel to count as a gesture stroke
-var JOT_GESTURE_STRAIGHTNESS = 0.75;  // net displacement / actual path length
-var JOT_GESTURE_AXIS_DOMINANCE = 1.8; // one axis must outrun the other by this ratio
-var JOT_GESTURE_PAIR_MS = 900;        // max gap between the two strokes of a command
+// Write-mode commands: a single continuous stroke shaped like a capital "L"
+// (drawn the normal way: down, then a corner, then right) rotated 90°.
+// Rotated clockwise — left, corner, then down — it's backspace (undoes the
+// in-progress word, or the last committed action if nothing's in progress).
+// Rotated counterclockwise — right, corner, then up — it's Return, inserting
+// a line break. Each leg must be reasonably long and straight, and the two
+// legs roughly perpendicular, so ordinary letters (which curve, or don't hit
+// these exact two direction pairs) are never mistaken for a command.
+var JOT_GESTURE_MIN_LEN = 22;         // logical px — minimum net travel per leg
+var JOT_GESTURE_STRAIGHTNESS = 0.7;   // net displacement / actual path length, per leg
+var JOT_GESTURE_AXIS_DOMINANCE = 1.6; // one axis must outrun the other by this ratio, per leg
 
 function jtOutline(pts) { return PerfectFreehand.getStroke(pts, JOT_STROKE_OPTS); }
 function jtFillOutline(ctx, outline) {
@@ -900,10 +898,10 @@ function jtBBox(pts) {
 function jtBBoxUnion(a, b) {
   return { minX: Math.min(a.minX, b.minX), minY: Math.min(a.minY, b.minY), maxX: Math.max(a.maxX, b.maxX), maxY: Math.max(a.maxY, b.maxY) };
 }
-// Classifies a single completed stroke as a "back" (straight right-to-left)
-// or "down" (straight top-to-bottom) gesture candidate, or null if it's too
-// short/curved/diagonal to be one — i.e. it's just ordinary handwriting.
-function jtClassifyGesture(pts) {
+// Straight-line direction of one leg of a candidate gesture stroke — the
+// dominant cardinal axis + sign of its net displacement — or null if it's
+// too short/curved/diagonal to count as a deliberate straight leg.
+function jtLegDir(pts) {
   var p0 = pts[0], pN = pts[pts.length - 1];
   var dx = pN[0] - p0[0], dy = pN[1] - p0[1];
   var net = Math.hypot(dx, dy);
@@ -912,8 +910,39 @@ function jtClassifyGesture(pts) {
   for (var i = 1; i < pts.length; i++) pathLen += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
   if (!pathLen || net / pathLen < JOT_GESTURE_STRAIGHTNESS) return null;
   var adx = Math.abs(dx), ady = Math.abs(dy);
-  if (adx > ady * JOT_GESTURE_AXIS_DOMINANCE && dx < 0) return "back";
-  if (ady > adx * JOT_GESTURE_AXIS_DOMINANCE && dy > 0) return "down";
+  if (adx > ady * JOT_GESTURE_AXIS_DOMINANCE) return { axis: "x", sign: dx < 0 ? -1 : 1 };
+  if (ady > adx * JOT_GESTURE_AXIS_DOMINANCE) return { axis: "y", sign: dy < 0 ? -1 : 1 };
+  return null;
+}
+// The point of a stroke that deviates furthest from the straight line
+// between its endpoints — the corner of an L-shaped gesture stroke.
+function jtFindCorner(pts) {
+  var p0 = pts[0], pN = pts[pts.length - 1];
+  var cx = pN[0] - p0[0], cy = pN[1] - p0[1];
+  var chordLen = Math.hypot(cx, cy) || 1;
+  var ux = cx / chordLen, uy = cy / chordLen;
+  var best = -1, bestDist = -1;
+  for (var i = 1; i < pts.length - 1; i++) {
+    var vx = pts[i][0] - p0[0], vy = pts[i][1] - p0[1];
+    var proj = vx * ux + vy * uy;
+    var perpx = vx - proj * ux, perpy = vy - proj * uy;
+    var dist = Math.hypot(perpx, perpy);
+    if (dist > bestDist) { bestDist = dist; best = i; }
+  }
+  return best;
+}
+// Classifies a single completed Write-mode stroke as the "backspace" or
+// "return" L-shaped command (see the constants above), or null if it's just
+// ordinary handwriting.
+function jtClassifyGesture(pts) {
+  if (pts.length < 5) return null;
+  var corner = jtFindCorner(pts);
+  if (corner < 1 || corner > pts.length - 2) return null;
+  var leg1 = jtLegDir(pts.slice(0, corner + 1));
+  var leg2 = jtLegDir(pts.slice(corner));
+  if (!leg1 || !leg2 || leg1.axis === leg2.axis) return null;
+  if (leg1.axis === "x" && leg1.sign < 0 && leg2.axis === "y" && leg2.sign > 0) return "backspace"; // left, then down
+  if (leg1.axis === "x" && leg1.sign > 0 && leg2.axis === "y" && leg2.sign < 0) return "return";    // right, then up
   return null;
 }
 function jtBBoxNear(a, b, factor) {
@@ -1084,7 +1113,6 @@ function createJot(hostEl) {
   var activePointers = {}; // pointerId -> {x,y}, tracked whenever a tool is deselected (pan/pinch-zoom)
   var panState = null;     // {x,y} last client point, while 1 finger drags with no tool selected
   var pinchState = null;   // {dist, anchorDoc}, while 2 fingers are down with no tool selected
-  var pendingGesture = null; // {kind:"back"|"down", time}, the just-completed Write-mode stroke while it waits to see if it's paired into a two-stroke command
 
   function pointerIds() { return Object.keys(activePointers); }
   function pointerDistance(ids) {
@@ -1098,6 +1126,23 @@ function createJot(hostEl) {
   function updateZoomLabel() {
     var label = toolbar.querySelector(".jt-zoom-label");
     if (label) label.textContent = Math.round(camera.scale * 100) + "%";
+  }
+  // Auto-pans the camera while drawing/writing so the pen is never trapped
+  // short of the page's fixed wrap width by a high zoom level. DOC_WIDTH is
+  // deliberately zoom-independent (so already-written lines never reflow
+  // just because you zoomed) — but that only works if you can still
+  // physically reach it. At e.g. 200% zoom, one screen-width of pen travel
+  // only covers half the document width, so without this, writing across
+  // the whole visible canvas at high zoom would never trigger a wrap.
+  function ensureVisible(docX, docY) {
+    var viewDocW = viewportW / camera.scale, viewDocH = viewportH / camera.scale;
+    var marginX = viewDocW * 0.12, marginY = viewDocH * 0.12;
+    var moved = false;
+    if (docX > camera.x + viewDocW - marginX) { camera.x = docX - viewDocW + marginX; moved = true; }
+    else if (docX < camera.x + marginX) { camera.x = docX - marginX; moved = true; }
+    if (docY > camera.y + viewDocH - marginY) { camera.y = docY - viewDocH + marginY; moved = true; }
+    else if (docY < camera.y + marginY) { camera.y = docY - marginY; moved = true; }
+    return moved;
   }
 
   function relayout() {
@@ -1208,35 +1253,24 @@ function createJot(hostEl) {
     redraw();
   }
 
-  // Pops the ink of a just-completed gesture-candidate stroke (see
-  // jtClassifyGesture) once it's confirmed to be the first half of a
-  // two-stroke command, so a "back" or "down" command stroke never lingers
-  // as visible content.
-  function jtPopPendingGestureStroke() {
-    if (!writingWord || !writingWord.strokes.length) return;
-    writingWord.strokes.pop();
-    if (!writingWord.strokes.length) { writingWord = null; return; }
-    var b = jtBBox(writingWord.strokes[0]);
-    for (var i = 1; i < writingWord.strokes.length; i++) b = jtBBoxUnion(b, jtBBox(writingWord.strokes[i]));
-    writingWord.bbox = b;
-  }
-  // back then down: backspace. If there's an in-progress (not yet paused/
-  // finalized) word, that's what gets discarded — same as backspacing while
-  // mid-word in a text editor. Otherwise it's a real Undo of the last
-  // committed action (word, stroke, erase, or even a previous Return).
+  // A single-stroke "L" gesture (see jtClassifyGesture) is recognized and
+  // consumed entirely on its own completed stroke — it never touches
+  // writingWord, so there's nothing to undo there first.
+  // Backspace (left, corner, down): if there's an in-progress (not yet
+  // paused/finalized) word, that's what gets discarded — same as
+  // backspacing while mid-word in a text editor. Otherwise it's a real Undo
+  // of the last committed action (word, stroke, erase, or even a previous
+  // Return).
   function jtGestureBackspace() {
     if (wordPauseTimer) { clearTimeout(wordPauseTimer); wordPauseTimer = null; }
-    jtPopPendingGestureStroke();
     if (writingWord) { writingWord = null; redraw(); return; }
     doUndo();
   }
-  // down then back: Return. Commits whatever preceded the gesture normally,
-  // then inserts a hidden line-break marker (see jtBreakWord) immediately —
-  // not a flag deferred onto the next word — so it survives a save even if
-  // nothing else is written afterward.
+  // Return (right, corner, up): commits whatever preceded the gesture
+  // normally, then inserts a hidden line-break marker (see jtBreakWord)
+  // immediately — not a flag deferred onto the next word — so it survives a
+  // save even if nothing else is written afterward.
   function jtGestureReturn() {
-    if (wordPauseTimer) { clearTimeout(wordPauseTimer); wordPauseTimer = null; }
-    jtPopPendingGestureStroke();
     finalizeWord();
     var id = nextId++;
     actions.push({ type: "add-break", id: id });
@@ -1348,6 +1382,7 @@ function createJot(hostEl) {
     if (!current) return; // mid-pinch (this pointer was cancelled when a 2nd finger landed)
     var pressure = e.pointerType === "mouse" ? 0.5 : (e.pressure || 0.5);
     current.points.push([p[0], p[1], pressure]);
+    ensureVisible(p[0], p[1]);
     redraw();
   }
   function onUp(e) {
@@ -1363,30 +1398,12 @@ function createJot(hostEl) {
     current = null;
     if (stroke.points.length < 2) stroke.points.push([stroke.points[0][0] + 0.1, stroke.points[0][1] + 0.1, stroke.points[0][2]]);
     if (mode === "write") {
-      // Two-stroke commands (see jtClassifyGesture): a "back" stroke
-      // immediately followed by a "down" stroke is backspace; the reverse
-      // order is Return. The first stroke of a pair is still written as
-      // ordinary ink below (so a lone one that's never paired just reads as
-      // a stray mark, same as before this existed) — only once the second
-      // stroke confirms the pair do both get undone and replaced with the
-      // command.
-      var gestureKind = jtClassifyGesture(stroke.points);
-      var gestureNow = Date.now();
-      if (gestureKind && pendingGesture && (gestureNow - pendingGesture.time) <= JOT_GESTURE_PAIR_MS) {
-        if (pendingGesture.kind === "back" && gestureKind === "down") {
-          pendingGesture = null;
-          jtGestureBackspace();
-          redraw();
-          return;
-        }
-        if (pendingGesture.kind === "down" && gestureKind === "back") {
-          pendingGesture = null;
-          jtGestureReturn();
-          redraw();
-          return;
-        }
-      }
-      pendingGesture = gestureKind ? { kind: gestureKind, time: gestureNow } : null;
+      // A single-stroke L-shaped command (see jtClassifyGesture) is checked
+      // before treating the stroke as ink — a real command never gets added
+      // to the word as a stray mark.
+      var gestureCmd = jtClassifyGesture(stroke.points);
+      if (gestureCmd === "backspace") { jtGestureBackspace(); redraw(); return; }
+      if (gestureCmd === "return") { jtGestureReturn(); redraw(); return; }
 
       var bbox = jtBBox(stroke.points);
       if (writingWord && jtBBoxNear(writingWord.bbox, bbox, JOT_PROXIMITY)) {
@@ -1435,7 +1452,6 @@ function createJot(hostEl) {
     var m = btn.getAttribute("data-mode");
     if (m) {
       finalizeWord();
-      pendingGesture = null; // don't let a stroke from before a tool switch pair with one drawn after
       mode = (mode === m) ? null : m;
       var btns = toolbar.querySelectorAll(".jt-mode");
       for (var i = 0; i < btns.length; i++) btns[i].classList.toggle("active", btns[i].getAttribute("data-mode") === mode);
