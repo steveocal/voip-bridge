@@ -948,7 +948,7 @@ function jtToLocal(pt, frame) {
 // gaps between strokes. "prevRotate" is the previously-committed word's
 // rotation (or null), inherited by any 1-2 stroke cluster here since that's
 // too little ink for its own leveling estimate to be reliable.
-function jtSplitWords(strokes, prevRotate) {
+function jtSplitWords(strokes, prevRotate, prevScale) {
   var allPts = [];
   for (var i = 0; i < strokes.length; i++) for (var j = 0; j < strokes[i].length; j++) allPts.push(strokes[i][j]);
   var frame = jtPCAFrame(allPts);
@@ -979,15 +979,22 @@ function jtSplitWords(strokes, prevRotate) {
       clusters.push(cur);
     }
   }
-  var scale = Math.min(JOT_WORD_HEIGHT / overallH, 4);
+  var runScale = Math.min(JOT_WORD_HEIGHT / overallH, 4);
   var out = [];
   var rot = (typeof prevRotate === "number") ? prevRotate : null;
+  var lastScale = (typeof prevScale === "number") ? prevScale : null;
   for (var ci = 0; ci < clusters.length; ci++) {
     var c = clusters[ci];
     var soleLocal = c.indices.length === 1 ? local[c.indices[0]] : null;
     var isDot = !!soleLocal && (soleLocal.maxX - soleLocal.minX) <= JOT_DOT_MAX_RAW && (soleLocal.maxY - soleLocal.minY) <= JOT_DOT_MAX_RAW;
+    // A run of 2 or fewer strokes standing alone (its own overallH is just
+    // that little ink) also can't size itself reliably — the same word-
+    // height floor that keeps a dot's height from being ~0 instead blows a
+    // short word up, since its own extent is much less than a full letter
+    // height. Borrow the previous word's scale too, same as its rotation.
     var isShort = c.indices.length <= 2;
     var useRotate = (isShort && rot != null) ? rot : frame.angle;
+    var useScale = (isShort && lastScale != null) ? lastScale : runScale;
     var minX = c.minX, maxX = c.maxX, maxY = c.maxY;
     if (useRotate !== frame.angle) {
       // Borrowing a different angle than this run was leveled at — recompute
@@ -1011,11 +1018,11 @@ function jtSplitWords(strokes, prevRotate) {
       rawStrokes: c.indices.map(function(i) { return strokes[i]; }),
       anchor: [ax, ay],
       rotate: useRotate,
-      scale: isDot ? JOT_DOT_SCALE : scale,
-      width: isDot ? JOT_DOT_WIDTH : Math.max(maxX - minX, 10) * scale,
+      scale: isDot ? JOT_DOT_SCALE : useScale,
+      width: isDot ? JOT_DOT_WIDTH : Math.max(maxX - minX, 10) * useScale,
       height: JOT_WORD_HEIGHT
     });
-    if (!isDot) rot = useRotate; // a period carries no orientation info to hand on
+    if (!isDot) { rot = useRotate; lastScale = useScale; } // a period carries no orientation/size info to hand on
   }
   return out;
 }
@@ -1166,19 +1173,21 @@ function createJot(hostEl) {
     return [sx / camera.scale + camera.x, sy / camera.scale + camera.y];
   }
 
-  // The rotation to hand a short (1-2 stroke) cluster that's about to be
-  // finalized — the last real (non-break) committed word's rotation, so a
-  // single letter follows the line it's sitting on instead of leveling
-  // itself off too little ink to do that reliably.
-  function jtLastRotate() {
-    for (var i = words.length - 1; i >= 0; i--) if (!words[i].isBreak) return words[i].rotate;
+  // The rotation/scale to hand a short (1-2 stroke) cluster that's about to
+  // be finalized — the last real (non-break) committed word's own, so a
+  // single letter follows the size and slant of the line it's sitting on
+  // instead of leveling/sizing itself off too little ink to do that
+  // reliably.
+  function jtLastWordRef() {
+    for (var i = words.length - 1; i >= 0; i--) if (!words[i].isBreak) return words[i];
     return null;
   }
 
   function finalizeWord() {
     if (wordPauseTimer) { clearTimeout(wordPauseTimer); wordPauseTimer = null; }
     if (!writingWord || !writingWord.strokes.length) { writingWord = null; return; }
-    var split = jtSplitWords(writingWord.strokes, jtLastRotate());
+    var lastWord = jtLastWordRef();
+    var split = jtSplitWords(writingWord.strokes, lastWord ? lastWord.rotate : null, lastWord ? lastWord.scale : null);
     for (var i = 0; i < split.length; i++) {
       var t = split[i];
       var id = nextId++;
