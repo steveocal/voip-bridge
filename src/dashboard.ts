@@ -817,10 +817,12 @@ var PerfectFreehand=(()=>{var Q=Object.defineProperty;var zn=Object.getOwnProper
 var JOT_INK = "#e9ecef";
 var JOT_STROKE_OPTS = { size: 6, thinning: 0.6, smoothing: 0.5, streamline: 0.5 };
 // Word grouping is really driven by proximity (checked whenever the next
-// stroke actually lands, however long that takes) — this timer only exists
-// as a long-silence backstop to finalize an abandoned word, so it can be
-// generous without hurting normal writing.
-var JOT_PAUSE_MS = 3000;
+// stroke actually lands, however long that takes) — this timer is just a
+// backstop to settle an abandoned word into the paragraph. It no longer
+// needs to be long to avoid splitting words (pointerdown now cancels it,
+// so it can never fire mid-stroke) — keep it short so a finished word
+// doesn't sit around unsettled.
+var JOT_PAUSE_MS = 1000;
 var JOT_PROXIMITY = 2.5;      // word-boundary proximity factor (x current word bbox size)
 // Cap the leveling rotation: a lone near-vertical stroke (e.g. a single "l")
 // has no horizontal spread, so the best-fit line through it is ~90° and
@@ -939,7 +941,11 @@ function createJot(hostEl) {
 
   function relayout() {
     var lineIdx = 0, x = JOT_PARA_MARGIN;
-    var maxWidth = logicalW - JOT_PARA_MARGIN * 2;
+    // Wrap width shrinks as you zoom in, so a line's rendered (CSS) width
+    // stays within the fixed viewport regardless of zoom — more zoom means
+    // more, shorter lines instead of a wider line that needs horizontal
+    // scrolling to read.
+    var maxWidth = logicalW / view.scale - JOT_PARA_MARGIN * 2;
     for (var i = 0; i < words.length; i++) {
       var w = words[i];
       if (x + w.width > maxWidth && x > JOT_PARA_MARGIN) { lineIdx++; x = JOT_PARA_MARGIN; }
@@ -1080,6 +1086,8 @@ function createJot(hostEl) {
     canvas.style.height = (logicalH * view.scale) + "px";
     var label = toolbar.querySelector(".jt-zoom-label");
     if (label) label.textContent = Math.round(view.scale * 100) + "%";
+    relayout();
+    redraw();
   }
 
   toolbar.addEventListener("click", function(e) {
