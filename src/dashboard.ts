@@ -56,6 +56,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .call-banner .remote{font-size:16px;font-weight:700}
 .call-banner .state{font-size:12px;color:#6ee7b7}
 .call-banner .end{width:44px;height:44px;border-radius:50%;border:none;background:#ef4444;color:#fff;font-size:18px;cursor:pointer;flex-shrink:0}
+.call-banner .answer{width:44px;height:44px;border-radius:50%;border:none;background:#10b981;color:#fff;font-size:18px;cursor:pointer;flex-shrink:0;margin-right:8px}
 .hidden{display:none!important}
 /* views */
 .views{flex:1;overflow-y:auto;padding:4px 16px 8px}
@@ -236,6 +237,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
       <div class="remote" id="banner-remote"></div>
       <div class="state" id="banner-state"></div>
     </div>
+    <button class="answer hidden" id="banner-answer" onclick="answerCall()">📞</button>
     <button class="end" onclick="hangup()">📴</button>
   </div>
 
@@ -634,6 +636,34 @@ document.addEventListener("click", function unlockAudio() {
   osc.start(0); osc.stop(ctx.currentTime + 0.001);
   ctx.resume().then(function() { audioUnlocked = true; });
 }, { once: true });
+
+// ── incoming-call ringtone (dual-tone, 1s on / 3s off, looped) ─
+var ringCtx = null, ringTimer = null;
+function startRingtone() {
+  stopRingtone();
+  try { ringCtx = new (window.AudioContext || window.webkitAudioContext)(); ringCtx.resume().catch(function() {}); } catch (e) { return; }
+  ringCycle();
+}
+function ringCycle() {
+  if (!ringCtx) return;
+  var t0 = ringCtx.currentTime;
+  var gain = ringCtx.createGain();
+  gain.gain.setValueAtTime(0.001, t0);
+  gain.gain.exponentialRampToValueAtTime(0.2, t0 + 0.02);
+  gain.gain.setValueAtTime(0.2, t0 + 0.9);
+  gain.gain.exponentialRampToValueAtTime(0.001, t0 + 1);
+  gain.connect(ringCtx.destination);
+  var osc1 = ringCtx.createOscillator(); osc1.type = "sine"; osc1.frequency.value = 440;
+  var osc2 = ringCtx.createOscillator(); osc2.type = "sine"; osc2.frequency.value = 480;
+  osc1.connect(gain); osc2.connect(gain);
+  osc1.start(t0); osc2.start(t0);
+  osc1.stop(t0 + 1); osc2.stop(t0 + 1);
+  ringTimer = setTimeout(ringCycle, 3000);
+}
+function stopRingtone() {
+  if (ringTimer) { clearTimeout(ringTimer); ringTimer = null; }
+  if (ringCtx) { try { ringCtx.close(); } catch (e) {} ringCtx = null; }
+}
 
 // ── view switching ─────────────────────────────────────────────
 function switchView(name) {
@@ -1765,8 +1795,28 @@ function dialOut(num) {
   attachRemoteAudio(inviter);
   inviter.invite();
 }
-function hangup() { if (sipSession) { sipSession.dispose(); } resetCall(); }
+function hangup() {
+  stopRingtone();
+  if (sipSession) {
+    // An incoming call not yet answered needs a proper decline (sends the
+    // caller a rejection response) rather than dispose(), which is for
+    // tearing down a call already in progress.
+    var declining = currentCall && currentCall.state === "ringing" && currentCall.dir === "in" && typeof sipSession.reject === "function";
+    if (declining) sipSession.reject().catch(function() {});
+    else sipSession.dispose();
+  }
+  resetCall();
+}
+function answerCall() {
+  if (!sipSession || !currentCall || currentCall.dir !== "in" || currentCall.state !== "ringing") return;
+  stopRingtone();
+  attachRemoteAudio(sipSession);
+  var ac = new (window.AudioContext || window.webkitAudioContext)();
+  ac.resume().catch(function() {});
+  sipSession.accept({ sessionDescriptionHandlerOptions: { constraints: { audio: true, video: false } } }).catch(function() {});
+}
 function resetCall() {
+  stopRingtone();
   if (heldSession) { try { heldSession.dispose(); } catch(e) {} heldSession = null; }
   sipSession = null; currentCall = null; onHold = false; muted = false;
   renderCallUI();
@@ -1786,6 +1836,7 @@ function renderCallUI() {
   document.getElementById("banner-remote").textContent = currentCall.remote;
   var si = { ringing: "🔔 Incoming…", calling: "📞 Calling…", active: "🔊 Connected" }[currentCall.state] || currentCall.state;
   document.getElementById("banner-state").textContent = (currentCall.dir === "in" ? "⬇ " : "⬆ ") + si;
+  document.getElementById("banner-answer").classList.toggle("hidden", !(currentCall.state === "ringing" && currentCall.dir === "in"));
   btnCall.classList.add("hidden");
   btnEnd.classList.remove("hidden");
   showCallPanel(true);
@@ -2485,14 +2536,16 @@ function initSoftphone() {
       currentCall = { id: inv.request.callId, dir: "in", remote: inv.remoteIdentity.uri.user || inv.remoteIdentity.displayName, state: "ringing" };
       renderCallUI();
       logCallEvent("ring");
+      startRingtone();
       inv.stateChange.on(function(state) {
-        if (state === SIP.SessionState.Established) { currentCall.state = "active"; currentCall.answeredAt = Date.now(); renderCallUI(); logCallEvent("answer"); }
-        if (state === SIP.SessionState.Terminated) { logHangup(); resetCall(); }
+        if (state === SIP.SessionState.Established) { stopRingtone(); currentCall.state = "active"; currentCall.answeredAt = Date.now(); renderCallUI(); logCallEvent("answer"); }
+        if (state === SIP.SessionState.Terminated) { stopRingtone(); logHangup(); resetCall(); }
       });
-      attachRemoteAudio(inv);
-      inv.accept({ sessionDescriptionHandlerOptions: { constraints: { audio: true, video: false } } });
-      var ac = new (window.AudioContext || window.webkitAudioContext)();
-      ac.resume().catch(function(){});
+      // Remote audio is attached once actually answered (see answerCall) —
+      // wiring it here would arm attachRemoteAudio's retry loop while the
+      // call just sits ringing, and it'd give up (after 5s) before the
+      // peer connection exists if the person takes longer than that to pick
+      // up.
     }
   };
 
