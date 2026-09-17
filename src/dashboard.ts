@@ -816,8 +816,8 @@ var PerfectFreehand=(()=>{var Q=Object.defineProperty;var zn=Object.getOwnProper
 // ── Jot engine: Draw / Write / Erase, undo, zoom, save/load ────
 var JOT_INK = "#e9ecef";
 var JOT_STROKE_OPTS = { size: 6, thinning: 0.6, smoothing: 0.5, streamline: 0.5 };
-var JOT_PAUSE_MS = 900;
-var JOT_PROXIMITY = 1.6;      // word-boundary proximity factor (x current word bbox size)
+var JOT_PAUSE_MS = 1500;
+var JOT_PROXIMITY = 2.5;      // word-boundary proximity factor (x current word bbox size)
 // Cap the leveling rotation: a lone near-vertical stroke (e.g. a single "l")
 // has no horizontal spread, so the best-fit line through it is ~90° and
 // would otherwise get "leveled" straight into a horizontal line.
@@ -850,7 +850,11 @@ function jtBBoxUnion(a, b) {
   return { minX: Math.min(a.minX, b.minX), minY: Math.min(a.minY, b.minY), maxX: Math.max(a.maxX, b.maxX), maxY: Math.max(a.maxY, b.maxY) };
 }
 function jtBBoxNear(a, b, factor) {
-  var pad = Math.max((a.maxX - a.minX), (a.maxY - a.minY), 20) * factor;
+  // Absolute floor matters most right after the word's first letter, when
+  // its bbox is still tiny — scaling a tiny box by "factor" alone still
+  // gives a tiny pad, which is exactly when the next letter is most likely
+  // to land outside it and get wrongly split into a new word.
+  var pad = Math.max(Math.max(a.maxX - a.minX, a.maxY - a.minY) * factor, 60);
   return !(b.minX > a.maxX + pad || b.maxX < a.minX - pad || b.minY > a.maxY + pad || b.maxY < a.minY - pad);
 }
 // Best-fit line through a word's combined points -> rotation to level it,
