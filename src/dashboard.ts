@@ -1813,8 +1813,15 @@ function hangup() {
     // far end, so a still-ringing call would just keep ringing there.
     // Incoming needs a proper decline (reject, a SIP rejection response);
     // outgoing needs a proper cancel (a SIP CANCEL of the pending INVITE).
+    // The dialplan rings 200/201/202 in parallel (Dial(PJSIP/200&PJSIP/201&
+    // PJSIP/202,30)) — a default reject() sends 480 (Temporarily
+    // Unavailable), which SIP treats as a per-branch failure only, so
+    // Asterisk correctly keeps ringing the other extensions. 603 (Decline)
+    // is the standard "the person explicitly doesn't want this call"
+    // response, which a forking Dial() should treat as cancelling the
+    // whole attempt, not just this branch.
     var stillRinging = currentCall && (currentCall.state === "ringing" || currentCall.state === "calling");
-    if (stillRinging && currentCall.dir === "in" && typeof sipSession.reject === "function") sipSession.reject().catch(function() {});
+    if (stillRinging && currentCall.dir === "in" && typeof sipSession.reject === "function") sipSession.reject({ statusCode: 603 }).catch(function() {});
     else if (stillRinging && currentCall.dir === "out" && typeof sipSession.cancel === "function") sipSession.cancel().catch(function() {});
     else sipSession.dispose();
   }
