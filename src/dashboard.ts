@@ -842,7 +842,7 @@ var JOT_STROKE_OPTS = { size: 6, thinning: 0.6, smoothing: 0.5, streamline: 0.5 
 // needs to be long to avoid splitting words (pointerdown now cancels it,
 // so it can never fire mid-stroke) — keep it short so a finished word
 // doesn't sit around unsettled.
-var JOT_PAUSE_MS = 600;
+var JOT_PAUSE_MS = 500;
 var JOT_PROXIMITY = 2.5;      // word-boundary proximity factor (x current word bbox size)
 // Once a run of writing settles (pause/mode-change), it's split into
 // individual words by the actual gaps between strokes along the run's own
@@ -859,14 +859,21 @@ var JOT_WORD_HEIGHT = 26;     // normalized word height (logical px)
 var JOT_WORD_GAP = 10;
 var JOT_PARA_MARGIN = 14;
 var JOT_PARA_TOP = 32;
+// A standalone tap (near-zero movement) reads as a period, not a letter —
+// left to the normal word-height scaling it would blow up into a blob
+// (the height floor that scaling divides by is much bigger than a tap).
+var JOT_DOT_MAX_RAW = 6;   // raw local px — a lone stroke this small or smaller is a tap
+var JOT_DOT_SCALE = 0.5;   // fixed small render scale for a period
+var JOT_DOT_WIDTH = 8;     // layout width reserved for a period
 // Two-stroke Write-mode commands: a straight right-to-left "backstroke"
-// followed by a straight top-to-bottom "downstroke" deletes the last word;
-// the same two strokes in the opposite order (down then back) inserts a
-// carriage return. Each stroke must be reasonably large and straight (an
-// isolated near-vertical stroke is common in ordinary handwriting — e.g.
-// "l", "t", "1" — so a lone downstroke is never enough on its own; only the
-// back+down / down+back *pair*, within JOT_GESTURE_PAIR_MS of each other,
-// triggers a command).
+// followed by a straight top-to-bottom "downstroke" is a backspace (undoes
+// the in-progress word, or the last committed action if nothing's in
+// progress); the same two strokes in the opposite order (down then back) is
+// Return, inserting a line break. Each stroke must be reasonably large and
+// straight (an isolated near-vertical stroke is common in ordinary
+// handwriting — e.g. "l", "t", "1" — so a lone downstroke is never enough on
+// its own; only the back+down / down+back *pair*, within JOT_GESTURE_PAIR_MS
+// of each other, triggers a command).
 var JOT_GESTURE_MIN_LEN = 30;         // logical px — minimum net travel to count as a gesture stroke
 var JOT_GESTURE_STRAIGHTNESS = 0.75;  // net displacement / actual path length
 var JOT_GESTURE_AXIS_DOMINANCE = 1.8; // one axis must outrun the other by this ratio
@@ -938,8 +945,10 @@ function jtToLocal(pt, frame) {
 // the rotation and the scale (so a short word inside a longer run doesn't
 // get leveled/sized off its own sparse points) — only the split points
 // (baseline-left anchor + width) are computed per word, from the actual
-// gaps between strokes.
-function jtSplitWords(strokes) {
+// gaps between strokes. "prevRotate" is the previously-committed word's
+// rotation (or null), inherited by any 1-2 stroke cluster here since that's
+// too little ink for its own leveling estimate to be reliable.
+function jtSplitWords(strokes, prevRotate) {
   var allPts = [];
   for (var i = 0; i < strokes.length; i++) for (var j = 0; j < strokes[i].length; j++) allPts.push(strokes[i][j]);
   var frame = jtPCAFrame(allPts);
@@ -952,7 +961,7 @@ function jtSplitWords(strokes) {
       if (lp[1] < minY) minY = lp[1]; if (lp[1] > maxY) maxY = lp[1];
     }
     overallMinY = Math.min(overallMinY, minY); overallMaxY = Math.max(overallMaxY, maxY);
-    return { minX: minX, maxX: maxX, maxY: maxY };
+    return { minX: minX, maxX: maxX, minY: minY, maxY: maxY };
   });
   var overallH = Math.max(overallMaxY - overallMinY, 10);
   var gap = Math.max(overallH * JOT_SPLIT_GAP_FACTOR, JOT_SPLIT_GAP_MIN);
@@ -970,20 +979,45 @@ function jtSplitWords(strokes) {
       clusters.push(cur);
     }
   }
-  var cos2 = Math.cos(frame.angle), sin2 = Math.sin(frame.angle);
   var scale = Math.min(JOT_WORD_HEIGHT / overallH, 4);
-  return clusters.map(function(c) {
-    var ax = c.minX * cos2 - c.maxY * sin2 + frame.mx;
-    var ay = c.minX * sin2 + c.maxY * cos2 + frame.my;
-    return {
+  var out = [];
+  var rot = (typeof prevRotate === "number") ? prevRotate : null;
+  for (var ci = 0; ci < clusters.length; ci++) {
+    var c = clusters[ci];
+    var soleLocal = c.indices.length === 1 ? local[c.indices[0]] : null;
+    var isDot = !!soleLocal && (soleLocal.maxX - soleLocal.minX) <= JOT_DOT_MAX_RAW && (soleLocal.maxY - soleLocal.minY) <= JOT_DOT_MAX_RAW;
+    var isShort = c.indices.length <= 2;
+    var useRotate = (isShort && rot != null) ? rot : frame.angle;
+    var minX = c.minX, maxX = c.maxX, maxY = c.maxY;
+    if (useRotate !== frame.angle) {
+      // Borrowing a different angle than this run was leveled at — recompute
+      // this cluster's local extent against that angle so the anchor stays
+      // self-consistent with the rotation it'll actually be rendered at.
+      var f2 = { mx: frame.mx, my: frame.my, angle: useRotate };
+      minX = Infinity; maxX = -Infinity; maxY = -Infinity;
+      for (var ii = 0; ii < c.indices.length; ii++) {
+        var s = strokes[c.indices[ii]];
+        for (var k = 0; k < s.length; k++) {
+          var lp = jtToLocal(s[k], f2);
+          if (lp[0] < minX) minX = lp[0]; if (lp[0] > maxX) maxX = lp[0];
+          if (lp[1] > maxY) maxY = lp[1];
+        }
+      }
+    }
+    var cos2 = Math.cos(useRotate), sin2 = Math.sin(useRotate);
+    var ax = minX * cos2 - maxY * sin2 + frame.mx;
+    var ay = minX * sin2 + maxY * cos2 + frame.my;
+    out.push({
       rawStrokes: c.indices.map(function(i) { return strokes[i]; }),
       anchor: [ax, ay],
-      rotate: frame.angle,
-      scale: scale,
-      width: Math.max(c.maxX - c.minX, 10) * scale,
+      rotate: useRotate,
+      scale: isDot ? JOT_DOT_SCALE : scale,
+      width: isDot ? JOT_DOT_WIDTH : Math.max(maxX - minX, 10) * scale,
       height: JOT_WORD_HEIGHT
-    };
-  });
+    });
+    if (!isDot) rot = useRotate; // a period carries no orientation info to hand on
+  }
+  return out;
 }
 
 function createJot(hostEl) {
@@ -1044,7 +1078,6 @@ function createJot(hostEl) {
   var panState = null;     // {x,y} last client point, while 1 finger drags with no tool selected
   var pinchState = null;   // {dist, anchorDoc}, while 2 fingers are down with no tool selected
   var pendingGesture = null; // {kind:"back"|"down", time}, the just-completed Write-mode stroke while it waits to see if it's paired into a two-stroke command
-  var pendingLineBreak = false; // set by the newline gesture; consumed by the next word finalizeWord() commits
 
   function pointerIds() { return Object.keys(activePointers); }
   function pointerDistance(ids) {
@@ -1065,11 +1098,16 @@ function createJot(hostEl) {
     var maxWidth = DOC_WIDTH - JOT_PARA_MARGIN * 2;
     for (var i = 0; i < words.length; i++) {
       var w = words[i];
-      // A manual line break (the down+back gesture — see finalizeWord) always
-      // starts a new line, same as running out of width — but never on the
-      // very first word, so a break with nothing before it doesn't leave a
-      // blank opening line.
-      if ((w.breakBefore && i > 0) || (x + w.width > maxWidth && x > JOT_PARA_MARGIN)) { lineIdx++; x = JOT_PARA_MARGIN; }
+      // A Return (the down+back gesture) is a hidden marker word, not real
+      // ink — it always starts a new line and takes no width itself, same
+      // idea as running out of width, but never on the very first item so a
+      // break with nothing before it doesn't leave a blank opening line.
+      if (w.isBreak) {
+        if (i > 0) { lineIdx++; x = JOT_PARA_MARGIN; }
+        w.line = lineIdx; w.x = x; w.y = JOT_PARA_TOP + lineIdx * JOT_LINE_HEIGHT;
+        continue;
+      }
+      if (x + w.width > maxWidth && x > JOT_PARA_MARGIN) { lineIdx++; x = JOT_PARA_MARGIN; }
       w.line = lineIdx;
       w.x = x;
       w.y = JOT_PARA_TOP + lineIdx * JOT_LINE_HEIGHT;
@@ -1100,12 +1138,21 @@ function createJot(hostEl) {
     if (current) jtFillOutline(ctx, jtOutline(current.points));
   }
 
+  // A Return is stored as its own zero-width "word" (rather than a flag
+  // deferred onto whatever gets written next) so it's captured in the
+  // actions/words log — and therefore in getJSON()/undo — the instant the
+  // gesture fires, and can never be silently lost if nothing follows it.
+  function jtBreakWord(id) {
+    return { id: id, isBreak: true, rawStrokes: [], anchor: [0, 0], rotate: 0, scale: 1, width: 0, height: JOT_WORD_HEIGHT };
+  }
+
   function rebuildFromActions() {
     drawStrokes = {}; words = [];
     for (var i = 0; i < actions.length; i++) {
       var a = actions[i];
       if (a.type === "add-stroke") drawStrokes[a.id] = { points: a.points, bbox: jtBBox(a.points) };
-      else if (a.type === "add-word") words.push({ id: a.id, rawStrokes: a.rawStrokes, anchor: a.anchor, rotate: a.rotate, scale: a.scale, width: a.width, height: a.height, breakBefore: !!a.breakBefore });
+      else if (a.type === "add-word") words.push({ id: a.id, rawStrokes: a.rawStrokes, anchor: a.anchor, rotate: a.rotate, scale: a.scale, width: a.width, height: a.height });
+      else if (a.type === "add-break") words.push(jtBreakWord(a.id));
       else if (a.type === "erase-stroke") delete drawStrokes[a.targetId];
       else if (a.type === "erase-word") { for (var j = 0; j < words.length; j++) if (words[j].id === a.targetId) { words.splice(j, 1); break; } }
     }
@@ -1119,24 +1166,35 @@ function createJot(hostEl) {
     return [sx / camera.scale + camera.x, sy / camera.scale + camera.y];
   }
 
+  // The rotation to hand a short (1-2 stroke) cluster that's about to be
+  // finalized — the last real (non-break) committed word's rotation, so a
+  // single letter follows the line it's sitting on instead of leveling
+  // itself off too little ink to do that reliably.
+  function jtLastRotate() {
+    for (var i = words.length - 1; i >= 0; i--) if (!words[i].isBreak) return words[i].rotate;
+    return null;
+  }
+
   function finalizeWord() {
     if (wordPauseTimer) { clearTimeout(wordPauseTimer); wordPauseTimer = null; }
     if (!writingWord || !writingWord.strokes.length) { writingWord = null; return; }
-    var split = jtSplitWords(writingWord.strokes);
+    var split = jtSplitWords(writingWord.strokes, jtLastRotate());
     for (var i = 0; i < split.length; i++) {
       var t = split[i];
       var id = nextId++;
-      // The down+back newline gesture sets pendingLineBreak; it's consumed
-      // here by whichever word comes out of the split first, so the break
-      // lands right before the next real content rather than retroactively
-      // affecting whatever was just written.
-      var breakBefore = i === 0 && pendingLineBreak;
-      if (breakBefore) pendingLineBreak = false;
-      var action = { type: "add-word", id: id, rawStrokes: t.rawStrokes, anchor: t.anchor, rotate: t.rotate, scale: t.scale, width: t.width, height: t.height, breakBefore: breakBefore };
+      var action = { type: "add-word", id: id, rawStrokes: t.rawStrokes, anchor: t.anchor, rotate: t.rotate, scale: t.scale, width: t.width, height: t.height };
       actions.push(action);
-      words.push({ id: id, rawStrokes: action.rawStrokes, anchor: action.anchor, rotate: action.rotate, scale: action.scale, width: action.width, height: action.height, breakBefore: breakBefore });
+      words.push({ id: id, rawStrokes: action.rawStrokes, anchor: action.anchor, rotate: action.rotate, scale: action.scale, width: action.width, height: action.height });
     }
     relayout();
+    writingWord = null;
+    redraw();
+  }
+
+  // Shared by the toolbar Undo button and the back+down backspace gesture.
+  function doUndo() {
+    actions.pop();
+    rebuildFromActions();
     writingWord = null;
     redraw();
   }
@@ -1153,24 +1211,28 @@ function createJot(hostEl) {
     for (var i = 1; i < writingWord.strokes.length; i++) b = jtBBoxUnion(b, jtBBox(writingWord.strokes[i]));
     writingWord.bbox = b;
   }
-  // back then down: delete the last word — whichever is "last" right now,
-  // the word still being written (if any) or the last one already committed.
-  function jtGestureDeleteLastWord() {
+  // back then down: backspace. If there's an in-progress (not yet paused/
+  // finalized) word, that's what gets discarded — same as backspacing while
+  // mid-word in a text editor. Otherwise it's a real Undo of the last
+  // committed action (word, stroke, erase, or even a previous Return).
+  function jtGestureBackspace() {
     if (wordPauseTimer) { clearTimeout(wordPauseTimer); wordPauseTimer = null; }
     jtPopPendingGestureStroke();
-    if (writingWord) { writingWord = null; return; }
-    if (!words.length) return;
-    var removed = words.pop();
-    actions.push({ type: "erase-word", targetId: removed.id });
-    relayout();
+    if (writingWord) { writingWord = null; redraw(); return; }
+    doUndo();
   }
-  // down then back: commit whatever preceded the gesture normally, then
-  // force the next word onto a new line.
-  function jtGestureInsertNewline() {
+  // down then back: Return. Commits whatever preceded the gesture normally,
+  // then inserts a hidden line-break marker (see jtBreakWord) immediately —
+  // not a flag deferred onto the next word — so it survives a save even if
+  // nothing else is written afterward.
+  function jtGestureReturn() {
     if (wordPauseTimer) { clearTimeout(wordPauseTimer); wordPauseTimer = null; }
     jtPopPendingGestureStroke();
     finalizeWord();
-    pendingLineBreak = true;
+    var id = nextId++;
+    actions.push({ type: "add-break", id: id });
+    words.push(jtBreakWord(id));
+    relayout();
   }
 
   function hitTest(lx, ly) {
@@ -1293,24 +1355,24 @@ function createJot(hostEl) {
     if (stroke.points.length < 2) stroke.points.push([stroke.points[0][0] + 0.1, stroke.points[0][1] + 0.1, stroke.points[0][2]]);
     if (mode === "write") {
       // Two-stroke commands (see jtClassifyGesture): a "back" stroke
-      // immediately followed by a "down" stroke deletes the last word; the
-      // reverse order inserts a newline. The first stroke of a pair is
-      // still written as ordinary ink below (so a lone one that's never
-      // paired just reads as a stray mark, same as before this existed) —
-      // only once the second stroke confirms the pair do both get undone
-      // and replaced with the command.
+      // immediately followed by a "down" stroke is backspace; the reverse
+      // order is Return. The first stroke of a pair is still written as
+      // ordinary ink below (so a lone one that's never paired just reads as
+      // a stray mark, same as before this existed) — only once the second
+      // stroke confirms the pair do both get undone and replaced with the
+      // command.
       var gestureKind = jtClassifyGesture(stroke.points);
       var gestureNow = Date.now();
       if (gestureKind && pendingGesture && (gestureNow - pendingGesture.time) <= JOT_GESTURE_PAIR_MS) {
         if (pendingGesture.kind === "back" && gestureKind === "down") {
           pendingGesture = null;
-          jtGestureDeleteLastWord();
+          jtGestureBackspace();
           redraw();
           return;
         }
         if (pendingGesture.kind === "down" && gestureKind === "back") {
           pendingGesture = null;
-          jtGestureInsertNewline();
+          jtGestureReturn();
           redraw();
           return;
         }
@@ -1371,7 +1433,7 @@ function createJot(hostEl) {
       return;
     }
     var act = btn.getAttribute("data-act");
-    if (act === "undo") { actions.pop(); rebuildFromActions(); writingWord = null; redraw(); }
+    if (act === "undo") doUndo();
     else if (act === "zoomin") setZoom(camera.scale * 1.25);
     else if (act === "zoomout") setZoom(camera.scale / 1.25);
     else if (act === "zoomreset") setZoom(1);
@@ -1387,7 +1449,7 @@ function createJot(hostEl) {
       finalizeWord();
       var ds = [], id;
       for (id in drawStrokes) ds.push({ id: id, points: drawStrokes[id].points });
-      var ws = words.map(function(w) { return { id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height, breakBefore: !!w.breakBefore }; });
+      var ws = words.map(function(w) { return w.isBreak ? { id: w.id, isBreak: true } : { id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height }; });
       return { v: 1, canvasWidth: DOC_WIDTH, drawStrokes: ds, words: ws };
     },
     getSVG: function() {
@@ -1424,8 +1486,13 @@ function createJot(hostEl) {
       }
       if (data && data.words) for (var j = 0; j < data.words.length; j++) {
         var w = data.words[j];
-        actions.push({ type: "add-word", id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height, breakBefore: !!w.breakBefore });
-        words.push({ id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height, breakBefore: !!w.breakBefore });
+        if (w.isBreak) {
+          actions.push({ type: "add-break", id: w.id });
+          words.push(jtBreakWord(w.id));
+        } else {
+          actions.push({ type: "add-word", id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height });
+          words.push({ id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height });
+        }
         if (nextId <= Number(w.id)) nextId = Number(w.id) + 1;
       }
       relayout();
