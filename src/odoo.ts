@@ -228,7 +228,14 @@ function parseValue(xml: string): unknown {
 
 export async function lookupCaller(env: Env, number: string) {
   if (!number || number === "unknown") return null;
-  const clean = number.startsWith("+44") ? "0" + number.slice(3) : number;
+  // Asterisk hands caller IDs over as plain digits with no "+" (e.g.
+  // "441283246490"), not E.164 — so a "+44" check here never fired, and a
+  // 12-digit "44..." number was searched for verbatim against Odoo
+  // contacts stored the normal UK domestic way ("01283246490"), which
+  // never matches as a substring. Strip all non-digits first, then convert
+  // either form of the country code prefix to the domestic "0..." form.
+  const digits = number.replace(/\D/g, "");
+  const clean = digits.startsWith("44") && digits.length > 10 ? "0" + digits.slice(2) : digits;
   try {
     const uid = await odooAuth(env);
     if (!uid) return null;

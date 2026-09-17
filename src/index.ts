@@ -144,6 +144,7 @@ async function handleCallHistory(request: Request, env: Env): Promise<Response> 
        COALESCE(c.start_date, c.create_date) AS start_date,
        c.end_date,
        CASE WHEN c.end_date > c.start_date THEN (c.end_date - c.start_date) / 1000 ELSE 0 END AS duration,
+       c.partner_id AS partner_id,
        COALESCE(p.name, '') AS partner_name,
        CASE WHEN COALESCE(c.notes_html, '') != '' THEN 1 ELSE 0 END AS has_notes
      FROM call_log c
