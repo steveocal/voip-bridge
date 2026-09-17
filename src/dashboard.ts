@@ -6,7 +6,11 @@ export function serveDashboard(): Response {
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="theme-color" content="#0b0f19">
 <title>VoIP Bridge</title>
-<link rel="manifest" href="data:application/json,${encodeURIComponent(JSON.stringify({name:"VoIP Bridge",short_name:"VoIP",start_url:"/dashboard",display:"standalone",background_color:"#0b0f19",theme_color:"#0b0f19",icons:[{src:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📞%3C/text%3E%3C/svg%3E",sizes:"100x100",type:"image/svg+xml"}]}))}">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
@@ -21,6 +25,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .reg-status{font-size:12px;color:#999;text-align:right;max-width:120px}
 .reg-status.ok{color:#34d399}
 .reg-status.err{color:#f87171}
+.install-btn{flex-shrink:0;border:1px solid #2563eb;border-radius:20px;background:rgba(37,99,235,.15);color:#7fb2ff;font-size:12px;font-weight:600;padding:7px 12px;cursor:pointer}
+.install-btn:active{background:rgba(37,99,235,.3)}
+.install-tip{margin:0 16px 8px;padding:10px 12px;border-radius:10px;background:#1a1a1a;border:1px solid #333;font-size:12px;color:#ccc;display:flex;align-items:center;gap:8px}
+.install-tip button{margin-left:auto;background:none;border:none;color:#999;font-size:14px;cursor:pointer;flex-shrink:0}
 /* entry box */
 .entry{display:flex;align-items:center;gap:8px;padding:8px 16px}
 .entry input{flex:1;padding:13px 14px;border:none;border-radius:12px;background:#1a1a1a;color:#fff;font-size:20px;letter-spacing:.5px;outline:none}
@@ -162,6 +170,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .cp-pane .tox-tinymce{border-color:#2c2c2c}
 .cp-quote-row{display:flex;justify-content:space-between;gap:8px;padding:10px 4px;border-bottom:1px solid #222;font-size:14px}
 .cp-quote-row .n{font-weight:600}
+.cp-quote-row .n .dt{font-weight:400;color:#999;font-size:12px}
+.cp-quote-row .items{color:#ccc;font-size:12.5px;font-family:ui-monospace,Menlo,Consolas,monospace;margin-top:2px}
 .cp-quote-row .st{color:#999;font-size:12px}
 .cp-quote-row .amt{color:#34d399;font-weight:700;flex-shrink:0}
 .cp-hist-row{display:flex;justify-content:space-between;padding:9px 4px;border-bottom:1px solid #222;font-size:13px;color:#ccc}
@@ -177,7 +187,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .jt-btn.jt-zoom-label{width:auto;padding:0 8px;font-size:12px}
 .jt-sep{width:1px;align-self:stretch;background:#2c2c2c;margin:2px 4px}
 .jt-canvas-wrap{width:100%;border-radius:10px;background:#1e1e1e;border:1px solid #2c2c2c;overflow:hidden}
-.jt-canvas-wrap canvas{display:block}
+.jt-canvas-wrap canvas{display:block;cursor:none}
 #jot-canvas .jt-canvas-wrap{height:420px}
 #cd-jot-canvas .jt-canvas-wrap{height:58vh}
 /* call detail view: in-screen (not a dialog), Details/Notes/Jot tabs, sized for phones */
@@ -212,8 +222,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
       <div class="caller-id" id="acc-caller-display">Caller ID: +44 7898 117226</div>
     </div>
     <div class="reg-status" id="phone-status">Loading…</div>
+    <button class="install-btn hidden" id="install-btn" onclick="installApp()">⬇ Install</button>
     <button class="menu-icon" onclick="toggleMenu()" aria-label="Menu">☰</button>
   </header>
+
+  <div class="install-tip hidden" id="install-tip">
+    Tap <strong>Share</strong> then <strong>Add to Home Screen</strong> to install.
+    <button onclick="dismissInstallTip()" aria-label="Dismiss">✕</button>
+  </div>
 
   <div class="call-banner hidden" id="call-banner">
     <div class="info">
@@ -254,12 +270,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
         <div class="cp-tabs">
           <button class="cp-tab" data-tab="sales" onclick="switchCallTab('sales')">Sales / Quotations</button>
           <button class="cp-tab" data-tab="history" onclick="switchCallTab('history')">Call History</button>
+          <button class="cp-tab" data-tab="emails" onclick="switchCallTab('emails')">Emails</button>
           <button class="cp-tab active" data-tab="notes" onclick="switchCallTab('notes')">Notes</button>
           <button class="cp-tab" data-tab="jot" onclick="switchCallTab('jot')">Jot</button>
         </div>
         <div class="cp-body">
           <div class="cp-pane hidden" id="cp-pane-sales"><div class="empty">—</div></div>
           <div class="cp-pane hidden" id="cp-pane-history"><div class="empty">—</div></div>
+          <div class="cp-pane hidden" id="cp-pane-emails"><div class="empty">—</div></div>
           <div class="cp-pane" id="cp-pane-notes">
             <textarea id="call-notes" placeholder="Call notes… (press # for quick text)" autocomplete="off"></textarea>
             <div class="qt-panel hidden" id="qt-panel">
@@ -792,6 +810,7 @@ function updateCallPanelCaller() {
       currentCallPartner = { id: d.id, name: d.name };
       el.textContent = d.name + " — " + currentCall.remote;
       if (activeCpTab === "sales") loadQuotationsTab();
+      if (activeCpTab === "emails") loadEmailsTab();
     }
   }).catch(function(){});
 }
@@ -805,6 +824,7 @@ function switchCallTab(tab) {
   if (tab === "notes" && !tinyReady["call-notes"]) loadTinyMce().then(initCallNotesEditor).catch(function() {});
   if (tab === "history") loadCallHistoryTab();
   if (tab === "sales") loadQuotationsTab();
+  if (tab === "emails") loadEmailsTab();
   if (tab === "jot") initJotEditor();
 }
 
@@ -822,7 +842,7 @@ var JOT_STROKE_OPTS = { size: 6, thinning: 0.6, smoothing: 0.5, streamline: 0.5 
 // needs to be long to avoid splitting words (pointerdown now cancels it,
 // so it can never fire mid-stroke) — keep it short so a finished word
 // doesn't sit around unsettled.
-var JOT_PAUSE_MS = 1000;
+var JOT_PAUSE_MS = 600;
 var JOT_PROXIMITY = 2.5;      // word-boundary proximity factor (x current word bbox size)
 // Once a run of writing settles (pause/mode-change), it's split into
 // individual words by the actual gaps between strokes along the run's own
@@ -839,6 +859,18 @@ var JOT_WORD_HEIGHT = 26;     // normalized word height (logical px)
 var JOT_WORD_GAP = 10;
 var JOT_PARA_MARGIN = 14;
 var JOT_PARA_TOP = 32;
+// Two-stroke Write-mode commands: a straight right-to-left "backstroke"
+// followed by a straight top-to-bottom "downstroke" deletes the last word;
+// the same two strokes in the opposite order (down then back) inserts a
+// carriage return. Each stroke must be reasonably large and straight (an
+// isolated near-vertical stroke is common in ordinary handwriting — e.g.
+// "l", "t", "1" — so a lone downstroke is never enough on its own; only the
+// back+down / down+back *pair*, within JOT_GESTURE_PAIR_MS of each other,
+// triggers a command).
+var JOT_GESTURE_MIN_LEN = 30;         // logical px — minimum net travel to count as a gesture stroke
+var JOT_GESTURE_STRAIGHTNESS = 0.75;  // net displacement / actual path length
+var JOT_GESTURE_AXIS_DOMINANCE = 1.8; // one axis must outrun the other by this ratio
+var JOT_GESTURE_PAIR_MS = 900;        // max gap between the two strokes of a command
 
 function jtOutline(pts) { return PerfectFreehand.getStroke(pts, JOT_STROKE_OPTS); }
 function jtFillOutline(ctx, outline) {
@@ -860,6 +892,22 @@ function jtBBox(pts) {
 }
 function jtBBoxUnion(a, b) {
   return { minX: Math.min(a.minX, b.minX), minY: Math.min(a.minY, b.minY), maxX: Math.max(a.maxX, b.maxX), maxY: Math.max(a.maxY, b.maxY) };
+}
+// Classifies a single completed stroke as a "back" (straight right-to-left)
+// or "down" (straight top-to-bottom) gesture candidate, or null if it's too
+// short/curved/diagonal to be one — i.e. it's just ordinary handwriting.
+function jtClassifyGesture(pts) {
+  var p0 = pts[0], pN = pts[pts.length - 1];
+  var dx = pN[0] - p0[0], dy = pN[1] - p0[1];
+  var net = Math.hypot(dx, dy);
+  if (net < JOT_GESTURE_MIN_LEN) return null;
+  var pathLen = 0;
+  for (var i = 1; i < pts.length; i++) pathLen += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+  if (!pathLen || net / pathLen < JOT_GESTURE_STRAIGHTNESS) return null;
+  var adx = Math.abs(dx), ady = Math.abs(dy);
+  if (adx > ady * JOT_GESTURE_AXIS_DOMINANCE && dx < 0) return "back";
+  if (ady > adx * JOT_GESTURE_AXIS_DOMINANCE && dy > 0) return "down";
+  return null;
 }
 function jtBBoxNear(a, b, factor) {
   // Absolute floor matters most right after the word's first letter, when
@@ -995,6 +1043,8 @@ function createJot(hostEl) {
   var activePointers = {}; // pointerId -> {x,y}, tracked whenever a tool is deselected (pan/pinch-zoom)
   var panState = null;     // {x,y} last client point, while 1 finger drags with no tool selected
   var pinchState = null;   // {dist, anchorDoc}, while 2 fingers are down with no tool selected
+  var pendingGesture = null; // {kind:"back"|"down", time}, the just-completed Write-mode stroke while it waits to see if it's paired into a two-stroke command
+  var pendingLineBreak = false; // set by the newline gesture; consumed by the next word finalizeWord() commits
 
   function pointerIds() { return Object.keys(activePointers); }
   function pointerDistance(ids) {
@@ -1015,7 +1065,11 @@ function createJot(hostEl) {
     var maxWidth = DOC_WIDTH - JOT_PARA_MARGIN * 2;
     for (var i = 0; i < words.length; i++) {
       var w = words[i];
-      if (x + w.width > maxWidth && x > JOT_PARA_MARGIN) { lineIdx++; x = JOT_PARA_MARGIN; }
+      // A manual line break (the down+back gesture — see finalizeWord) always
+      // starts a new line, same as running out of width — but never on the
+      // very first word, so a break with nothing before it doesn't leave a
+      // blank opening line.
+      if ((w.breakBefore && i > 0) || (x + w.width > maxWidth && x > JOT_PARA_MARGIN)) { lineIdx++; x = JOT_PARA_MARGIN; }
       w.line = lineIdx;
       w.x = x;
       w.y = JOT_PARA_TOP + lineIdx * JOT_LINE_HEIGHT;
@@ -1051,7 +1105,7 @@ function createJot(hostEl) {
     for (var i = 0; i < actions.length; i++) {
       var a = actions[i];
       if (a.type === "add-stroke") drawStrokes[a.id] = { points: a.points, bbox: jtBBox(a.points) };
-      else if (a.type === "add-word") words.push({ id: a.id, rawStrokes: a.rawStrokes, anchor: a.anchor, rotate: a.rotate, scale: a.scale, width: a.width, height: a.height });
+      else if (a.type === "add-word") words.push({ id: a.id, rawStrokes: a.rawStrokes, anchor: a.anchor, rotate: a.rotate, scale: a.scale, width: a.width, height: a.height, breakBefore: !!a.breakBefore });
       else if (a.type === "erase-stroke") delete drawStrokes[a.targetId];
       else if (a.type === "erase-word") { for (var j = 0; j < words.length; j++) if (words[j].id === a.targetId) { words.splice(j, 1); break; } }
     }
@@ -1072,13 +1126,51 @@ function createJot(hostEl) {
     for (var i = 0; i < split.length; i++) {
       var t = split[i];
       var id = nextId++;
-      var action = { type: "add-word", id: id, rawStrokes: t.rawStrokes, anchor: t.anchor, rotate: t.rotate, scale: t.scale, width: t.width, height: t.height };
+      // The down+back newline gesture sets pendingLineBreak; it's consumed
+      // here by whichever word comes out of the split first, so the break
+      // lands right before the next real content rather than retroactively
+      // affecting whatever was just written.
+      var breakBefore = i === 0 && pendingLineBreak;
+      if (breakBefore) pendingLineBreak = false;
+      var action = { type: "add-word", id: id, rawStrokes: t.rawStrokes, anchor: t.anchor, rotate: t.rotate, scale: t.scale, width: t.width, height: t.height, breakBefore: breakBefore };
       actions.push(action);
-      words.push({ id: id, rawStrokes: action.rawStrokes, anchor: action.anchor, rotate: action.rotate, scale: action.scale, width: action.width, height: action.height });
+      words.push({ id: id, rawStrokes: action.rawStrokes, anchor: action.anchor, rotate: action.rotate, scale: action.scale, width: action.width, height: action.height, breakBefore: breakBefore });
     }
     relayout();
     writingWord = null;
     redraw();
+  }
+
+  // Pops the ink of a just-completed gesture-candidate stroke (see
+  // jtClassifyGesture) once it's confirmed to be the first half of a
+  // two-stroke command, so a "back" or "down" command stroke never lingers
+  // as visible content.
+  function jtPopPendingGestureStroke() {
+    if (!writingWord || !writingWord.strokes.length) return;
+    writingWord.strokes.pop();
+    if (!writingWord.strokes.length) { writingWord = null; return; }
+    var b = jtBBox(writingWord.strokes[0]);
+    for (var i = 1; i < writingWord.strokes.length; i++) b = jtBBoxUnion(b, jtBBox(writingWord.strokes[i]));
+    writingWord.bbox = b;
+  }
+  // back then down: delete the last word — whichever is "last" right now,
+  // the word still being written (if any) or the last one already committed.
+  function jtGestureDeleteLastWord() {
+    if (wordPauseTimer) { clearTimeout(wordPauseTimer); wordPauseTimer = null; }
+    jtPopPendingGestureStroke();
+    if (writingWord) { writingWord = null; return; }
+    if (!words.length) return;
+    var removed = words.pop();
+    actions.push({ type: "erase-word", targetId: removed.id });
+    relayout();
+  }
+  // down then back: commit whatever preceded the gesture normally, then
+  // force the next word onto a new line.
+  function jtGestureInsertNewline() {
+    if (wordPauseTimer) { clearTimeout(wordPauseTimer); wordPauseTimer = null; }
+    jtPopPendingGestureStroke();
+    finalizeWord();
+    pendingLineBreak = true;
   }
 
   function hitTest(lx, ly) {
@@ -1105,19 +1197,33 @@ function createJot(hostEl) {
 
   function onDown(e) {
     activePointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+    var ids = pointerIds();
+    // Two or more simultaneous touches are always a pinch/pan on the camera,
+    // no matter which tool is selected. Previously this pinch/pan handling
+    // only ran when no tool was active ("mode" falsy) — pinching while
+    // Draw/Write/Erase was selected instead fed both fingers in as two
+    // independent, interleaved strokes: in Draw that showed up as a single
+    // garbled stroke sweeping the screen (looking like "the whole page
+    // zooms"), and in Write, that stroke got picked up as a "word" whose
+    // huge/tiny bounding box then drove its rendered scale — the word-size-
+    // changes-and-rewraps bug. Reserving 2+ pointers for camera control
+    // fixes both: pinch always zooms the camera, ink is only ever drawn by
+    // a single active pointer.
+    if (ids.length >= 2) {
+      if (current) { current = null; redraw(); }
+      erasing = false;
+      panState = null;
+      var downIds = ids.slice(0, 2);
+      var mid = pointerMidpoint(downIds);
+      pinchState = { dist: pointerDistance(downIds), anchorDoc: toLogical(mid.x, mid.y) };
+      return;
+    }
     if (!mode) {
       // No tool selected: the canvas is a fixed viewport-sized window onto
-      // an unbounded document, so panning/pinch-zoom are handled entirely
+      // an unbounded document, so single-finger panning is handled entirely
       // here (there's no native scroll to fall back on).
-      var ids = pointerIds();
-      if (ids.length === 1) {
-        panState = { x: e.clientX, y: e.clientY };
-        pinchState = null;
-      } else if (ids.length === 2) {
-        panState = null;
-        var mid = pointerMidpoint(ids);
-        pinchState = { dist: pointerDistance(ids), anchorDoc: toLogical(mid.x, mid.y) };
-      }
+      panState = { x: e.clientX, y: e.clientY };
+      pinchState = null;
       return;
     }
     canvas.setPointerCapture(e.pointerId);
@@ -1135,25 +1241,28 @@ function createJot(hostEl) {
   }
   function onMove(e) {
     if (activePointers[e.pointerId]) activePointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+    var ids = pointerIds();
+    if (ids.length >= 2 && pinchState) {
+      var downIds = ids.slice(0, 2);
+      var mid = pointerMidpoint(downIds);
+      var d = pointerDistance(downIds);
+      if (d) {
+        var newScale = Math.max(0.25, Math.min(4, camera.scale * (d / pinchState.dist)));
+        pinchState.dist = d;
+        var r = canvas.getBoundingClientRect();
+        var sx = (mid.x - r.left) / r.width * viewportW;
+        var sy = (mid.y - r.top) / r.height * viewportH;
+        camera.scale = newScale;
+        camera.x = pinchState.anchorDoc[0] - sx / newScale;
+        camera.y = pinchState.anchorDoc[1] - sy / newScale;
+        updateZoomLabel();
+        redraw();
+      }
+      e.preventDefault();
+      return;
+    }
     if (!mode) {
-      var ids = pointerIds();
-      if (ids.length >= 2 && pinchState) {
-        var mid = pointerMidpoint(ids);
-        var d = pointerDistance(ids);
-        if (d) {
-          var newScale = Math.max(0.25, Math.min(4, camera.scale * (d / pinchState.dist)));
-          pinchState.dist = d;
-          var r = canvas.getBoundingClientRect();
-          var sx = (mid.x - r.left) / r.width * viewportW;
-          var sy = (mid.y - r.top) / r.height * viewportH;
-          camera.scale = newScale;
-          camera.x = pinchState.anchorDoc[0] - sx / newScale;
-          camera.y = pinchState.anchorDoc[1] - sy / newScale;
-          updateZoomLabel();
-          redraw();
-        }
-        e.preventDefault();
-      } else if (ids.length === 1 && panState) {
+      if (ids.length === 1 && panState) {
         var dx = e.clientX - panState.x, dy = e.clientY - panState.y;
         panState = { x: e.clientX, y: e.clientY };
         camera.x -= dx / camera.scale;
@@ -1165,7 +1274,7 @@ function createJot(hostEl) {
     }
     var p = toLogical(e.clientX, e.clientY);
     if (mode === "erase") { if (erasing) eraseAt(p[0], p[1]); return; }
-    if (!current) return;
+    if (!current) return; // mid-pinch (this pointer was cancelled when a 2nd finger landed)
     var pressure = e.pointerType === "mouse" ? 0.5 : (e.pressure || 0.5);
     current.points.push([p[0], p[1], pressure]);
     redraw();
@@ -1176,12 +1285,38 @@ function createJot(hostEl) {
     if (ids.length < 2) pinchState = null;
     panState = (!mode && ids.length === 1) ? { x: activePointers[ids[0]].x, y: activePointers[ids[0]].y } : null;
     if (!mode) return;
+    if (pinchState) return; // still mid-pinch (a 3rd+ finger lifted) — not the end of a stroke
     if (mode === "erase") { erasing = false; return; }
     if (!current) return;
     var stroke = current;
     current = null;
     if (stroke.points.length < 2) stroke.points.push([stroke.points[0][0] + 0.1, stroke.points[0][1] + 0.1, stroke.points[0][2]]);
     if (mode === "write") {
+      // Two-stroke commands (see jtClassifyGesture): a "back" stroke
+      // immediately followed by a "down" stroke deletes the last word; the
+      // reverse order inserts a newline. The first stroke of a pair is
+      // still written as ordinary ink below (so a lone one that's never
+      // paired just reads as a stray mark, same as before this existed) —
+      // only once the second stroke confirms the pair do both get undone
+      // and replaced with the command.
+      var gestureKind = jtClassifyGesture(stroke.points);
+      var gestureNow = Date.now();
+      if (gestureKind && pendingGesture && (gestureNow - pendingGesture.time) <= JOT_GESTURE_PAIR_MS) {
+        if (pendingGesture.kind === "back" && gestureKind === "down") {
+          pendingGesture = null;
+          jtGestureDeleteLastWord();
+          redraw();
+          return;
+        }
+        if (pendingGesture.kind === "down" && gestureKind === "back") {
+          pendingGesture = null;
+          jtGestureInsertNewline();
+          redraw();
+          return;
+        }
+      }
+      pendingGesture = gestureKind ? { kind: gestureKind, time: gestureNow } : null;
+
       var bbox = jtBBox(stroke.points);
       if (writingWord && jtBBoxNear(writingWord.bbox, bbox, JOT_PROXIMITY)) {
         writingWord.strokes.push(stroke.points);
@@ -1229,6 +1364,7 @@ function createJot(hostEl) {
     var m = btn.getAttribute("data-mode");
     if (m) {
       finalizeWord();
+      pendingGesture = null; // don't let a stroke from before a tool switch pair with one drawn after
       mode = (mode === m) ? null : m;
       var btns = toolbar.querySelectorAll(".jt-mode");
       for (var i = 0; i < btns.length; i++) btns[i].classList.toggle("active", btns[i].getAttribute("data-mode") === mode);
@@ -1251,7 +1387,7 @@ function createJot(hostEl) {
       finalizeWord();
       var ds = [], id;
       for (id in drawStrokes) ds.push({ id: id, points: drawStrokes[id].points });
-      var ws = words.map(function(w) { return { id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height }; });
+      var ws = words.map(function(w) { return { id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height, breakBefore: !!w.breakBefore }; });
       return { v: 1, canvasWidth: DOC_WIDTH, drawStrokes: ds, words: ws };
     },
     getSVG: function() {
@@ -1288,8 +1424,8 @@ function createJot(hostEl) {
       }
       if (data && data.words) for (var j = 0; j < data.words.length; j++) {
         var w = data.words[j];
-        actions.push({ type: "add-word", id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height });
-        words.push({ id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height });
+        actions.push({ type: "add-word", id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height, breakBefore: !!w.breakBefore });
+        words.push({ id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height, breakBefore: !!w.breakBefore });
         if (nextId <= Number(w.id)) nextId = Number(w.id) + 1;
       }
       relayout();
@@ -1408,10 +1544,42 @@ function loadQuotationsTab() {
     var list = d.quotations || [];
     if (!list.length) { el.innerHTML = '<div class="empty">No quotations found</div>'; return; }
     el.innerHTML = list.map(function(o) {
-      return '<div class="cp-quote-row"><div><div class="n">' + esc(o.name) + '</div>' + (o.state ? '<div class="st">' + esc(o.state) + '</div>' : '') + '</div>' + (o.amount_total != null ? '<span class="amt">' + esc(fmtMoney(o.amount_total)) + '</span>' : '') + '</div>';
+      var when = o.date_order ? new Date(o.date_order.replace(" ", "T") + "Z").toLocaleDateString() : "";
+      return '<div class="cp-quote-row">'
+        + '<div>'
+        + '<div class="n">' + esc(o.name) + (when ? ' <span class="dt">' + esc(when) + '</span>' : '') + '</div>'
+        + (o.items_summary ? '<div class="items">' + esc(o.items_summary) + '</div>' : '')
+        + (o.state ? '<div class="st">' + esc(o.state) + '</div>' : '')
+        + '</div>'
+        + (o.amount_total != null ? '<span class="amt">' + esc(fmtMoney(o.amount_total)) + '</span>' : '')
+        + '</div>';
     }).join("");
   }).catch(function(){ el.innerHTML = '<div class="empty">Error loading quotations</div>'; });
 }
+
+// Last 100 emails for the identified caller — reuses the same /messages
+// endpoint, row renderer, and cache as the full-screen Messages view
+// (loadMessages/renderMessageRow below), filtered down to Gmail-sourced
+// entries only (that endpoint also returns Odoo's internal mail.message
+// notes, which aren't "emails"). Tapping a row opens it straight away —
+// no select-then-tap-again dance, since this is a quick glance mid-call
+// rather than the full Messages screen's reply/compose workflow.
+function loadEmailsTab() {
+  var el = document.getElementById("cp-pane-emails");
+  if (!currentCallPartner) { el.innerHTML = '<div class="empty">No matching contact yet</div>'; return; }
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  fetch(API + "/messages?contact=" + encodeURIComponent(currentCallPartner.id) + "&limit=100").then(function(r){return r.json();}).then(function(d){
+    var msgs = (d.messages || []).filter(function(m) { return m.source === "gmail"; });
+    if (!msgs.length) { el.innerHTML = '<div class="empty">No emails found</div>'; return; }
+    el.innerHTML = msgs.map(function(m) { return renderMessageRow(m); }).join("");
+  }).catch(function(){ el.innerHTML = '<div class="empty">Error loading emails</div>'; });
+}
+document.getElementById("cp-pane-emails").addEventListener("click", function(e) {
+  var row = e.target.closest(".msg-row");
+  if (!row) return;
+  var m = messagesCache[row.getAttribute("data-key")];
+  if (m) openMessageFull(m);
+});
 function fmtMoney(n) { try { return "£" + Number(n).toFixed(2); } catch (e) { return String(n); } }
 
 // Keyboard: digits/* send DTMF during a call; # opens quick text.
@@ -2008,6 +2176,41 @@ document.getElementById("messages-list").addEventListener("click", function(e) {
   if (!m) return;
   rowClick(row.getAttribute("data-key"), "message", m, function() { openMessageFull(m); });
 });
+
+// ── PWA install ──────────────────────────────────────────────
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", function() { navigator.serviceWorker.register("/sw.js").catch(function() {}); });
+}
+var deferredInstallPrompt = null;
+function isStandalone() {
+  return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+}
+window.addEventListener("beforeinstallprompt", function(e) {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  if (!isStandalone()) document.getElementById("install-btn").classList.remove("hidden");
+});
+window.addEventListener("appinstalled", function() {
+  deferredInstallPrompt = null;
+  document.getElementById("install-btn").classList.add("hidden");
+  document.getElementById("install-tip").classList.add("hidden");
+});
+function installApp() {
+  if (deferredInstallPrompt) {
+    deferredInstallPrompt.prompt();
+    deferredInstallPrompt.userChoice.finally(function() { deferredInstallPrompt = null; });
+    return;
+  }
+  // No beforeinstallprompt support (iOS Safari) — show manual instructions.
+  document.getElementById("install-tip").classList.remove("hidden");
+}
+function dismissInstallTip() {
+  document.getElementById("install-tip").classList.add("hidden");
+}
+(function() {
+  var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  if (isIOS && !isStandalone()) document.getElementById("install-btn").classList.remove("hidden");
+})();
 
 // ── menu + settings ────────────────────────────────────────────
 function toggleMenu() {

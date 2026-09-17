@@ -467,6 +467,62 @@ export interface Quotation {
   state: string;
   amount_total: number;
   date_order?: string;
+  items_summary?: string;
+}
+
+// Compact call-notes shorthand for our own product range — "{qty}-{suffix}"
+// per order line, e.g. 2x IHP160 + 1x IBH1800 reads as "2-160 1-1.8".
+// Anything not in this table (other products) falls back to its own
+// internal reference/name rather than being silently dropped.
+const ITEM_CODE_SHORTHAND: Record<string, string> = {
+  IHP160: "160",
+  IHP320: "320",
+  IHP450: "450",
+  IHP640: "640",
+  IHP900: "900",
+  IBH1800: "1.8",
+  IBH2400: "2.4",
+  IBH3200: "3.2",
+};
+
+// Odoo's product_id many2one label is normally "[DEFAULT_CODE] Product Name".
+function extractProductCode(label: string): string | null {
+  const m = /\[([A-Za-z0-9._-]+)\]/.exec(label);
+  return m ? m[1] : null;
+}
+
+function fmtQty(n: number): string {
+  return Number.isInteger(n) ? String(n) : String(n);
+}
+
+/** sale.order.line for a batch of orders, reduced to the compact per-order
+ *  items string described above. Best-effort — an empty map on failure just
+ *  means quotations render without an items line, nothing else breaks. */
+async function fetchOrderItemSummaries(env: Env, uid: number, orderIds: number[]): Promise<Map<number, string>> {
+  const out = new Map<number, string>();
+  if (!orderIds.length) return out;
+  try {
+    const r = await odooCall(env, uid, "sale.order.line", "search_read",
+      [[["order_id", "in", orderIds], ["display_type", "=", false]]],
+      { fields: ["order_id", "product_id", "product_uom_qty"], order: "id" });
+    const lines = (r.parsed ?? []) as Array<Record<string, unknown>>;
+    const byOrder = new Map<number, string[]>();
+    for (const line of lines) {
+      const orderId = idOrNull(line.order_id);
+      if (orderId == null) continue;
+      const productLabel = Array.isArray(line.product_id) ? s(line.product_id[1]) : "";
+      const code = extractProductCode(productLabel);
+      const qty = typeof line.product_uom_qty === "number" ? line.product_uom_qty : Number(line.product_uom_qty) || 0;
+      const shorthand = code ? ITEM_CODE_SHORTHAND[code] : undefined;
+      const piece = shorthand ? `${fmtQty(qty)}-${shorthand}` : (code || productLabel || "?");
+      if (!byOrder.has(orderId)) byOrder.set(orderId, []);
+      byOrder.get(orderId)!.push(piece);
+    }
+    for (const [orderId, pieces] of byOrder) out.set(orderId, pieces.join(" "));
+  } catch (e) {
+    console.error("Odoo order-line fetch failed:", e);
+  }
+  return out;
 }
 
 /** Live search of sale.order for a partner — best-effort (returns [] if the
@@ -479,12 +535,14 @@ export async function searchQuotations(env: Env, partnerId: number, limit = 20):
       [[["partner_id", "=", partnerId]]],
       { fields: ["id", "name", "state", "amount_total", "date_order"], limit, order: "date_order desc" });
     const orders = ((r.parsed ?? []) as unknown as Array<Record<string, unknown>>);
+    const itemSummaries = await fetchOrderItemSummaries(env, uid, orders.map(o => o.id as number));
     return orders.map(o => ({
       id: o.id as number,
       name: s(o.name),
       state: s(o.state),
       amount_total: typeof o.amount_total === "number" ? o.amount_total : 0,
       date_order: s(o.date_order) || undefined,
+      items_summary: itemSummaries.get(o.id as number) || undefined,
     }));
   } catch (e) {
     console.error("Odoo quotation search failed:", e);
