@@ -638,31 +638,40 @@ document.addEventListener("click", function unlockAudio() {
 }, { once: true });
 
 // ── incoming-call ringtone (dual-tone, 1s on / 3s off, looped) ─
+// Vibration runs alongside the tone, not instead of it — it's a fallback
+// for when audio is blocked by autoplay policy (Chrome/Android; iOS Safari
+// has never implemented the Vibration API at all, and desktop has no
+// hardware to vibrate), not a guaranteed workaround for it: browsers apply
+// the same "needs a recent user gesture" restriction to vibrate() as they
+// do to audio autoplay, so on a completely untouched tab neither may fire.
 var ringCtx = null, ringTimer = null;
 function startRingtone() {
   stopRingtone();
-  try { ringCtx = new (window.AudioContext || window.webkitAudioContext)(); ringCtx.resume().catch(function() {}); } catch (e) { return; }
+  try { ringCtx = new (window.AudioContext || window.webkitAudioContext)(); ringCtx.resume().catch(function() {}); } catch (e) { ringCtx = null; }
   ringCycle();
 }
 function ringCycle() {
-  if (!ringCtx) return;
-  var t0 = ringCtx.currentTime;
-  var gain = ringCtx.createGain();
-  gain.gain.setValueAtTime(0.001, t0);
-  gain.gain.exponentialRampToValueAtTime(0.2, t0 + 0.02);
-  gain.gain.setValueAtTime(0.2, t0 + 0.9);
-  gain.gain.exponentialRampToValueAtTime(0.001, t0 + 1);
-  gain.connect(ringCtx.destination);
-  var osc1 = ringCtx.createOscillator(); osc1.type = "sine"; osc1.frequency.value = 440;
-  var osc2 = ringCtx.createOscillator(); osc2.type = "sine"; osc2.frequency.value = 480;
-  osc1.connect(gain); osc2.connect(gain);
-  osc1.start(t0); osc2.start(t0);
-  osc1.stop(t0 + 1); osc2.stop(t0 + 1);
+  if (ringCtx) {
+    var t0 = ringCtx.currentTime;
+    var gain = ringCtx.createGain();
+    gain.gain.setValueAtTime(0.001, t0);
+    gain.gain.exponentialRampToValueAtTime(0.2, t0 + 0.02);
+    gain.gain.setValueAtTime(0.2, t0 + 0.9);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + 1);
+    gain.connect(ringCtx.destination);
+    var osc1 = ringCtx.createOscillator(); osc1.type = "sine"; osc1.frequency.value = 440;
+    var osc2 = ringCtx.createOscillator(); osc2.type = "sine"; osc2.frequency.value = 480;
+    osc1.connect(gain); osc2.connect(gain);
+    osc1.start(t0); osc2.start(t0);
+    osc1.stop(t0 + 1); osc2.stop(t0 + 1);
+  }
+  try { if (navigator.vibrate) navigator.vibrate([400, 200, 400]); } catch (e) {}
   ringTimer = setTimeout(ringCycle, 3000);
 }
 function stopRingtone() {
   if (ringTimer) { clearTimeout(ringTimer); ringTimer = null; }
   if (ringCtx) { try { ringCtx.close(); } catch (e) {} ringCtx = null; }
+  try { if (navigator.vibrate) navigator.vibrate(0); } catch (e) {}
 }
 
 // ── view switching ─────────────────────────────────────────────
