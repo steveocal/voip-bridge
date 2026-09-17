@@ -816,8 +816,12 @@ var PerfectFreehand=(()=>{var Q=Object.defineProperty;var zn=Object.getOwnProper
 // ── Jot engine: Draw / Write / Erase, undo, zoom, save/load ────
 var JOT_INK = "#e9ecef";
 var JOT_STROKE_OPTS = { size: 6, thinning: 0.6, smoothing: 0.5, streamline: 0.5 };
-var JOT_PAUSE_MS = 500;
+var JOT_PAUSE_MS = 900;
 var JOT_PROXIMITY = 1.6;      // word-boundary proximity factor (x current word bbox size)
+// Cap the leveling rotation: a lone near-vertical stroke (e.g. a single "l")
+// has no horizontal spread, so the best-fit line through it is ~90° and
+// would otherwise get "leveled" straight into a horizontal line.
+var JOT_MAX_TILT = 30 * Math.PI / 180;
 var JOT_LINE_HEIGHT = 42;
 var JOT_WORD_HEIGHT = 26;     // normalized word height (logical px)
 var JOT_WORD_GAP = 10;
@@ -861,6 +865,7 @@ function jtWordTransform(strokes) {
   var sxx = 0, syy = 0, sxy = 0;
   for (i = 0; i < n; i++) { var dx = pts[i][0] - mx, dy = pts[i][1] - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; }
   var angle = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+  angle = Math.max(-JOT_MAX_TILT, Math.min(JOT_MAX_TILT, angle));
   var cos = Math.cos(-angle), sin = Math.sin(-angle);
   var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (i = 0; i < n; i++) {
