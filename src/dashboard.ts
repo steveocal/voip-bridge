@@ -8,17 +8,6 @@ export function serveDashboard(): Response {
 <title>VoIP Bridge</title>
 <link rel="manifest" href="data:application/json,${encodeURIComponent(JSON.stringify({name:"VoIP Bridge",short_name:"VoIP",start_url:"/dashboard",display:"standalone",background_color:"#0b0f19",theme_color:"#0b0f19",icons:[{src:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📞%3C/text%3E%3C/svg%3E",sizes:"100x100",type:"image/svg+xml"}]}))}">
 <script>window.EXCALIDRAW_ASSET_PATH = "https://esm.sh/@excalidraw/excalidraw@0.18.1/dist/prod/";</script>
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@18.3.1",
-    "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime?external=react",
-    "react-dom": "https://esm.sh/react-dom@18.3.1?external=react",
-    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client?external=react,react-dom",
-    "@excalidraw/excalidraw": "https://esm.sh/@excalidraw/excalidraw@0.18.1?external=react,react-dom"
-  }
-}
-</script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
@@ -183,9 +172,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .jot-status{font-size:12px;color:#34d399;margin-left:auto;white-space:nowrap}
 #jot-canvas{width:100%;height:420px;border-radius:10px;background:#1e1e1e;border:1px solid #2c2c2c;position:relative}
 #jot-canvas .empty{padding-top:170px}
-/* call-history detail: editable Notes + Jot */
-.hist-editor{margin-top:16px;padding-top:14px;border-top:1px solid #2c2c2c}
-#hist-jot-canvas{width:100%;height:360px;border-radius:10px;background:#1e1e1e;border:1px solid #2c2c2c;position:relative}
+/* call detail view: in-screen (not a dialog), Details/Notes/Jot tabs, sized for phones */
+.cd-head{display:flex;align-items:center;gap:8px;padding:2px 0 10px}
+.cd-back{background:none;border:none;color:#4db8ff;font-size:24px;line-height:1;cursor:pointer;padding:4px 8px;flex-shrink:0}
+.cd-title{flex:1;min-width:0}
+.cd-name{font-size:17px;font-weight:700;color:#ececec;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cd-sub{font-size:12px;color:#999}
+.cd-callback{background:linear-gradient(135deg,#34d399,#10b981);border:none;color:#04210f;width:40px;height:40px;border-radius:50%;font-size:17px;cursor:pointer;flex-shrink:0}
+.cd-callback.hidden{display:none}
+.cd-body{padding-top:6px}
+#cd-jot-canvas{width:100%;height:58vh;border-radius:10px;background:#1e1e1e;border:1px solid #2c2c2c;position:relative}
+.cd-footer{padding:16px 0 4px}
 .qt-panel{margin:10px 0 0;background:#111;border:1px solid #2c2c2c;border-radius:12px;padding:8px;max-height:200px;overflow-y:auto}
 .qt-panel .qt-head{font-size:11px;color:#999;text-transform:uppercase;letter-spacing:.5px;padding:4px 8px 8px}
 .qt-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;cursor:pointer;font-size:14px}
@@ -286,6 +283,34 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
         <input id="history-search" type="text" placeholder="Search calls (name / number)" autocomplete="off" autocapitalize="off">
       </div>
       <div id="history-list"><div class="empty">Loading…</div></div>
+    </div>
+
+    <!-- CALL DETAIL VIEW (drill-down from History — in-screen, not a dialog) -->
+    <div class="view hidden" id="view-call-detail">
+      <div class="cd-head">
+        <button class="cd-back" onclick="closeCallDetailView()">←</button>
+        <div class="cd-title">
+          <div class="cd-name" id="cd-caller-name">Call</div>
+          <div class="cd-sub" id="cd-caller-sub"></div>
+        </div>
+        <button class="cd-callback hidden" id="cd-callback-btn" onclick="dialBackSelected()">📞</button>
+      </div>
+      <div class="cp-tabs">
+        <button class="cp-tab active" data-tab="details" onclick="switchCallDetailTab('details')">Details</button>
+        <button class="cp-tab" data-tab="notes" onclick="switchCallDetailTab('notes')">Notes</button>
+        <button class="cp-tab" data-tab="jot" onclick="switchCallDetailTab('jot')">Jot</button>
+      </div>
+      <div class="cd-body">
+        <div class="cp-pane" id="cd-pane-details"></div>
+        <div class="cp-pane hidden" id="cd-pane-notes"><div class="empty">Loading…</div></div>
+        <div class="cp-pane hidden" id="cd-pane-jot">
+          <div class="jot-toolbar"><span class="jot-status" id="cd-jot-status"></span></div>
+          <div id="cd-jot-canvas"></div>
+        </div>
+      </div>
+      <div class="cd-footer">
+        <button class="save-btn" id="cd-save-btn" onclick="saveCallDetailEdits()">💾 Save</button>
+      </div>
     </div>
 
     <!-- FAVOURITES VIEW -->
@@ -780,7 +805,12 @@ function switchCallTab(tab) {
   if (tab === "jot") initJotEditor();
 }
 
-// ── Jot: Excalidraw handwriting canvas (loaded lazily via ESM CDN) ──
+// ── Jot: Excalidraw handwriting canvas ──────────────────────────
+// Self-hosted single-file bundle (built via "npm run build:excalidraw",
+// checked into public/excalidraw/). Loading Excalidraw straight from an ESM
+// CDN fanned out into 100+ separate cross-origin module requests (duplicate
+// transitive deps, one file per import) — 10-20s in practice, unusable. This
+// is one same-origin request instead, same pattern as public/sip.min.js.
 var jotLoadPromise = null, jotCssLoaded = false;
 var jotExcalidrawLib = null, jotRoot = null, jotApi = null, jotCallId = null;
 
@@ -789,18 +819,26 @@ function loadExcalidrawCss() {
   jotCssLoaded = true;
   var link = document.createElement("link");
   link.rel = "stylesheet";
-  link.href = "https://esm.sh/@excalidraw/excalidraw@0.18.1/dist/prod/index.css";
+  link.href = "/excalidraw/excalidraw.css";
   document.head.appendChild(link);
 }
 
 function loadExcalidraw() {
   if (jotLoadPromise) return jotLoadPromise;
   loadExcalidrawCss();
-  jotLoadPromise = Promise.all([
-    import("react"),
-    import("react-dom/client"),
-    import("@excalidraw/excalidraw")
-  ]);
+  jotLoadPromise = new Promise(function(resolve, reject) {
+    if (window.ExcalidrawBundle) { resolve(window.ExcalidrawBundle); return; }
+    var s = document.createElement("script");
+    s.type = "module";
+    s.src = "/excalidraw/excalidraw.entry.js";
+    s.onload = function() {
+      if (window.ExcalidrawBundle) resolve(window.ExcalidrawBundle);
+      else reject(new Error("bundle loaded but did not register"));
+    };
+    s.onerror = function() { reject(new Error("bundle failed to load")); };
+    document.head.appendChild(s);
+    setTimeout(function() { if (!window.ExcalidrawBundle) reject(new Error("bundle load timeout")); }, 20000);
+  });
   return jotLoadPromise;
 }
 
@@ -808,8 +846,8 @@ function initJotEditor() {
   var host = document.getElementById("jot-canvas");
   if (jotRoot) { resetJotIfNewCall(); return; }
   host.innerHTML = '<div class="empty">Loading sketchpad…</div>';
-  loadExcalidraw().then(function(mods) {
-    var React = mods[0], ReactDOMClient = mods[1], ExcalidrawLib = mods[2];
+  loadExcalidraw().then(function(bundle) {
+    var React = bundle.React, ReactDOMClient = bundle.ReactDOMClient, ExcalidrawLib = bundle.ExcalidrawLib;
     jotExcalidrawLib = ExcalidrawLib;
     host.innerHTML = "";
     jotRoot = ReactDOMClient.createRoot(host);
@@ -1122,7 +1160,7 @@ document.getElementById("history-list").addEventListener("click", function(e) {
   if (!row) return;
   var c = callsCache[row.getAttribute("data-key")];
   if (!c) return;
-  rowClick(row.getAttribute("data-key"), "call", c, function() { openCallFull(c); });
+  rowClick(row.getAttribute("data-key"), "call", c, function() { openCallDetailView(c); });
 });
 function fmtTime(ts) {
   var d = new Date(ts);
@@ -1250,7 +1288,7 @@ function renderActionBar() {
     h = '<button onclick="replyMessage()">↩ Reply</button>' + '<button class="primary" onclick="openMessageFull()">📖 Open</button>';
   } else if (selected.type === "call") {
     var n = selected.data.phone_number;
-    h = (n && /^[+0-9*#]/.test(n) ? '<button class="green" onclick="dialBackSelected()">📞 Call back</button>' : '') + '<button class="primary" onclick="openCallFull()">📖 Open</button>';
+    h = (n && /^[+0-9*#]/.test(n) ? '<button class="green" onclick="dialBackSelected()">📞 Call back</button>' : '') + '<button class="primary" onclick="openCallDetailView()">📖 Open</button>';
   }
   h += '<button class="x" onclick="deselect()">✕</button>';
   bar.innerHTML = h;
@@ -1261,9 +1299,8 @@ function dialBackSelected() { var c = selected && selected.data; if (c && c.phon
 
 // ── detail views (full-screen) ─────────────────────────────────
 function openDetail() { document.getElementById("detail-modal").classList.remove("hidden"); }
-function closeDetail() { document.getElementById("detail-modal").classList.add("hidden"); destroyHistEditors(); }
+function closeDetail() { document.getElementById("detail-modal").classList.add("hidden"); }
 function setDetail(title, bodyHtml, footHtml) {
-  destroyHistEditors();
   document.getElementById("detail-title").textContent = title;
   document.getElementById("detail-body").innerHTML = bodyHtml;
   document.getElementById("detail-foot").innerHTML = footHtml || "";
@@ -1280,9 +1317,29 @@ function openContactFull(c) {
   var foot = '<button class="green" onclick="prepareDialSelected()">📞 Dial</button><button onclick="openMessages()">💬 Messages</button><button class="primary" onclick="newMessage()">✉️ Message</button>';
   setDetail((c.is_company ? "🏢 " : "👤 ") + c.name, rows || '<div class="empty">No details</div>', foot);
 }
-function openCallFull(c) {
+// ── call detail: in-screen view (Details / Notes / Jot) ────────
+// A drill-down from History, not a dialog — replaces the whole screen like
+// any other view (see switchView), with a back arrow to return.
+var cdOpenCallId = null, cdLoadedNotes = {}, cdJotData = null, activeCdTab = "details";
+var cdJotRoot = null, cdJotApi = null, cdJotExcalidrawLib = null;
+
+function openCallDetailView(c) {
   c = c || (selected && selected.data);
   if (!c) return;
+  destroyCallDetailEditors();
+  var name = (c.partner_name || "").trim();
+  var num = c.phone_number || c.did || "";
+  document.getElementById("cd-caller-name").textContent = name || num || "Unknown";
+  document.getElementById("cd-caller-sub").textContent = name ? num : "";
+  document.getElementById("cd-callback-btn").classList.toggle("hidden", !(num && /^[+0-9*#]/.test(num)));
+  renderCallDetailsPane(c);
+  activeCdTab = "details";
+  switchView("call-detail");
+  switchCallDetailTab("details");
+  loadCallDetailNotes(c.call_id || null);
+}
+
+function renderCallDetailsPane(c) {
   var dur = c.duration > 0 ? fmtDur(c.duration) : "—";
   var when = c.start_date ? new Date(c.start_date).toLocaleString() : "—";
   var rows = '<div class="detail-row"><span class="k">Number</span><span class="v">' + esc(c.phone_number || c.did || "unknown") + '</span></div>'
@@ -1290,64 +1347,55 @@ function openCallFull(c) {
     + '<div class="detail-row"><span class="k">State</span><span class="v">' + esc(c.state || "") + '</span></div>'
     + '<div class="detail-row"><span class="k">When</span><span class="v">' + esc(when) + '</span></div>'
     + '<div class="detail-row"><span class="k">Duration</span><span class="v">' + esc(dur) + '</span></div>'
-    + (c.partner_name ? '<div class="detail-row"><span class="k">Contact</span><span class="v">' + esc(c.partner_name) + '</span></div>' : '')
-    + histEditorMarkup();
-  var foot = '<button class="green" onclick="dialBackSelected()">📞 Call back</button><button class="primary" id="hist-save-btn" onclick="saveHistEdits()">💾 Save</button>';
-  setDetail("📞 Call", rows, foot);
-  loadHistEditor(c.call_id || null);
+    + (c.partner_name ? '<div class="detail-row"><span class="k">Contact</span><span class="v">' + esc(c.partner_name) + '</span></div>' : '');
+  document.getElementById("cd-pane-details").innerHTML = rows;
 }
 
-// ── call-history detail: editable Notes + Jot (re-opens saved data) ────
-var histOpenCallId = null, histLoadedNotes = {}, histJotData = null, activeHistTab = "notes";
-var histJotRoot = null, histJotApi = null, histJotExcalidrawLib = null;
-
-function histEditorMarkup() {
-  return '<div class="hist-editor" id="hist-editor">'
-    + '<div class="cp-tabs">'
-    +   '<button class="cp-tab active" data-tab="notes" onclick="switchHistTab(\\'notes\\')">Notes</button>'
-    +   '<button class="cp-tab" data-tab="jot" onclick="switchHistTab(\\'jot\\')">Jot</button>'
-    + '</div>'
-    + '<div class="cp-pane" id="hist-pane-notes"><div class="empty">Loading…</div></div>'
-    + '<div class="cp-pane hidden" id="hist-pane-jot">'
-    +   '<div class="jot-toolbar"><span class="jot-status" id="hist-jot-status"></span></div>'
-    +   '<div id="hist-jot-canvas"></div>'
-    + '</div>'
-    + '</div>';
+function closeCallDetailView() {
+  destroyCallDetailEditors();
+  switchView("history");
 }
 
-function loadHistEditor(callId) {
-  histOpenCallId = callId;
-  histLoadedNotes = {}; histJotData = null; activeHistTab = "notes";
-  if (!callId) { renderHistNotesPane(); return; }
-  fetch(API + "/call-notes?call_id=" + encodeURIComponent(callId)).then(function(r) { return r.json(); }).then(function(d) {
-    histLoadedNotes = (d && d.notes) || {};
-    histJotData = safeParseJson(histLoadedNotes.jot_json);
-    renderHistNotesPane();
-  }).catch(function() { renderHistNotesPane(); });
-}
-
-function switchHistTab(tab) {
-  activeHistTab = tab;
-  var tabs = document.querySelectorAll("#hist-editor .cp-tab");
+function switchCallDetailTab(tab) {
+  activeCdTab = tab;
+  var tabs = document.querySelectorAll("#view-call-detail .cp-tab");
   for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle("active", tabs[i].getAttribute("data-tab") === tab);
-  var panes = document.querySelectorAll("#hist-editor .cp-pane");
-  for (var j = 0; j < panes.length; j++) panes[j].classList.toggle("hidden", panes[j].id !== "hist-pane-" + tab);
-  if (tab === "jot" && !histJotRoot) initHistJotEditor(histJotData);
+  var panes = document.querySelectorAll("#view-call-detail .cp-pane");
+  for (var j = 0; j < panes.length; j++) panes[j].classList.toggle("hidden", panes[j].id !== "cd-pane-" + tab);
+  if (tab === "jot" && !cdJotRoot) initCallDetailJot();
 }
 
-function renderHistNotesPane() {
-  var pane = document.getElementById("hist-pane-notes");
-  if (!pane) return; // detail modal closed/replaced before the fetch resolved
-  pane.innerHTML = '<textarea id="hist-notes"></textarea>';
-  loadTinyMce().then(function() { initHistNotesEditor(histLoadedNotes.notes_html || ""); })
+function loadCallDetailNotes(callId) {
+  cdOpenCallId = callId;
+  cdLoadedNotes = {}; cdJotData = null;
+  document.getElementById("cd-pane-notes").innerHTML = '<div class="empty">Loading…</div>';
+  if (!callId) { renderCallDetailNotesPane(); return; }
+  fetch(API + "/call-notes?call_id=" + encodeURIComponent(callId)).then(function(r) { return r.json(); }).then(function(d) {
+    cdLoadedNotes = (d && d.notes) || {};
+    cdJotData = safeParseJson(cdLoadedNotes.jot_json);
+    renderCallDetailNotesPane();
+    // If the Jot tab was already opened/mounted before this fetch resolved
+    // (fast tap right after opening the call), backfill it now instead of
+    // leaving — or letting a later Save persist — a blank scene.
+    if (cdJotApi && cdJotData && cdJotData.elements) {
+      cdJotApi.updateScene({ elements: cdJotData.elements, appState: cdJotData.appState || {} });
+    }
+  }).catch(function() { renderCallDetailNotesPane(); });
+}
+
+function renderCallDetailNotesPane() {
+  var pane = document.getElementById("cd-pane-notes");
+  if (!pane) return; // navigated away before the fetch resolved
+  pane.innerHTML = '<textarea id="cd-notes"></textarea>';
+  loadTinyMce().then(function() { initCallDetailNotesEditor(cdLoadedNotes.notes_html || ""); })
     .catch(function() {
-      var ta = document.getElementById("hist-notes");
-      if (ta) ta.value = stripHtml(histLoadedNotes.notes_html || "");
+      var ta = document.getElementById("cd-notes");
+      if (ta) ta.value = stripHtml(cdLoadedNotes.notes_html || "");
     });
 }
 
-function initHistNotesEditor(html) {
-  var target = document.getElementById("hist-notes");
+function initCallDetailNotesEditor(html) {
+  var target = document.getElementById("cd-notes");
   if (!target) return;
   tinymce.init({
     target: target,
@@ -1355,7 +1403,7 @@ function initHistNotesEditor(html) {
     statusbar: false,
     plugins: "lists link table code fullscreen autolink",
     toolbar: "undo redo | blocks | bold italic underline | forecolor backcolor | bullist numlist | link table | blockquote | removeformat | code fullscreen",
-    height: 220,
+    height: 320,
     branding: false,
     skin: "oxide-dark",
     content_css: "dark",
@@ -1363,76 +1411,79 @@ function initHistNotesEditor(html) {
   });
 }
 
-function initHistJotEditor(initialData) {
-  var host = document.getElementById("hist-jot-canvas");
+function initCallDetailJot() {
+  var host = document.getElementById("cd-jot-canvas");
   if (!host) return;
   host.innerHTML = '<div class="empty">Loading sketchpad…</div>';
-  loadExcalidraw().then(function(mods) {
-    var React = mods[0], ReactDOMClient = mods[1], ExcalidrawLib = mods[2];
-    histJotExcalidrawLib = ExcalidrawLib;
+  loadExcalidraw().then(function(bundle) {
+    var React = bundle.React, ReactDOMClient = bundle.ReactDOMClient, ExcalidrawLib = bundle.ExcalidrawLib;
+    cdJotExcalidrawLib = ExcalidrawLib;
     host.innerHTML = "";
-    histJotRoot = ReactDOMClient.createRoot(host);
-    histJotRoot.render(React.createElement(ExcalidrawLib.Excalidraw, {
+    cdJotRoot = ReactDOMClient.createRoot(host);
+    // Read cdJotData now (not a captured param) — the notes fetch and the
+    // Excalidraw bundle load race each other, and whichever finishes last
+    // should win with the freshest data rather than a stale closure value.
+    cdJotRoot.render(React.createElement(ExcalidrawLib.Excalidraw, {
       theme: "dark",
-      initialData: initialData || undefined,
-      excalidrawAPI: function(api) { histJotApi = api; }
+      initialData: cdJotData || undefined,
+      excalidrawAPI: function(api) { cdJotApi = api; }
     }));
   }).catch(function(e) {
     host.innerHTML = '<div class="empty">Sketchpad failed to load' + (e && e.message ? ": " + esc(e.message) : "") + '</div>';
   });
 }
 
-function destroyHistEditors() {
-  try { if (typeof tinymce !== "undefined" && tinymce.get("hist-notes")) tinymce.get("hist-notes").remove(); } catch (e) {}
-  try { if (histJotRoot) histJotRoot.unmount(); } catch (e) {}
-  histJotRoot = null; histJotApi = null;
+function destroyCallDetailEditors() {
+  try { if (typeof tinymce !== "undefined" && tinymce.get("cd-notes")) tinymce.get("cd-notes").remove(); } catch (e) {}
+  try { if (cdJotRoot) cdJotRoot.unmount(); } catch (e) {}
+  cdJotRoot = null; cdJotApi = null;
 }
 
 function stripHtml(h) { return String(h || "").replace(/<[^>]*>/g, " ").replace(/ +/g, " ").trim(); }
 function safeParseJson(s) { if (!s) return null; try { return JSON.parse(s); } catch (e) { return null; } }
 
-function saveHistEdits() {
-  if (!histOpenCallId) { alert("This call has no call_id to save against."); return; }
-  var btn = document.getElementById("hist-save-btn");
+function saveCallDetailEdits() {
+  if (!cdOpenCallId) { alert("This call has no call_id to save against."); return; }
+  var btn = document.getElementById("cd-save-btn");
   if (btn) { btn.textContent = "Saving…"; btn.disabled = true; }
-  var ed = (typeof tinymce !== "undefined" && tinymce.get("hist-notes")) ? tinymce.get("hist-notes") : null;
-  var ta = document.getElementById("hist-notes");
-  var notesHtml = ed ? ed.getContent() : (ta ? ta.value : (histLoadedNotes.notes_html || ""));
+  var ed = (typeof tinymce !== "undefined" && tinymce.get("cd-notes")) ? tinymce.get("cd-notes") : null;
+  var ta = document.getElementById("cd-notes");
+  var notesHtml = ed ? ed.getContent() : (ta ? ta.value : (cdLoadedNotes.notes_html || ""));
 
-  if (histJotApi && histJotExcalidrawLib) {
-    var elements = histJotApi.getSceneElements();
-    var jotJson = JSON.stringify({ elements: elements, appState: histJotApi.getAppState() });
+  if (cdJotApi && cdJotExcalidrawLib) {
+    var elements = cdJotApi.getSceneElements();
+    var jotJson = JSON.stringify({ elements: elements, appState: cdJotApi.getAppState() });
     if (elements.length) {
-      histJotExcalidrawLib.exportToSvg({
+      cdJotExcalidrawLib.exportToSvg({
         elements: elements,
-        appState: Object.assign({}, histJotApi.getAppState(), { exportBackground: true, viewBackgroundColor: "#1e1e1e" }),
-        files: histJotApi.getFiles()
-      }).then(function(svg) { postHistSave(notesHtml, svg.outerHTML, jotJson); })
-        .catch(function() { postHistSave(notesHtml, histLoadedNotes.jot_svg || "", jotJson); });
+        appState: Object.assign({}, cdJotApi.getAppState(), { exportBackground: true, viewBackgroundColor: "#1e1e1e" }),
+        files: cdJotApi.getFiles()
+      }).then(function(svg) { postCallDetailSave(notesHtml, svg.outerHTML, jotJson); })
+        .catch(function() { postCallDetailSave(notesHtml, cdLoadedNotes.jot_svg || "", jotJson); });
     } else {
-      postHistSave(notesHtml, "", jotJson);
+      postCallDetailSave(notesHtml, "", jotJson);
     }
   } else {
-    postHistSave(notesHtml, histLoadedNotes.jot_svg || "", histLoadedNotes.jot_json || "");
+    postCallDetailSave(notesHtml, cdLoadedNotes.jot_svg || "", cdLoadedNotes.jot_json || "");
   }
 }
 
-function postHistSave(notesHtml, jotSvg, jotJson) {
+function postCallDetailSave(notesHtml, jotSvg, jotJson) {
   fetch(API + "/call-notes", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ call_id: histOpenCallId, notes_html: notesHtml, jot_svg: jotSvg, jot_json: jotJson })
+    body: JSON.stringify({ call_id: cdOpenCallId, notes_html: notesHtml, jot_svg: jotSvg, jot_json: jotJson })
   }).then(function(r) { return r.json(); }).then(function(d) {
-    var btn = document.getElementById("hist-save-btn");
+    var btn = document.getElementById("cd-save-btn");
     if (d.ok) {
-      histLoadedNotes = { notes_html: notesHtml, jot_svg: jotSvg, jot_json: jotJson };
+      cdLoadedNotes = { notes_html: notesHtml, jot_svg: jotSvg, jot_json: jotJson };
       if (btn) { btn.disabled = false; btn.textContent = "Saved ✓"; setTimeout(function() { btn.textContent = "💾 Save"; }, 1500); }
     } else {
       if (btn) { btn.disabled = false; btn.textContent = "💾 Save"; }
       alert("Save failed: " + (d.error || "unknown"));
     }
   }).catch(function() {
-    var btn = document.getElementById("hist-save-btn");
+    var btn = document.getElementById("cd-save-btn");
     if (btn) { btn.disabled = false; btn.textContent = "💾 Save"; }
     alert("Save failed");
   });
