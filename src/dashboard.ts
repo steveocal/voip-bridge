@@ -1807,11 +1807,15 @@ function dialOut(num) {
 function hangup() {
   stopRingtone();
   if (sipSession) {
-    // An incoming call not yet answered needs a proper decline (sends the
-    // caller a rejection response) rather than dispose(), which is for
-    // tearing down a call already in progress.
-    var declining = currentCall && currentCall.state === "ringing" && currentCall.dir === "in" && typeof sipSession.reject === "function";
-    if (declining) sipSession.reject().catch(function() {});
+    // dispose() is only a real hangup (sends BYE) once a call is actually
+    // established — before that (Initial/Establishing, i.e. our "ringing"
+    // or "calling" state) it's a silent local no-op that never reaches the
+    // far end, so a still-ringing call would just keep ringing there.
+    // Incoming needs a proper decline (reject, a SIP rejection response);
+    // outgoing needs a proper cancel (a SIP CANCEL of the pending INVITE).
+    var stillRinging = currentCall && (currentCall.state === "ringing" || currentCall.state === "calling");
+    if (stillRinging && currentCall.dir === "in" && typeof sipSession.reject === "function") sipSession.reject().catch(function() {});
+    else if (stillRinging && currentCall.dir === "out" && typeof sipSession.cancel === "function") sipSession.cancel().catch(function() {});
     else sipSession.dispose();
   }
   resetCall();
