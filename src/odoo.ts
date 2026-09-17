@@ -459,6 +459,39 @@ export async function logCompletedCall(env: Env, callId: string, caller: string,
   }
 }
 
+// ── Sales / quotations (↔ Odoo sale.order) ────────────────────
+
+export interface Quotation {
+  id: number;
+  name: string;
+  state: string;
+  amount_total: number;
+  date_order?: string;
+}
+
+/** Live search of sale.order for a partner — best-effort (returns [] if the
+ *  Sales app isn't installed or the lookup fails, rather than throwing). */
+export async function searchQuotations(env: Env, partnerId: number, limit = 20): Promise<Quotation[]> {
+  try {
+    const uid = await odooAuth(env);
+    if (!uid) return [];
+    const r = await odooCall(env, uid, "sale.order", "search_read",
+      [[["partner_id", "=", partnerId]]],
+      { fields: ["id", "name", "state", "amount_total", "date_order"], limit, order: "date_order desc" });
+    const orders = ((r.parsed ?? []) as unknown as Array<Record<string, unknown>>);
+    return orders.map(o => ({
+      id: o.id as number,
+      name: s(o.name),
+      state: s(o.state),
+      amount_total: typeof o.amount_total === "number" ? o.amount_total : 0,
+      date_order: s(o.date_order) || undefined,
+    }));
+  } catch (e) {
+    console.error("Odoo quotation search failed:", e);
+    return [];
+  }
+}
+
 // ── Contact messages (↔ Odoo mail.message) ────────────────────
 
 export interface Message {

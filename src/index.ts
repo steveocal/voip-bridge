@@ -1,5 +1,5 @@
 import type { Env, ExecutionContext, D1PreparedStatement } from "./types";
-import { lookupCaller, logCompletedCall, trackCall, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages } from "./odoo";
+import { lookupCaller, logCompletedCall, trackCall, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages, searchQuotations } from "./odoo";
 import { searchGmailMessages, searchRecentGmailMessages, getGmailBody, sendGmailMessage } from "./gmail";
 import { ariRequest } from "./asterisk";
 import { serveDashboard } from "./dashboard";
@@ -225,6 +225,15 @@ async function handleRecentMessages(request: Request, env: Env): Promise<Respons
   return Response.json({ days, gmailOk, messages });
 }
 
+async function handleQuotations(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const contactId = parseInt(url.searchParams.get("contact") ?? "0");
+  if (!contactId) return Response.json({ error: "missing contact id" }, { status: 400 });
+  const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "20") || 20, 100);
+  const quotations = await searchQuotations(env, contactId, limit);
+  return Response.json({ quotations });
+}
+
 // ── Message detail + send ─────────────────────────────────────
 
 async function handleMessageDetail(request: Request, env: Env): Promise<Response> {
@@ -411,6 +420,7 @@ export default {
     else if (request.method === "GET" && url.pathname === "/caller-lookup") response = await handleCallerLookup(request, env);
     else if (request.method === "GET" && url.pathname === "/active-calls") response = await handleActiveCalls(request, env);
     else if (request.method === "GET" && url.pathname === "/call-history") response = await handleCallHistory(request, env);
+    else if (request.method === "GET" && url.pathname === "/quotations") response = await handleQuotations(request, env);
     else if (request.method === "GET" && url.pathname === "/messages") response = await handleMessages(request, env);
     else if (request.method === "GET" && url.pathname === "/messages/recent") response = await handleRecentMessages(request, env);
     else if (request.method === "GET" && url.pathname === "/message") response = await handleMessageDetail(request, env);
@@ -418,7 +428,7 @@ export default {
     else if (request.method === "GET" && url.pathname === "/contacts") response = await handleContacts(request, env);
     else if (request.method === "GET" && url.pathname === "/contacts/cache") response = await handleContactsCache(request, env);
     else if (request.method === "GET" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleContactDetail(env, parseInt(url.pathname.split("/")[2]));
-    else if (url.pathname === "/") response = Response.json({ service: "voip-bridge", routes: ["/call-event", "/click2call", "/caller-lookup", "/active-calls", "/answer", "/hangup-call", "/call-history", "/contacts", "/contacts/:id"] });
+    else if (url.pathname === "/") response = Response.json({ service: "voip-bridge", routes: ["/call-event", "/click2call", "/caller-lookup", "/active-calls", "/answer", "/hangup-call", "/call-history", "/quotations", "/contacts", "/contacts/:id"] });
     else if (url.pathname === "/dashboard") response = serveDashboard();
     else response = new Response("Not found", { status: 404 });
 

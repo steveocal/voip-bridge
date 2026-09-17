@@ -7,6 +7,17 @@ export function serveDashboard(): Response {
 <meta name="theme-color" content="#0b0f19">
 <title>VoIP Bridge</title>
 <link rel="manifest" href="data:application/json,${encodeURIComponent(JSON.stringify({name:"VoIP Bridge",short_name:"VoIP",start_url:"/dashboard",display:"standalone",background_color:"#0b0f19",theme_color:"#0b0f19",icons:[{src:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📞%3C/text%3E%3C/svg%3E",sizes:"100x100",type:"image/svg+xml"}]}))}">
+<script>window.EXCALIDRAW_ASSET_PATH = "https://esm.sh/@excalidraw/excalidraw@0.18.1/dist/prod/";</script>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.3.1",
+    "react-dom": "https://esm.sh/react-dom@18.3.1?external=react",
+    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client?external=react,react-dom",
+    "@excalidraw/excalidraw": "https://esm.sh/@excalidraw/excalidraw@0.18.1?external=react,react-dom"
+  }
+}
+</script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
@@ -150,10 +161,28 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 /* favourites star */
 .fav-star{flex-shrink:0;background:none;border:none;font-size:24px;line-height:1;cursor:pointer;padding:2px 4px;color:#555;width:38px;margin-left:auto}
 .fav-star.on{color:#f7c948}
-/* call notes + quick text */
-.notes-wrap{padding:0 16px;margin-top:2px}
-.notes-wrap textarea{width:100%;min-height:76px;background:#1a1a1a;border:1px solid #2c2c2c;border-radius:12px;color:#fff;font-size:14px;padding:12px 14px;outline:none;resize:none;font-family:inherit;line-height:1.5}
-.qt-panel{margin:8px 16px 0;background:#1a1a1a;border:1px solid #2c2c2c;border-radius:12px;padding:8px;max-height:200px;overflow-y:auto}
+/* in-call panel: caller name + tabs (Sales/Quotations, Call History, Notes, Jot) */
+.call-panel{margin:8px 16px 0;background:#1a1a1a;border:1px solid #2c2c2c;border-radius:14px;overflow:hidden}
+.cp-head{padding:12px 14px 2px}
+.cp-caller{font-size:16px;font-weight:700;color:#ececec;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cp-tabs{display:flex;border-bottom:1px solid #2c2c2c;padding:0 4px;margin-top:8px}
+.cp-tab{flex:1;background:none;border:none;color:#999;font-size:11.5px;font-weight:600;padding:10px 2px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+.cp-tab.active{color:#4db8ff;border-bottom-color:#4db8ff}
+.cp-body{padding:12px 14px;max-height:500px;overflow-y:auto}
+.cp-pane textarea{width:100%;min-height:120px;background:#111;border:1px solid #2c2c2c;border-radius:10px;color:#fff;font-size:14px;padding:12px 14px;outline:none;resize:none;font-family:inherit;line-height:1.5}
+.cp-pane .tox-tinymce{border-color:#2c2c2c}
+.cp-quote-row{display:flex;justify-content:space-between;gap:8px;padding:10px 4px;border-bottom:1px solid #222;font-size:14px}
+.cp-quote-row .n{font-weight:600}
+.cp-quote-row .st{color:#999;font-size:12px}
+.cp-quote-row .amt{color:#34d399;font-weight:700;flex-shrink:0}
+.cp-hist-row{display:flex;justify-content:space-between;padding:9px 4px;border-bottom:1px solid #222;font-size:13px;color:#ccc}
+.jot-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.jot-btn{background:#2c2c2c;border:none;color:#ececec;padding:8px 12px;border-radius:8px;font-size:13px;cursor:pointer}
+.jot-btn.ghost{background:none;border:1px solid #333;color:#999}
+.jot-status{font-size:12px;color:#34d399;margin-left:auto;white-space:nowrap}
+#jot-canvas{width:100%;height:420px;border-radius:10px;background:#1e1e1e;border:1px solid #2c2c2c;position:relative}
+#jot-canvas .empty{padding-top:170px}
+.qt-panel{margin:10px 0 0;background:#111;border:1px solid #2c2c2c;border-radius:12px;padding:8px;max-height:200px;overflow-y:auto}
 .qt-panel .qt-head{font-size:11px;color:#999;text-transform:uppercase;letter-spacing:.5px;padding:4px 8px 8px}
 .qt-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;cursor:pointer;font-size:14px}
 .qt-row:active,.qt-row:hover{background:#262626}
@@ -164,7 +193,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 /* TinyMCE dark editors */
 .tox-tinymce{border-radius:10px}
 .compose-field .tox-tinymce{border:0}
-.notes-wrap .tox-tinymce{border-color:#2c2c2c}
 </style>
 </head>
 <body>
@@ -209,12 +237,35 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
         <button class="key" data-d="0"><span class="digit">0</span><span class="letters">+</span></button>
         <button class="key" data-d="#"><span class="digit">#</span><span class="letters"></span></button>
       </div>
-      <div class="notes-wrap hidden" id="notes-wrap">
-        <textarea id="call-notes" placeholder="Call notes… (press # for quick text)" autocomplete="off"></textarea>
-      </div>
-      <div class="qt-panel hidden" id="qt-panel">
-        <div class="qt-head">Quick text — tap to insert</div>
-        <div id="qt-list"></div>
+      <div class="call-panel hidden" id="call-panel">
+        <div class="cp-head">
+          <div class="cp-caller" id="cp-caller-name">Unknown caller</div>
+        </div>
+        <div class="cp-tabs">
+          <button class="cp-tab" data-tab="sales" onclick="switchCallTab('sales')">Sales / Quotations</button>
+          <button class="cp-tab" data-tab="history" onclick="switchCallTab('history')">Call History</button>
+          <button class="cp-tab active" data-tab="notes" onclick="switchCallTab('notes')">Notes</button>
+          <button class="cp-tab" data-tab="jot" onclick="switchCallTab('jot')">Jot</button>
+        </div>
+        <div class="cp-body">
+          <div class="cp-pane hidden" id="cp-pane-sales"><div class="empty">—</div></div>
+          <div class="cp-pane hidden" id="cp-pane-history"><div class="empty">—</div></div>
+          <div class="cp-pane" id="cp-pane-notes">
+            <textarea id="call-notes" placeholder="Call notes… (press # for quick text)" autocomplete="off"></textarea>
+            <div class="qt-panel hidden" id="qt-panel">
+              <div class="qt-head">Quick text — tap to insert</div>
+              <div id="qt-list"></div>
+            </div>
+          </div>
+          <div class="cp-pane hidden" id="cp-pane-jot">
+            <div class="jot-toolbar">
+              <button class="jot-btn" onclick="saveJotToNotes()">💾 Save to Notes</button>
+              <button class="jot-btn ghost" onclick="clearJot()">🗑 Clear</button>
+              <span class="jot-status" id="jot-status"></span>
+            </div>
+            <div id="jot-canvas"><div class="empty">Loading sketchpad…</div></div>
+          </div>
+        </div>
       </div>
       <div class="callbar">
         <button class="call-btn" id="btn-call" onclick="dialAction()">📞</button>
@@ -685,11 +736,160 @@ function addNoteLine(text) {
     ta.scrollTop = ta.scrollHeight;
   }
 }
-function showNotes(show) {
-  document.getElementById("notes-wrap").classList.toggle("hidden", !show);
-  if (!show) { closeQuickText(); return; }
-  if (!tinyReady["call-notes"]) loadTinyMce().then(initCallNotesEditor).catch(function() {});
+// ── in-call panel: caller name + tabs ───────────────────────────
+var activeCpTab = "notes";
+var currentCallPartner = null;
+
+function showCallPanel(show) {
+  document.getElementById("call-panel").classList.toggle("hidden", !show);
+  if (!show) { closeQuickText(); currentCallPartner = null; return; }
+  updateCallPanelCaller();
+  switchCallTab(activeCpTab || "notes");
 }
+
+function updateCallPanelCaller() {
+  var el = document.getElementById("cp-caller-name");
+  if (!currentCall) return;
+  el.textContent = currentCall.remote || "Unknown caller";
+  currentCallPartner = null;
+  fetch(API + "/caller-lookup?number=" + encodeURIComponent(currentCall.remote)).then(function(r){return r.json();}).then(function(d){
+    if (!currentCall) return;
+    if (d.found) {
+      currentCallPartner = { id: d.id, name: d.name };
+      el.textContent = d.name + " — " + currentCall.remote;
+      if (activeCpTab === "sales") loadQuotationsTab();
+    }
+  }).catch(function(){});
+}
+
+function switchCallTab(tab) {
+  activeCpTab = tab;
+  var tabs = document.querySelectorAll(".cp-tab");
+  for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle("active", tabs[i].getAttribute("data-tab") === tab);
+  var panes = document.querySelectorAll(".cp-pane");
+  for (var j = 0; j < panes.length; j++) panes[j].classList.toggle("hidden", panes[j].id !== "cp-pane-" + tab);
+  if (tab === "notes" && !tinyReady["call-notes"]) loadTinyMce().then(initCallNotesEditor).catch(function() {});
+  if (tab === "history") loadCallHistoryTab();
+  if (tab === "sales") loadQuotationsTab();
+  if (tab === "jot") initJotEditor();
+}
+
+// ── Jot: Excalidraw handwriting canvas (loaded lazily via ESM CDN) ──
+var jotLoadPromise = null, jotCssLoaded = false;
+var jotExcalidrawLib = null, jotRoot = null, jotApi = null, jotCallId = null;
+
+function loadExcalidrawCss() {
+  if (jotCssLoaded) return;
+  jotCssLoaded = true;
+  var link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = "https://esm.sh/@excalidraw/excalidraw@0.18.1/dist/prod/index.css";
+  document.head.appendChild(link);
+}
+
+function loadExcalidraw() {
+  if (jotLoadPromise) return jotLoadPromise;
+  loadExcalidrawCss();
+  jotLoadPromise = Promise.all([
+    import("react"),
+    import("react-dom/client"),
+    import("@excalidraw/excalidraw")
+  ]);
+  return jotLoadPromise;
+}
+
+function initJotEditor() {
+  var host = document.getElementById("jot-canvas");
+  if (jotRoot) { resetJotIfNewCall(); return; }
+  host.innerHTML = '<div class="empty">Loading sketchpad…</div>';
+  loadExcalidraw().then(function(mods) {
+    var React = mods[0], ReactDOMClient = mods[1], ExcalidrawLib = mods[2];
+    jotExcalidrawLib = ExcalidrawLib;
+    host.innerHTML = "";
+    jotRoot = ReactDOMClient.createRoot(host);
+    jotRoot.render(React.createElement(ExcalidrawLib.Excalidraw, {
+      theme: "dark",
+      excalidrawAPI: function(api) { jotApi = api; }
+    }));
+    jotCallId = currentCall ? currentCall.id : null;
+  }).catch(function(e) {
+    host.innerHTML = '<div class="empty">Sketchpad failed to load' + (e && e.message ? ": " + esc(e.message) : "") + '</div>';
+  });
+}
+
+function resetJotIfNewCall() {
+  var id = currentCall ? currentCall.id : null;
+  if (jotApi && id !== jotCallId) {
+    if (jotApi.resetScene) jotApi.resetScene(); else jotApi.updateScene({ elements: [] });
+    jotCallId = id;
+    setJotStatus("");
+  }
+}
+
+function clearJot() {
+  if (!jotApi) return;
+  if (jotApi.resetScene) jotApi.resetScene(); else jotApi.updateScene({ elements: [] });
+  setJotStatus("Cleared");
+}
+
+function setJotStatus(msg) {
+  var el = document.getElementById("jot-status");
+  if (el) el.textContent = msg;
+}
+
+function saveJotToNotes() {
+  if (!jotApi || !jotExcalidrawLib) { setJotStatus("Sketchpad not ready"); return; }
+  var elements = jotApi.getSceneElements();
+  if (!elements.length) { setJotStatus("Nothing to save"); return; }
+  setJotStatus("Saving…");
+  jotExcalidrawLib.exportToSvg({
+    elements: elements,
+    appState: Object.assign({}, jotApi.getAppState(), { exportBackground: true, viewBackgroundColor: "#1e1e1e" }),
+    files: jotApi.getFiles()
+  }).then(function(svg) {
+    var html = svg.outerHTML;
+    var ed = (typeof tinymce !== "undefined") ? tinymce.get("call-notes") : null;
+    if (ed) {
+      var cur = ed.getContent();
+      ed.setContent(cur ? (cur + "<br>" + html) : html);
+    } else {
+      var ta = document.getElementById("call-notes");
+      ta.value = (ta.value ? ta.value + String.fromCharCode(10) : "") + "[Jot sketch attached — open Notes with rich text to view]";
+    }
+    setJotStatus("Saved to Notes ✓");
+  }).catch(function() { setJotStatus("Save failed"); });
+}
+
+function loadCallHistoryTab() {
+  var el = document.getElementById("cp-pane-history");
+  var num = currentCall && currentCall.remote;
+  if (!num) { el.innerHTML = '<div class="empty">No number</div>'; return; }
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  fetch(API + "/call-history?limit=20&q=" + encodeURIComponent(num)).then(function(r){return r.json();}).then(function(d){
+    var calls = (d.calls || []).filter(function(c) { return !currentCall || c.call_id !== currentCall.id; });
+    if (!calls.length) { el.innerHTML = '<div class="empty">No previous calls with this number</div>'; return; }
+    el.innerHTML = calls.map(function(c) {
+      var when = c.start_date ? new Date(c.start_date).toLocaleString() : "";
+      var dur = c.duration > 0 ? fmtDur(c.duration) : "—";
+      var dir = c.direction === "outgoing" ? "⬆" : "⬇";
+      return '<div class="cp-hist-row"><span>' + dir + ' ' + esc(when) + '</span><span>' + esc(dur) + '</span></div>';
+    }).join("");
+  }).catch(function(){ el.innerHTML = '<div class="empty">Error loading history</div>'; });
+}
+
+function loadQuotationsTab() {
+  var el = document.getElementById("cp-pane-sales");
+  if (!currentCallPartner) { el.innerHTML = '<div class="empty">No matching contact yet</div>'; return; }
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  fetch(API + "/quotations?contact=" + encodeURIComponent(currentCallPartner.id)).then(function(r){return r.json();}).then(function(d){
+    var list = d.quotations || [];
+    if (!list.length) { el.innerHTML = '<div class="empty">No quotations found</div>'; return; }
+    el.innerHTML = list.map(function(o) {
+      return '<div class="cp-quote-row"><div><div class="n">' + esc(o.name) + '</div>' + (o.state ? '<div class="st">' + esc(o.state) + '</div>' : '') + '</div>' + (o.amount_total != null ? '<span class="amt">' + esc(fmtMoney(o.amount_total)) + '</span>' : '') + '</div>';
+    }).join("");
+  }).catch(function(){ el.innerHTML = '<div class="empty">Error loading quotations</div>'; });
+}
+function fmtMoney(n) { try { return "£" + Number(n).toFixed(2); } catch (e) { return String(n); } }
 
 // Keyboard: digits/* send DTMF during a call; # opens quick text.
 document.addEventListener("keydown", function(e) {
@@ -774,7 +974,7 @@ function renderCallUI() {
     banner.classList.add("hidden");
     btnCall.classList.remove("hidden"); btnCall.classList.remove("hangup");
     btnEnd.classList.add("hidden");
-    showNotes(false);
+    showCallPanel(false);
     return;
   }
   banner.classList.remove("hidden");
@@ -783,7 +983,7 @@ function renderCallUI() {
   document.getElementById("banner-state").textContent = (currentCall.dir === "in" ? "⬇ " : "⬆ ") + si;
   btnCall.classList.add("hidden");
   btnEnd.classList.remove("hidden");
-  showNotes(currentCall.state === "active");
+  showCallPanel(true);
 }
 
 function setStatus(msg, isErr) {
