@@ -12,6 +12,7 @@ export function serveDashboard(): Response {
 {
   "imports": {
     "react": "https://esm.sh/react@18.3.1",
+    "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime?external=react",
     "react-dom": "https://esm.sh/react-dom@18.3.1?external=react",
     "react-dom/client": "https://esm.sh/react-dom@18.3.1/client?external=react,react-dom",
     "@excalidraw/excalidraw": "https://esm.sh/@excalidraw/excalidraw@0.18.1?external=react,react-dom"
@@ -1303,8 +1304,8 @@ var histJotRoot = null, histJotApi = null, histJotExcalidrawLib = null;
 function histEditorMarkup() {
   return '<div class="hist-editor" id="hist-editor">'
     + '<div class="cp-tabs">'
-    +   '<button class="cp-tab active" data-tab="notes" onclick="switchHistTab(\'notes\')">Notes</button>'
-    +   '<button class="cp-tab" data-tab="jot" onclick="switchHistTab(\'jot\')">Jot</button>'
+    +   '<button class="cp-tab active" data-tab="notes" onclick="switchHistTab(\\'notes\\')">Notes</button>'
+    +   '<button class="cp-tab" data-tab="jot" onclick="switchHistTab(\\'jot\\')">Jot</button>'
     + '</div>'
     + '<div class="cp-pane" id="hist-pane-notes"><div class="empty">Loading…</div></div>'
     + '<div class="cp-pane hidden" id="hist-pane-jot">'
