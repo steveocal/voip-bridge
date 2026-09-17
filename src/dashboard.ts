@@ -176,7 +176,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .jt-btn.jt-mode.active{background:#2563eb;color:#fff}
 .jt-btn.jt-zoom-label{width:auto;padding:0 8px;font-size:12px}
 .jt-sep{width:1px;align-self:stretch;background:#2c2c2c;margin:2px 4px}
-.jt-canvas-wrap{width:100%;border-radius:10px;background:#1e1e1e;border:1px solid #2c2c2c;overflow:auto}
+.jt-canvas-wrap{width:100%;border-radius:10px;background:#1e1e1e;border:1px solid #2c2c2c;overflow:hidden}
 .jt-canvas-wrap canvas{display:block}
 #jot-canvas .jt-canvas-wrap{height:420px}
 #cd-jot-canvas .jt-canvas-wrap{height:58vh}
@@ -965,17 +965,25 @@ function createJot(hostEl) {
 
   var ctx = canvas.getContext("2d");
   var dpr = window.devicePixelRatio || 1;
-  var logicalW = Math.max(280, canvasWrap.getBoundingClientRect().width || hostEl.getBoundingClientRect().width || 320);
-  var logicalH = 1400;
-  canvas.width = logicalW * dpr;
-  canvas.height = logicalH * dpr;
-  canvas.style.width = logicalW + "px";
-  canvas.style.height = logicalH + "px";
-  ctx.scale(dpr, dpr);
+  // The canvas element always exactly fills its viewport (never grows with
+  // content) — the document itself is unbounded, and "camera" below is the
+  // window onto it. This keeps the canvas backing store viewport-sized
+  // (cheap, no browser canvas-size limits) instead of trying to size a DOM
+  // element to hold everything ever written.
+  var viewportW = Math.max(280, canvasWrap.getBoundingClientRect().width || hostEl.getBoundingClientRect().width || 320);
+  var viewportH = Math.max(200, canvasWrap.getBoundingClientRect().height || 420);
+  canvas.width = viewportW * dpr;
+  canvas.height = viewportH * dpr;
+  canvas.style.width = viewportW + "px";
+  canvas.style.height = viewportH + "px";
   canvas.style.touchAction = "none";
+  // Fixed document-space width used for word-wrap layout. Deliberately not
+  // tied to camera.scale — zooming pans/scales the view of the document, it
+  // doesn't reflow it (matches how an infinite canvas is expected to behave).
+  var DOC_WIDTH = viewportW;
 
   var mode = "write";       // "draw" | "write" | "erase" | null (deselected -> pan/zoom)
-  var view = { scale: 1 };
+  var camera = { x: 0, y: 0, scale: 1 }; // document-space coords of viewport top-left, and zoom
   var nextId = 1;
   var drawStrokes = {};   // id -> { points:[[x,y,p],...], bbox }
   var words = [];          // ordered [{ id, rawStrokes, anchor, rotate, scale, width, height, x, y }]
@@ -984,23 +992,27 @@ function createJot(hostEl) {
   var writingWord = null;  // { strokes:[...], bbox }
   var wordPauseTimer = null;
   var erasing = false;
-  var activePointers = {}; // pointerId -> {x,y}, tracked whenever a tool is deselected (pinch-zoom)
-  var pinchStartDist = null, pinchStartScale = 1;
+  var activePointers = {}; // pointerId -> {x,y}, tracked whenever a tool is deselected (pan/pinch-zoom)
+  var panState = null;     // {x,y} last client point, while 1 finger drags with no tool selected
+  var pinchState = null;   // {dist, anchorDoc}, while 2 fingers are down with no tool selected
 
-  function pointerDistance() {
-    var ids = Object.keys(activePointers);
-    if (ids.length < 2) return null;
+  function pointerIds() { return Object.keys(activePointers); }
+  function pointerDistance(ids) {
     var a = activePointers[ids[0]], b = activePointers[ids[1]];
     return Math.hypot(a.x - b.x, a.y - b.y);
+  }
+  function pointerMidpoint(ids) {
+    var a = activePointers[ids[0]], b = activePointers[ids[1]];
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  }
+  function updateZoomLabel() {
+    var label = toolbar.querySelector(".jt-zoom-label");
+    if (label) label.textContent = Math.round(camera.scale * 100) + "%";
   }
 
   function relayout() {
     var lineIdx = 0, x = JOT_PARA_MARGIN;
-    // Wrap width shrinks as you zoom in, so a line's rendered (CSS) width
-    // stays within the fixed viewport regardless of zoom — more zoom means
-    // more, shorter lines instead of a wider line that needs horizontal
-    // scrolling to read.
-    var maxWidth = logicalW / view.scale - JOT_PARA_MARGIN * 2;
+    var maxWidth = DOC_WIDTH - JOT_PARA_MARGIN * 2;
     for (var i = 0; i < words.length; i++) {
       var w = words[i];
       if (x + w.width > maxWidth && x > JOT_PARA_MARGIN) { lineIdx++; x = JOT_PARA_MARGIN; }
@@ -1012,7 +1024,11 @@ function createJot(hostEl) {
   }
 
   function redraw() {
-    ctx.clearRect(0, 0, logicalW, logicalH);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, viewportW, viewportH);
+    // Everything below is drawn in document space; this transform maps it
+    // through the camera (pan + zoom) onto the viewport-sized canvas.
+    ctx.setTransform(camera.scale * dpr, 0, 0, camera.scale * dpr, -camera.x * camera.scale * dpr, -camera.y * camera.scale * dpr);
     ctx.fillStyle = JOT_INK;
     var id;
     for (id in drawStrokes) jtFillOutline(ctx, jtOutline(drawStrokes[id].points));
@@ -1044,7 +1060,9 @@ function createJot(hostEl) {
 
   function toLogical(clientX, clientY) {
     var r = canvas.getBoundingClientRect();
-    return [(clientX - r.left) / r.width * logicalW, (clientY - r.top) / r.height * logicalH];
+    var sx = (clientX - r.left) / r.width * viewportW;
+    var sy = (clientY - r.top) / r.height * viewportH;
+    return [sx / camera.scale + camera.x, sy / camera.scale + camera.y];
   }
 
   function finalizeWord() {
@@ -1088,10 +1106,18 @@ function createJot(hostEl) {
   function onDown(e) {
     activePointers[e.pointerId] = { x: e.clientX, y: e.clientY };
     if (!mode) {
-      // No tool selected: let the browser handle single-finger panning
-      // (canvas-wrap scrolls natively) and track two-finger pinch ourselves,
-      // since our zoom is driven by view.scale, not CSS/visual zoom.
-      if (Object.keys(activePointers).length === 2) { pinchStartDist = pointerDistance(); pinchStartScale = view.scale; }
+      // No tool selected: the canvas is a fixed viewport-sized window onto
+      // an unbounded document, so panning/pinch-zoom are handled entirely
+      // here (there's no native scroll to fall back on).
+      var ids = pointerIds();
+      if (ids.length === 1) {
+        panState = { x: e.clientX, y: e.clientY };
+        pinchState = null;
+      } else if (ids.length === 2) {
+        panState = null;
+        var mid = pointerMidpoint(ids);
+        pinchState = { dist: pointerDistance(ids), anchorDoc: toLogical(mid.x, mid.y) };
+      }
       return;
     }
     canvas.setPointerCapture(e.pointerId);
@@ -1110,9 +1136,30 @@ function createJot(hostEl) {
   function onMove(e) {
     if (activePointers[e.pointerId]) activePointers[e.pointerId] = { x: e.clientX, y: e.clientY };
     if (!mode) {
-      if (pinchStartDist) {
-        var d = pointerDistance();
-        if (d) { setZoom(pinchStartScale * (d / pinchStartDist)); e.preventDefault(); }
+      var ids = pointerIds();
+      if (ids.length >= 2 && pinchState) {
+        var mid = pointerMidpoint(ids);
+        var d = pointerDistance(ids);
+        if (d) {
+          var newScale = Math.max(0.25, Math.min(4, camera.scale * (d / pinchState.dist)));
+          pinchState.dist = d;
+          var r = canvas.getBoundingClientRect();
+          var sx = (mid.x - r.left) / r.width * viewportW;
+          var sy = (mid.y - r.top) / r.height * viewportH;
+          camera.scale = newScale;
+          camera.x = pinchState.anchorDoc[0] - sx / newScale;
+          camera.y = pinchState.anchorDoc[1] - sy / newScale;
+          updateZoomLabel();
+          redraw();
+        }
+        e.preventDefault();
+      } else if (ids.length === 1 && panState) {
+        var dx = e.clientX - panState.x, dy = e.clientY - panState.y;
+        panState = { x: e.clientX, y: e.clientY };
+        camera.x -= dx / camera.scale;
+        camera.y -= dy / camera.scale;
+        redraw();
+        e.preventDefault();
       }
       return;
     }
@@ -1125,7 +1172,9 @@ function createJot(hostEl) {
   }
   function onUp(e) {
     delete activePointers[e.pointerId];
-    if (Object.keys(activePointers).length < 2) pinchStartDist = null;
+    var ids = pointerIds();
+    if (ids.length < 2) pinchState = null;
+    panState = (!mode && ids.length === 1) ? { x: activePointers[ids[0]].x, y: activePointers[ids[0]].y } : null;
     if (!mode) return;
     if (mode === "erase") { erasing = false; return; }
     if (!current) return;
@@ -1157,13 +1206,20 @@ function createJot(hostEl) {
   canvas.addEventListener("pointerup", onUp);
   canvas.addEventListener("pointercancel", onUp);
 
-  function setZoom(scale) {
-    view.scale = Math.max(0.5, Math.min(3, scale));
-    canvas.style.width = (logicalW * view.scale) + "px";
-    canvas.style.height = (logicalH * view.scale) + "px";
-    var label = toolbar.querySelector(".jt-zoom-label");
-    if (label) label.textContent = Math.round(view.scale * 100) + "%";
-    relayout();
+  // Zooms while keeping the document point under (pivotClientX, pivotClientY)
+  // — the viewport center by default — fixed on screen.
+  function setZoom(scale, pivotClientX, pivotClientY) {
+    var newScale = Math.max(0.25, Math.min(4, scale));
+    var r = canvas.getBoundingClientRect();
+    var px = (pivotClientX != null) ? pivotClientX : (r.left + r.width / 2);
+    var py = (pivotClientY != null) ? pivotClientY : (r.top + r.height / 2);
+    var anchorDoc = toLogical(px, py);
+    camera.scale = newScale;
+    var sx = (px - r.left) / r.width * viewportW;
+    var sy = (py - r.top) / r.height * viewportH;
+    camera.x = anchorDoc[0] - sx / newScale;
+    camera.y = anchorDoc[1] - sy / newScale;
+    updateZoomLabel();
     redraw();
   }
 
@@ -1176,28 +1232,27 @@ function createJot(hostEl) {
       mode = (mode === m) ? null : m;
       var btns = toolbar.querySelectorAll(".jt-mode");
       for (var i = 0; i < btns.length; i++) btns[i].classList.toggle("active", btns[i].getAttribute("data-mode") === mode);
-      canvas.style.touchAction = mode ? "none" : "pan-x pan-y";
       return;
     }
     var act = btn.getAttribute("data-act");
     if (act === "undo") { actions.pop(); rebuildFromActions(); writingWord = null; redraw(); }
-    else if (act === "zoomin") setZoom(view.scale * 1.25);
-    else if (act === "zoomout") setZoom(view.scale / 1.25);
+    else if (act === "zoomin") setZoom(camera.scale * 1.25);
+    else if (act === "zoomout") setZoom(camera.scale / 1.25);
     else if (act === "zoomreset") setZoom(1);
-    else if (act === "clear") { finalizeWord(); actions = []; drawStrokes = {}; words = []; setZoom(1); redraw(); }
+    else if (act === "clear") { finalizeWord(); actions = []; drawStrokes = {}; words = []; camera.x = 0; camera.y = 0; setZoom(1); redraw(); }
   });
 
   redraw();
 
   return {
-    clear: function() { finalizeWord(); actions = []; drawStrokes = {}; words = []; redraw(); },
+    clear: function() { finalizeWord(); actions = []; drawStrokes = {}; words = []; camera.x = 0; camera.y = 0; camera.scale = 1; updateZoomLabel(); redraw(); },
     isEmpty: function() { return actions.length === 0 && !writingWord; },
     getJSON: function() {
       finalizeWord();
       var ds = [], id;
       for (id in drawStrokes) ds.push({ id: id, points: drawStrokes[id].points });
       var ws = words.map(function(w) { return { id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height }; });
-      return { v: 1, canvasWidth: logicalW, drawStrokes: ds, words: ws };
+      return { v: 1, canvasWidth: DOC_WIDTH, drawStrokes: ds, words: ws };
     },
     getSVG: function() {
       finalizeWord();
@@ -1206,7 +1261,7 @@ function createJot(hostEl) {
       for (id in drawStrokes) maxY = Math.max(maxY, drawStrokes[id].bbox.maxY);
       for (var i = 0; i < words.length; i++) maxY = Math.max(maxY, words[i].y + 10);
       var h = Math.ceil(maxY + 20);
-      var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + logicalW + ' ' + h + '" width="' + logicalW + '" height="' + h + '"><rect width="100%" height="100%" fill="#1e1e1e"/>';
+      var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + DOC_WIDTH + ' ' + h + '" width="' + DOC_WIDTH + '" height="' + h + '"><rect width="100%" height="100%" fill="#1e1e1e"/>';
       for (id in drawStrokes) svg += jtOutlineToPath(jtOutline(drawStrokes[id].points));
       for (i = 0; i < words.length; i++) {
         var w = words[i];
