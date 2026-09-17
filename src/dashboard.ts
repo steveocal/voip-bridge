@@ -824,6 +824,12 @@ var JOT_STROKE_OPTS = { size: 6, thinning: 0.6, smoothing: 0.5, streamline: 0.5 
 // doesn't sit around unsettled.
 var JOT_PAUSE_MS = 1000;
 var JOT_PROXIMITY = 2.5;      // word-boundary proximity factor (x current word bbox size)
+// Once a run of writing settles (pause/mode-change), it's split into
+// individual words by the actual gaps between strokes along the run's own
+// baseline — a fraction of the run's own (leveled) height, since that scales
+// naturally with how big the handwriting is.
+var JOT_SPLIT_GAP_FACTOR = 0.7;
+var JOT_SPLIT_GAP_MIN = 18;
 // Cap the leveling rotation: a lone near-vertical stroke (e.g. a single "l")
 // has no horizontal spread, so the best-fit line through it is ~90° and
 // would otherwise get "leveled" straight into a horizontal line.
@@ -863,33 +869,73 @@ function jtBBoxNear(a, b, factor) {
   var pad = Math.max(Math.max(a.maxX - a.minX, a.maxY - a.minY) * factor, 60);
   return !(b.minX > a.maxX + pad || b.maxX < a.minX - pad || b.minY > a.maxY + pad || b.maxY < a.minY - pad);
 }
-// Best-fit line through a word's combined points -> rotation to level it,
-// plus a baseline-left anchor (in raw space) and the scale needed to
-// normalize its height to JOT_WORD_HEIGHT.
-function jtWordTransform(strokes) {
-  var pts = [];
-  for (var i = 0; i < strokes.length; i++) for (var j = 0; j < strokes[i].length; j++) pts.push(strokes[i][j]);
+// Best-fit line through a whole written run's combined points -> rotation
+// to level it, and the run's own centroid (mx,my) to rotate around.
+function jtPCAFrame(pts) {
   var n = pts.length, mx = 0, my = 0;
-  for (i = 0; i < n; i++) { mx += pts[i][0]; my += pts[i][1]; }
+  for (var i = 0; i < n; i++) { mx += pts[i][0]; my += pts[i][1]; }
   mx /= n; my /= n;
   var sxx = 0, syy = 0, sxy = 0;
   for (i = 0; i < n; i++) { var dx = pts[i][0] - mx, dy = pts[i][1] - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; }
   var angle = 0.5 * Math.atan2(2 * sxy, sxx - syy);
   angle = Math.max(-JOT_MAX_TILT, Math.min(JOT_MAX_TILT, angle));
-  var cos = Math.cos(-angle), sin = Math.sin(-angle);
-  var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  for (i = 0; i < n; i++) {
-    dx = pts[i][0] - mx; dy = pts[i][1] - my;
-    var lx = dx * cos - dy * sin, ly = dx * sin + dy * cos;
-    if (lx < minX) minX = lx; if (lx > maxX) maxX = lx;
-    if (ly < minY) minY = ly; if (ly > maxY) maxY = ly;
+  return { mx: mx, my: my, angle: angle };
+}
+function jtToLocal(pt, frame) {
+  var cos = Math.cos(-frame.angle), sin = Math.sin(-frame.angle);
+  var dx = pt[0] - frame.mx, dy = pt[1] - frame.my;
+  return [dx * cos - dy * sin, dx * sin + dy * cos];
+}
+// Split one continuous written run into words. The run's full extent decides
+// the rotation and the scale (so a short word inside a longer run doesn't
+// get leveled/sized off its own sparse points) — only the split points
+// (baseline-left anchor + width) are computed per word, from the actual
+// gaps between strokes.
+function jtSplitWords(strokes) {
+  var allPts = [];
+  for (var i = 0; i < strokes.length; i++) for (var j = 0; j < strokes[i].length; j++) allPts.push(strokes[i][j]);
+  var frame = jtPCAFrame(allPts);
+  var overallMinY = Infinity, overallMaxY = -Infinity;
+  var local = strokes.map(function(s) {
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (var k = 0; k < s.length; k++) {
+      var lp = jtToLocal(s[k], frame);
+      if (lp[0] < minX) minX = lp[0]; if (lp[0] > maxX) maxX = lp[0];
+      if (lp[1] < minY) minY = lp[1]; if (lp[1] > maxY) maxY = lp[1];
+    }
+    overallMinY = Math.min(overallMinY, minY); overallMaxY = Math.max(overallMaxY, maxY);
+    return { minX: minX, maxX: maxX, maxY: maxY };
+  });
+  var overallH = Math.max(overallMaxY - overallMinY, 10);
+  var gap = Math.max(overallH * JOT_SPLIT_GAP_FACTOR, JOT_SPLIT_GAP_MIN);
+  var order = local.map(function(_, idx) { return idx; });
+  order.sort(function(a, b) { return local[a].minX - local[b].minX; });
+  var clusters = [], cur = null;
+  for (var oi = 0; oi < order.length; oi++) {
+    var idx = order[oi], lb = local[idx];
+    if (cur && lb.minX - cur.maxX <= gap) {
+      cur.indices.push(idx);
+      cur.maxX = Math.max(cur.maxX, lb.maxX);
+      cur.maxY = Math.max(cur.maxY, lb.maxY);
+    } else {
+      cur = { indices: [idx], minX: lb.minX, maxX: lb.maxX, maxY: lb.maxY };
+      clusters.push(cur);
+    }
   }
-  var w = Math.max(maxX - minX, 10), h = Math.max(maxY - minY, 10);
-  var cos2 = Math.cos(angle), sin2 = Math.sin(angle);
-  var ax = minX * cos2 - maxY * sin2 + mx;
-  var ay = minX * sin2 + maxY * cos2 + my;
-  var scale = Math.min(JOT_WORD_HEIGHT / h, 4);
-  return { anchor: [ax, ay], rotate: angle, scale: scale, width: w * scale, height: JOT_WORD_HEIGHT };
+  var cos2 = Math.cos(frame.angle), sin2 = Math.sin(frame.angle);
+  var scale = Math.min(JOT_WORD_HEIGHT / overallH, 4);
+  return clusters.map(function(c) {
+    var ax = c.minX * cos2 - c.maxY * sin2 + frame.mx;
+    var ay = c.minX * sin2 + c.maxY * cos2 + frame.my;
+    return {
+      rawStrokes: c.indices.map(function(i) { return strokes[i]; }),
+      anchor: [ax, ay],
+      rotate: frame.angle,
+      scale: scale,
+      width: Math.max(c.maxX - c.minX, 10) * scale,
+      height: JOT_WORD_HEIGHT
+    };
+  });
 }
 
 function createJot(hostEl) {
@@ -899,8 +945,8 @@ function createJot(hostEl) {
   var toolbar = document.createElement("div");
   toolbar.className = "jt-toolbar";
   toolbar.innerHTML =
-    '<button class="jt-btn jt-mode active" data-mode="draw" title="Draw">✏️</button>' +
-    '<button class="jt-btn jt-mode" data-mode="write" title="Write">🖊️</button>' +
+    '<button class="jt-btn jt-mode" data-mode="draw" title="Draw">✏️</button>' +
+    '<button class="jt-btn jt-mode active" data-mode="write" title="Write">🖊️</button>' +
     '<button class="jt-btn jt-mode" data-mode="erase" title="Erase">🧽</button>' +
     '<span class="jt-sep"></span>' +
     '<button class="jt-btn" data-act="undo" title="Undo">↶</button>' +
@@ -928,7 +974,7 @@ function createJot(hostEl) {
   ctx.scale(dpr, dpr);
   canvas.style.touchAction = "none";
 
-  var mode = "draw";
+  var mode = "write";       // "draw" | "write" | "erase" | null (deselected -> pan/zoom)
   var view = { scale: 1 };
   var nextId = 1;
   var drawStrokes = {};   // id -> { points:[[x,y,p],...], bbox }
@@ -938,6 +984,15 @@ function createJot(hostEl) {
   var writingWord = null;  // { strokes:[...], bbox }
   var wordPauseTimer = null;
   var erasing = false;
+  var activePointers = {}; // pointerId -> {x,y}, tracked whenever a tool is deselected (pinch-zoom)
+  var pinchStartDist = null, pinchStartScale = 1;
+
+  function pointerDistance() {
+    var ids = Object.keys(activePointers);
+    if (ids.length < 2) return null;
+    var a = activePointers[ids[0]], b = activePointers[ids[1]];
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  }
 
   function relayout() {
     var lineIdx = 0, x = JOT_PARA_MARGIN;
@@ -995,11 +1050,14 @@ function createJot(hostEl) {
   function finalizeWord() {
     if (wordPauseTimer) { clearTimeout(wordPauseTimer); wordPauseTimer = null; }
     if (!writingWord || !writingWord.strokes.length) { writingWord = null; return; }
-    var t = jtWordTransform(writingWord.strokes);
-    var id = nextId++;
-    var action = { type: "add-word", id: id, rawStrokes: writingWord.strokes, anchor: t.anchor, rotate: t.rotate, scale: t.scale, width: t.width, height: t.height };
-    actions.push(action);
-    words.push({ id: id, rawStrokes: action.rawStrokes, anchor: action.anchor, rotate: action.rotate, scale: action.scale, width: action.width, height: action.height });
+    var split = jtSplitWords(writingWord.strokes);
+    for (var i = 0; i < split.length; i++) {
+      var t = split[i];
+      var id = nextId++;
+      var action = { type: "add-word", id: id, rawStrokes: t.rawStrokes, anchor: t.anchor, rotate: t.rotate, scale: t.scale, width: t.width, height: t.height };
+      actions.push(action);
+      words.push({ id: id, rawStrokes: action.rawStrokes, anchor: action.anchor, rotate: action.rotate, scale: action.scale, width: action.width, height: action.height });
+    }
     relayout();
     writingWord = null;
     redraw();
@@ -1028,6 +1086,14 @@ function createJot(hostEl) {
   }
 
   function onDown(e) {
+    activePointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+    if (!mode) {
+      // No tool selected: let the browser handle single-finger panning
+      // (canvas-wrap scrolls natively) and track two-finger pinch ourselves,
+      // since our zoom is driven by view.scale, not CSS/visual zoom.
+      if (Object.keys(activePointers).length === 2) { pinchStartDist = pointerDistance(); pinchStartScale = view.scale; }
+      return;
+    }
     canvas.setPointerCapture(e.pointerId);
     var p = toLogical(e.clientX, e.clientY);
     var pressure = e.pointerType === "mouse" ? 0.5 : (e.pressure || 0.5);
@@ -1042,6 +1108,14 @@ function createJot(hostEl) {
     redraw();
   }
   function onMove(e) {
+    if (activePointers[e.pointerId]) activePointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+    if (!mode) {
+      if (pinchStartDist) {
+        var d = pointerDistance();
+        if (d) { setZoom(pinchStartScale * (d / pinchStartDist)); e.preventDefault(); }
+      }
+      return;
+    }
     var p = toLogical(e.clientX, e.clientY);
     if (mode === "erase") { if (erasing) eraseAt(p[0], p[1]); return; }
     if (!current) return;
@@ -1049,7 +1123,10 @@ function createJot(hostEl) {
     current.points.push([p[0], p[1], pressure]);
     redraw();
   }
-  function onUp() {
+  function onUp(e) {
+    delete activePointers[e.pointerId];
+    if (Object.keys(activePointers).length < 2) pinchStartDist = null;
+    if (!mode) return;
     if (mode === "erase") { erasing = false; return; }
     if (!current) return;
     var stroke = current;
@@ -1096,9 +1173,10 @@ function createJot(hostEl) {
     var m = btn.getAttribute("data-mode");
     if (m) {
       finalizeWord();
-      mode = m;
+      mode = (mode === m) ? null : m;
       var btns = toolbar.querySelectorAll(".jt-mode");
-      for (var i = 0; i < btns.length; i++) btns[i].classList.toggle("active", btns[i] === btn);
+      for (var i = 0; i < btns.length; i++) btns[i].classList.toggle("active", btns[i].getAttribute("data-mode") === mode);
+      canvas.style.touchAction = mode ? "none" : "pan-x pan-y";
       return;
     }
     var act = btn.getAttribute("data-act");
