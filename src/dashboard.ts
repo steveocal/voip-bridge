@@ -513,16 +513,16 @@ function activeAccount() {
   return accounts[0] || null;
 }
 function persistAccounts() {
+  // Deliberately local-only (localStorage), never synced to the shared
+  // server-side settings row: two devices are meant to run different SIP
+  // identities (e.g. desktop on 201, phone on 202) at the same time. That
+  // used to push here too, so whichever device saved last would silently
+  // overwrite what every other device loads on its next boot() — causing
+  // exactly the kind of duplicate/flapping registration that made a single
+  // decline look like it needed a second one.
   try {
     localStorage.setItem("vb_accounts", JSON.stringify(accounts));
     localStorage.setItem("vb_activeAccount", activeAccountId);
-  } catch (e) {}
-  try {
-    fetch(API + "/settings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ accounts: JSON.stringify(accounts), activeAccount: activeAccountId })
-    });
   } catch (e) {}
 }
 
@@ -2468,7 +2468,14 @@ function deleteAccount() {
 function updateAccountHeader() {
   var a = activeAccount();
   if (!a) return;
-  document.getElementById("acc-name-display").textContent = a.name;
+  // Always show the actual registered username alongside the free-text
+  // name — editing an account's credentials without also updating its
+  // display name (e.g. switching a device from extension 201 to 202)
+  // previously left the header showing the old extension, looking like
+  // the switch hadn't taken effect even though it had.
+  var label = a.name || "";
+  var extTag = "Ext " + (a.username || "?");
+  document.getElementById("acc-name-display").textContent = label && label.indexOf(a.username) === -1 ? label + " (" + extTag + ")" : (label || extTag);
   document.getElementById("acc-caller-display").textContent = "Caller ID: " + (a.callerId || "—");
 }
 function applyAndReconnect() {
@@ -2593,18 +2600,13 @@ function applyBoot() {
   loadSipJs().then(initSoftphone).catch(function(e) { setStatus("❌ " + e.message, true); });
 }
 function boot() {
-  // Merge server-side settings (D1) over localStorage, then start.
+  // Merge server-side settings (D1) over localStorage, then start. SIP
+  // accounts/activeAccount are deliberately excluded — those are per-device
+  // identity (see persistAccounts), not a shared preference.
   fetch(API + "/settings").then(function(r){return r.json();}).then(function(d){
     var s = d.settings || {};
     if (s.devMode === "1") settings.devMode = true;
     if (s.quickText) settings.quickText = s.quickText;
-    if (s.accounts) {
-      try {
-        var remote = JSON.parse(s.accounts);
-        if (Array.isArray(remote) && remote.length) accounts = remote;
-      } catch (e) {}
-    }
-    if (s.activeAccount) activeAccountId = s.activeAccount;
     if (s.favourites) {
       try {
         var f = JSON.parse(s.favourites);
