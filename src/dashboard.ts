@@ -2552,6 +2552,12 @@ function initSoftphone() {
 
   sipUA.delegate = {
     onInvite: function(inv) {
+      // Already ringing or on a call — send the same 486 (Busy Here) a
+      // hardware desk phone's firmware would send automatically. The
+      // dialplan turns that into DIALSTATUS=BUSY and routes to voicemail
+      // instead of just failing the call; this session's own active call
+      // is left completely untouched.
+      if (currentCall) { inv.reject({ statusCode: 486 }).catch(function() {}); return; }
       sipSession = inv;
       currentCall = { id: inv.request.callId, dir: "in", remote: inv.remoteIdentity.uri.user || inv.remoteIdentity.displayName, state: "ringing" };
       renderCallUI();
