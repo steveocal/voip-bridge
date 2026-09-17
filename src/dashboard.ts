@@ -7,7 +7,6 @@ export function serveDashboard(): Response {
 <meta name="theme-color" content="#0b0f19">
 <title>VoIP Bridge</title>
 <link rel="manifest" href="data:application/json,${encodeURIComponent(JSON.stringify({name:"VoIP Bridge",short_name:"VoIP",start_url:"/dashboard",display:"standalone",background_color:"#0b0f19",theme_color:"#0b0f19",icons:[{src:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📞%3C/text%3E%3C/svg%3E",sizes:"100x100",type:"image/svg+xml"}]}))}">
-<script>window.EXCALIDRAW_ASSET_PATH = "https://esm.sh/@excalidraw/excalidraw@0.18.1/dist/prod/";</script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
@@ -167,11 +166,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .cp-quote-row .amt{color:#34d399;font-weight:700;flex-shrink:0}
 .cp-hist-row{display:flex;justify-content:space-between;padding:9px 4px;border-bottom:1px solid #222;font-size:13px;color:#ccc}
 .jot-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-.jot-btn{background:#2c2c2c;border:none;color:#ececec;padding:8px 12px;border-radius:8px;font-size:13px;cursor:pointer}
-.jot-btn.ghost{background:none;border:1px solid #333;color:#999}
 .jot-status{font-size:12px;color:#34d399;margin-left:auto;white-space:nowrap}
-#jot-canvas{width:100%;height:420px;border-radius:10px;background:#1e1e1e;border:1px solid #2c2c2c;position:relative}
-#jot-canvas .empty{padding-top:170px}
+.save-chip{background:#2c2c2c;border:none;color:#ececec;padding:8px 12px;border-radius:8px;font-size:13px;cursor:pointer;flex-shrink:0}
+/* Jot engine: toolbar + scrollable canvas viewport (see createJot()) */
+.jt-wrap{display:flex;flex-direction:column;gap:8px}
+.jt-toolbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.jt-btn{background:#2c2c2c;border:none;color:#ececec;width:34px;height:34px;border-radius:8px;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0}
+.jt-btn.ghost{background:none;border:1px solid #333;color:#999}
+.jt-btn.jt-mode.active{background:#2563eb;color:#fff}
+.jt-btn.jt-zoom-label{width:auto;padding:0 8px;font-size:12px}
+.jt-sep{width:1px;align-self:stretch;background:#2c2c2c;margin:2px 4px}
+.jt-canvas-wrap{width:100%;border-radius:10px;background:#1e1e1e;border:1px solid #2c2c2c;overflow:auto}
+.jt-canvas-wrap canvas{display:block}
+#jot-canvas .jt-canvas-wrap{height:420px}
+#cd-jot-canvas .jt-canvas-wrap{height:58vh}
 /* call detail view: in-screen (not a dialog), Details/Notes/Jot tabs, sized for phones */
 .cd-head{display:flex;align-items:center;gap:8px;padding:2px 0 10px}
 .cd-back{background:none;border:none;color:#4db8ff;font-size:24px;line-height:1;cursor:pointer;padding:4px 8px;flex-shrink:0}
@@ -181,7 +189,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .cd-callback{background:linear-gradient(135deg,#34d399,#10b981);border:none;color:#04210f;width:40px;height:40px;border-radius:50%;font-size:17px;cursor:pointer;flex-shrink:0}
 .cd-callback.hidden{display:none}
 .cd-body{padding-top:6px}
-#cd-jot-canvas{width:100%;height:58vh;border-radius:10px;background:#1e1e1e;border:1px solid #2c2c2c;position:relative}
 .cd-footer{padding:16px 0 4px}
 .qt-panel{margin:10px 0 0;background:#111;border:1px solid #2c2c2c;border-radius:12px;padding:8px;max-height:200px;overflow-y:auto}
 .qt-panel .qt-head{font-size:11px;color:#999;text-transform:uppercase;letter-spacing:.5px;padding:4px 8px 8px}
@@ -241,7 +248,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
       <div class="call-panel hidden" id="call-panel">
         <div class="cp-head">
           <div class="cp-caller" id="cp-caller-name">Unknown caller</div>
-          <button class="jot-btn" onclick="saveCallRecord()">💾 Save</button>
+          <button class="save-chip" onclick="saveCallRecord()">💾 Save</button>
           <span class="jot-status" id="cp-save-status"></span>
         </div>
         <div class="cp-tabs">
@@ -261,12 +268,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
             </div>
           </div>
           <div class="cp-pane hidden" id="cp-pane-jot">
-            <div class="jot-toolbar">
-              <button class="jot-btn" onclick="saveJotToNotes()">💾 Save to Notes</button>
-              <button class="jot-btn ghost" onclick="clearJot()">🗑 Clear</button>
-              <span class="jot-status" id="jot-status"></span>
-            </div>
-            <div id="jot-canvas"><div class="empty">Loading sketchpad…</div></div>
+            <div class="jot-toolbar"><button class="save-chip" onclick="saveJotToNotes()">💾 Save to Notes</button><span class="jot-status" id="jot-status"></span></div>
+            <div id="jot-canvas"></div>
           </div>
         </div>
       </div>
@@ -805,74 +808,371 @@ function switchCallTab(tab) {
   if (tab === "jot") initJotEditor();
 }
 
-// ── Jot: Excalidraw handwriting canvas ──────────────────────────
-// Self-hosted single-file bundle (built via "npm run build:excalidraw",
-// checked into public/excalidraw/). Loading Excalidraw straight from an ESM
-// CDN fanned out into 100+ separate cross-origin module requests (duplicate
-// transitive deps, one file per import) — 10-20s in practice, unusable. This
-// is one same-origin request instead, same pattern as public/sip.min.js.
-var jotLoadPromise = null, jotCssLoaded = false;
-var jotExcalidrawLib = null, jotRoot = null, jotApi = null, jotCallId = null;
+// ── Jot: handwriting canvas (perfect-freehand, vendored inline — ~5KB, no
+// network request, no framework) ────────────────────────────────
+// Vendored from perfect-freehand@1.2.3 (MIT, github.com/steveruizok/perfect-freehand).
+var PerfectFreehand=(()=>{var Q=Object.defineProperty;var zn=Object.getOwnPropertyDescriptor;var An=Object.getOwnPropertyNames;var bn=Object.prototype.hasOwnProperty;var In=(n,t)=>{for(var r in t)Q(n,r,{get:t[r],enumerable:!0})},Tn=(n,t,r,u)=>{if(t&&typeof t=="object"||typeof t=="function")for(let i of An(t))!bn.call(n,i)&&i!==r&&Q(n,i,{get:()=>t[i],enumerable:!(u=zn(t,i))||u.enumerable});return n};var jn=n=>Tn(Q({},"__esModule",{value:!0}),n);var Nn={};In(Nn,{default:()=>Kn,getStroke:()=>yn,getStrokeOutlinePoints:()=>dn,getStrokePoints:()=>xn});var{PI:wn}=Math,F=wn+1e-4,rn=.5,un=[1,1];function on(n,t,r,u=i=>i){return n*u(.5-t*(.5-r))}var{min:U}=Math;function gn(n,t,r){let u=U(1,t/r);return U(1,n+(U(1,1-u)-n)*(u*.275))}function Fn(n){return[-n[0],-n[1]]}function g(n,t){return[n[0]+t[0],n[1]+t[1]]}function en(n,t,r){return n[0]=t[0]+r[0],n[1]=t[1]+r[1],n}function L(n,t){return[n[0]-t[0],n[1]-t[1]]}function X(n,t,r){return n[0]=t[0]-r[0],n[1]=t[1]-r[1],n}function y(n,t){return[n[0]*t,n[1]*t]}function V(n,t,r){return n[0]=t[0]*r,n[1]=t[1]*r,n}function On(n,t){return[n[0]/t,n[1]/t]}function vn(n){return[n[1],-n[0]]}function W(n,t){let r=t[0];return n[0]=t[1],n[1]=-r,n}function sn(n,t){return n[0]*t[0]+n[1]*t[1]}function Rn(n,t){return n[0]===t[0]&&n[1]===t[1]}function _n(n){return Math.hypot(n[0],n[1])}function cn(n,t){let r=n[0]-t[0],u=n[1]-t[1];return r*r+u*u}function Mn(n){return On(n,_n(n))}function qn(n,t){return Math.hypot(n[1]-t[1],n[0]-t[0])}function Y(n,t,r){let u=Math.sin(r),i=Math.cos(r),e=n[0]-t[0],o=n[1]-t[1],c=e*i-o*u,v=e*u+o*i;return[c+t[0],v+t[1]]}function ln(n,t,r,u){let i=Math.sin(u),e=Math.cos(u),o=t[0]-r[0],c=t[1]-r[1],v=o*e-c*i,P=o*i+c*e;return n[0]=v+r[0],n[1]=P+r[1],n}function fn(n,t,r){return g(n,y(L(t,n),r))}function Bn(n,t,r,u){let i=r[0]-t[0],e=r[1]-t[1];return n[0]=t[0]+i*u,n[1]=t[1]+e*u,n}function mn(n,t,r){return g(n,y(t,r))}var l=[0,0],d=[0,0],x=[0,0];function Cn(n,t){let r=mn(n,Mn(vn(L(n,g(n,[1,1])))),-t),u=[],i=1/13;for(let e=i;e<=1;e+=i)u.push(Y(r,n,F*2*e));return u}function Dn(n,t,r){let u=[],i=1/r;for(let e=i;e<=1;e+=i)u.push(Y(t,n,F*e));return u}function En(n,t,r){let u=L(t,r),i=y(u,.5),e=y(u,.51);return[L(n,i),L(n,e),g(n,e),g(n,i)]}function Gn(n,t,r,u){let i=[],e=mn(n,t,r),o=1/u;for(let c=o;c<1;c+=o)i.push(Y(e,n,F*3*c));return i}function Hn(n,t,r){return[g(n,y(t,r)),g(n,y(t,r*.99)),L(n,y(t,r*.99)),L(n,y(t,r))]}function hn(n,t,r){return n===!1||n===void 0?0:n===!0?Math.max(t,r):n}function Jn(n,t,r){return n.slice(0,10).reduce((u,i)=>{let e=i.pressure;return t&&(e=gn(u,i.distance,r)),(u+e)/2},n[0].pressure)}function dn(n,t={}){let{size:r=16,smoothing:u=.5,thinning:i=.5,simulatePressure:e=!0,easing:o=s=>s,start:c={},end:v={},last:P=!1}=t,{cap:M=!0,easing:O=s=>s*(2-s)}=c,{cap:f=!0,easing:h=s=>--s*s*s+1}=v;if(n.length===0||r<=0)return[];let p=n[n.length-1].runningLength,A=hn(c.taper,r,p),b=hn(v.taper,r,p),Z=(r*u)**2,I=[],z=[],$=Jn(n,e,r),a=on(r,i,n[n.length-1].pressure,o),C,D=n[0].vector,T=n[0].point,R=T,S=T,k=R,E=!1;for(let s=0;s<n.length;s++){let{pressure:K}=n[s],{point:m,vector:j,distance:Ln,runningLength:w}=n[s],q=s===n.length-1;if(!q&&p-w<3)continue;i?(e&&(K=gn($,Ln,r)),a=on(r,i,K,o)):a=r/2,C===void 0&&(C=a);let Pn=w<A?O(w/A):1,Sn=p-w<b?h((p-w)/b):1;a=Math.max(.01,a*Math.min(Pn,Sn));let nn=(q?n[s]:n[s+1]).vector,N=q?1:sn(j,nn),kn=sn(j,D)<0&&!E,tn=N!==null&&N<0;if(kn||tn){W(l,D),V(l,l,a);for(let B=0;B<=1;B+=.07692307692307693)X(d,m,l),ln(d,d,m,F*B),S=[d[0],d[1]],I.push(S),en(x,m,l),ln(x,x,m,F*-B),k=[x[0],x[1]],z.push(k);T=S,R=k,tn&&(E=!0);continue}if(E=!1,q){W(l,j),V(l,l,a),I.push(L(m,l)),z.push(g(m,l));continue}Bn(l,nn,j,N),W(l,l),V(l,l,a),X(d,m,l),S=[d[0],d[1]],(s<=1||cn(T,S)>Z)&&(I.push(S),T=S),en(x,m,l),k=[x[0],x[1]],(s<=1||cn(R,k)>Z)&&(z.push(k),R=k),$=K,D=j}let G=[n[0].point[0],n[0].point[1]],H=n.length>1?[n[n.length-1].point[0],n[n.length-1].point[1]]:g(n[0].point,[1,1]),J=[],_=[];if(n.length===1){if(!(A||b)||P)return Cn(G,C||a)}else{A||b&&n.length===1||(M?J.push(...Dn(G,z[0],13)):J.push(...En(G,I[0],z[0])));let s=vn(Fn(n[n.length-1].vector));b||A&&n.length===1?_.push(H):f?_.push(...Gn(H,s,a,29)):_.push(...Hn(H,s,a))}return I.concat(_,z.reverse(),J)}var an=[0,0];function pn(n){return n!=null&&n>=0}function xn(n,t={}){let{streamline:r=.5,size:u=16,last:i=!1}=t;if(n.length===0)return[];let e=.15+(1-r)*.85,o=Array.isArray(n[0])?n:n.map(({x:f,y:h,pressure:p=rn})=>[f,h,p]);if(o.length===2){let f=o[1];o=o.slice(0,-1);for(let h=1;h<5;h++)o.push(fn(o[0],f,h/4))}o.length===1&&(o=[...o,[...g(o[0],un),...o[0].slice(2)]]);let c=[{point:[o[0][0],o[0][1]],pressure:pn(o[0][2])?o[0][2]:.25,vector:[...un],distance:0,runningLength:0}],v=!1,P=0,M=c[0],O=o.length-1;for(let f=1;f<o.length;f++){let h=i&&f===O?[o[f][0],o[f][1]]:fn(M.point,o[f],e);if(Rn(M.point,h))continue;let p=qn(h,M.point);if(P+=p,f<O&&!v){if(P<u)continue;v=!0}X(an,M.point,h),M={point:h,pressure:pn(o[f][2])?o[f][2]:rn,vector:Mn(an),distance:p,runningLength:P},c.push(M)}return c[0].vector=c[1]?.vector||[0,0],c}function yn(n,t={}){return dn(xn(n,t),t)}var Kn=yn;return jn(Nn);})();
 
-function loadExcalidrawCss() {
-  if (jotCssLoaded) return;
-  jotCssLoaded = true;
-  var link = document.createElement("link");
-  link.rel = "stylesheet";
-  link.href = "/excalidraw/excalidraw.css";
-  document.head.appendChild(link);
+// ── Jot engine: Draw / Write / Erase, undo, zoom, save/load ────
+var JOT_INK = "#e9ecef";
+var JOT_STROKE_OPTS = { size: 6, thinning: 0.6, smoothing: 0.5, streamline: 0.5 };
+var JOT_PAUSE_MS = 500;
+var JOT_PROXIMITY = 1.6;      // word-boundary proximity factor (x current word bbox size)
+var JOT_LINE_HEIGHT = 42;
+var JOT_WORD_HEIGHT = 26;     // normalized word height (logical px)
+var JOT_WORD_GAP = 10;
+var JOT_PARA_MARGIN = 14;
+var JOT_PARA_TOP = 32;
+
+function jtOutline(pts) { return PerfectFreehand.getStroke(pts, JOT_STROKE_OPTS); }
+function jtFillOutline(ctx, outline) {
+  if (!outline || outline.length < 3) return;
+  ctx.beginPath();
+  ctx.moveTo(outline[0][0], outline[0][1]);
+  for (var i = 1; i < outline.length; i++) ctx.lineTo(outline[i][0], outline[i][1]);
+  ctx.closePath();
+  ctx.fill();
+}
+function jtBBox(pts) {
+  var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (var i = 0; i < pts.length; i++) {
+    var x = pts[i][0], y = pts[i][1];
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  }
+  return { minX: minX, minY: minY, maxX: maxX, maxY: maxY };
+}
+function jtBBoxUnion(a, b) {
+  return { minX: Math.min(a.minX, b.minX), minY: Math.min(a.minY, b.minY), maxX: Math.max(a.maxX, b.maxX), maxY: Math.max(a.maxY, b.maxY) };
+}
+function jtBBoxNear(a, b, factor) {
+  var pad = Math.max((a.maxX - a.minX), (a.maxY - a.minY), 20) * factor;
+  return !(b.minX > a.maxX + pad || b.maxX < a.minX - pad || b.minY > a.maxY + pad || b.maxY < a.minY - pad);
+}
+// Best-fit line through a word's combined points -> rotation to level it,
+// plus a baseline-left anchor (in raw space) and the scale needed to
+// normalize its height to JOT_WORD_HEIGHT.
+function jtWordTransform(strokes) {
+  var pts = [];
+  for (var i = 0; i < strokes.length; i++) for (var j = 0; j < strokes[i].length; j++) pts.push(strokes[i][j]);
+  var n = pts.length, mx = 0, my = 0;
+  for (i = 0; i < n; i++) { mx += pts[i][0]; my += pts[i][1]; }
+  mx /= n; my /= n;
+  var sxx = 0, syy = 0, sxy = 0;
+  for (i = 0; i < n; i++) { var dx = pts[i][0] - mx, dy = pts[i][1] - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; }
+  var angle = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+  var cos = Math.cos(-angle), sin = Math.sin(-angle);
+  var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (i = 0; i < n; i++) {
+    dx = pts[i][0] - mx; dy = pts[i][1] - my;
+    var lx = dx * cos - dy * sin, ly = dx * sin + dy * cos;
+    if (lx < minX) minX = lx; if (lx > maxX) maxX = lx;
+    if (ly < minY) minY = ly; if (ly > maxY) maxY = ly;
+  }
+  var w = Math.max(maxX - minX, 10), h = Math.max(maxY - minY, 10);
+  var cos2 = Math.cos(angle), sin2 = Math.sin(angle);
+  var ax = minX * cos2 - maxY * sin2 + mx;
+  var ay = minX * sin2 + maxY * cos2 + my;
+  var scale = Math.min(JOT_WORD_HEIGHT / h, 4);
+  return { anchor: [ax, ay], rotate: angle, scale: scale, width: w * scale, height: JOT_WORD_HEIGHT };
 }
 
-function loadExcalidraw() {
-  if (jotLoadPromise) return jotLoadPromise;
-  loadExcalidrawCss();
-  jotLoadPromise = new Promise(function(resolve, reject) {
-    if (window.ExcalidrawBundle) { resolve(window.ExcalidrawBundle); return; }
-    var s = document.createElement("script");
-    s.type = "module";
-    s.src = "/excalidraw/excalidraw.entry.js";
-    s.onload = function() {
-      if (window.ExcalidrawBundle) resolve(window.ExcalidrawBundle);
-      else reject(new Error("bundle loaded but did not register"));
-    };
-    s.onerror = function() { reject(new Error("bundle failed to load")); };
-    document.head.appendChild(s);
-    setTimeout(function() { if (!window.ExcalidrawBundle) reject(new Error("bundle load timeout")); }, 20000);
+function createJot(hostEl) {
+  hostEl.innerHTML = "";
+  hostEl.classList.add("jt-wrap");
+
+  var toolbar = document.createElement("div");
+  toolbar.className = "jt-toolbar";
+  toolbar.innerHTML =
+    '<button class="jt-btn jt-mode active" data-mode="draw" title="Draw">✏️</button>' +
+    '<button class="jt-btn jt-mode" data-mode="write" title="Write">🖊️</button>' +
+    '<button class="jt-btn jt-mode" data-mode="erase" title="Erase">🧽</button>' +
+    '<span class="jt-sep"></span>' +
+    '<button class="jt-btn" data-act="undo" title="Undo">↶</button>' +
+    '<button class="jt-btn" data-act="zoomout" title="Zoom out">−</button>' +
+    '<button class="jt-btn jt-zoom-label" data-act="zoomreset" title="Reset zoom">100%</button>' +
+    '<button class="jt-btn" data-act="zoomin" title="Zoom in">+</button>' +
+    '<span class="jt-sep"></span>' +
+    '<button class="jt-btn ghost" data-act="clear" title="Clear all">🗑</button>';
+  hostEl.appendChild(toolbar);
+
+  var canvasWrap = document.createElement("div");
+  canvasWrap.className = "jt-canvas-wrap";
+  var canvas = document.createElement("canvas");
+  canvasWrap.appendChild(canvas);
+  hostEl.appendChild(canvasWrap);
+
+  var ctx = canvas.getContext("2d");
+  var dpr = window.devicePixelRatio || 1;
+  var logicalW = Math.max(280, canvasWrap.getBoundingClientRect().width || hostEl.getBoundingClientRect().width || 320);
+  var logicalH = 1400;
+  canvas.width = logicalW * dpr;
+  canvas.height = logicalH * dpr;
+  canvas.style.width = logicalW + "px";
+  canvas.style.height = logicalH + "px";
+  ctx.scale(dpr, dpr);
+  canvas.style.touchAction = "none";
+
+  var mode = "draw";
+  var view = { scale: 1 };
+  var nextId = 1;
+  var drawStrokes = {};   // id -> { points:[[x,y,p],...], bbox }
+  var words = [];          // ordered [{ id, rawStrokes, anchor, rotate, scale, width, height, x, y }]
+  var actions = [];        // undo log
+  var current = null;      // in-progress stroke while pointer is down
+  var writingWord = null;  // { strokes:[...], bbox }
+  var wordPauseTimer = null;
+  var erasing = false;
+
+  function relayout() {
+    var lineIdx = 0, x = JOT_PARA_MARGIN;
+    var maxWidth = logicalW - JOT_PARA_MARGIN * 2;
+    for (var i = 0; i < words.length; i++) {
+      var w = words[i];
+      if (x + w.width > maxWidth && x > JOT_PARA_MARGIN) { lineIdx++; x = JOT_PARA_MARGIN; }
+      w.line = lineIdx;
+      w.x = x;
+      w.y = JOT_PARA_TOP + lineIdx * JOT_LINE_HEIGHT;
+      x += w.width + JOT_WORD_GAP;
+    }
+  }
+
+  function redraw() {
+    ctx.clearRect(0, 0, logicalW, logicalH);
+    ctx.fillStyle = JOT_INK;
+    var id;
+    for (id in drawStrokes) jtFillOutline(ctx, jtOutline(drawStrokes[id].points));
+    for (var i = 0; i < words.length; i++) {
+      var w = words[i];
+      ctx.save();
+      ctx.translate(w.x, w.y);
+      ctx.rotate(-w.rotate);
+      ctx.scale(w.scale, w.scale);
+      ctx.translate(-w.anchor[0], -w.anchor[1]);
+      for (var s = 0; s < w.rawStrokes.length; s++) jtFillOutline(ctx, jtOutline(w.rawStrokes[s]));
+      ctx.restore();
+    }
+    if (writingWord) for (var ws = 0; ws < writingWord.strokes.length; ws++) jtFillOutline(ctx, jtOutline(writingWord.strokes[ws]));
+    if (current) jtFillOutline(ctx, jtOutline(current.points));
+  }
+
+  function rebuildFromActions() {
+    drawStrokes = {}; words = [];
+    for (var i = 0; i < actions.length; i++) {
+      var a = actions[i];
+      if (a.type === "add-stroke") drawStrokes[a.id] = { points: a.points, bbox: jtBBox(a.points) };
+      else if (a.type === "add-word") words.push({ id: a.id, rawStrokes: a.rawStrokes, anchor: a.anchor, rotate: a.rotate, scale: a.scale, width: a.width, height: a.height });
+      else if (a.type === "erase-stroke") delete drawStrokes[a.targetId];
+      else if (a.type === "erase-word") { for (var j = 0; j < words.length; j++) if (words[j].id === a.targetId) { words.splice(j, 1); break; } }
+    }
+    relayout();
+  }
+
+  function toLogical(clientX, clientY) {
+    var r = canvas.getBoundingClientRect();
+    return [(clientX - r.left) / r.width * logicalW, (clientY - r.top) / r.height * logicalH];
+  }
+
+  function finalizeWord() {
+    if (wordPauseTimer) { clearTimeout(wordPauseTimer); wordPauseTimer = null; }
+    if (!writingWord || !writingWord.strokes.length) { writingWord = null; return; }
+    var t = jtWordTransform(writingWord.strokes);
+    var id = nextId++;
+    var action = { type: "add-word", id: id, rawStrokes: writingWord.strokes, anchor: t.anchor, rotate: t.rotate, scale: t.scale, width: t.width, height: t.height };
+    actions.push(action);
+    words.push({ id: id, rawStrokes: action.rawStrokes, anchor: action.anchor, rotate: action.rotate, scale: action.scale, width: action.width, height: action.height });
+    relayout();
+    writingWord = null;
+    redraw();
+  }
+
+  function hitTest(lx, ly) {
+    var pad = 10;
+    var id;
+    for (id in drawStrokes) {
+      var b = drawStrokes[id].bbox;
+      if (lx >= b.minX - pad && lx <= b.maxX + pad && ly >= b.minY - pad && ly <= b.maxY + pad) return { kind: "stroke", id: id };
+    }
+    for (var i = words.length - 1; i >= 0; i--) {
+      var w = words[i];
+      if (lx >= w.x - pad && lx <= w.x + w.width + pad && ly >= w.y - w.height - pad && ly <= w.y + pad) return { kind: "word", id: w.id };
+    }
+    return null;
+  }
+
+  function eraseAt(lx, ly) {
+    var hit = hitTest(lx, ly);
+    if (!hit) return;
+    if (hit.kind === "stroke") { delete drawStrokes[hit.id]; actions.push({ type: "erase-stroke", targetId: hit.id }); }
+    else { for (var j = 0; j < words.length; j++) if (words[j].id === hit.id) { words.splice(j, 1); break; } actions.push({ type: "erase-word", targetId: hit.id }); relayout(); }
+    redraw();
+  }
+
+  function onDown(e) {
+    canvas.setPointerCapture(e.pointerId);
+    var p = toLogical(e.clientX, e.clientY);
+    var pressure = e.pointerType === "mouse" ? 0.5 : (e.pressure || 0.5);
+    if (mode === "erase") { erasing = true; eraseAt(p[0], p[1]); return; }
+    current = { points: [[p[0], p[1], pressure]] };
+    redraw();
+  }
+  function onMove(e) {
+    var p = toLogical(e.clientX, e.clientY);
+    if (mode === "erase") { if (erasing) eraseAt(p[0], p[1]); return; }
+    if (!current) return;
+    var pressure = e.pointerType === "mouse" ? 0.5 : (e.pressure || 0.5);
+    current.points.push([p[0], p[1], pressure]);
+    redraw();
+  }
+  function onUp() {
+    if (mode === "erase") { erasing = false; return; }
+    if (!current) return;
+    var stroke = current;
+    current = null;
+    if (stroke.points.length < 2) stroke.points.push([stroke.points[0][0] + 0.1, stroke.points[0][1] + 0.1, stroke.points[0][2]]);
+    if (mode === "write") {
+      var bbox = jtBBox(stroke.points);
+      if (writingWord && jtBBoxNear(writingWord.bbox, bbox, JOT_PROXIMITY)) {
+        writingWord.strokes.push(stroke.points);
+        writingWord.bbox = jtBBoxUnion(writingWord.bbox, bbox);
+      } else {
+        finalizeWord();
+        writingWord = { strokes: [stroke.points], bbox: bbox };
+      }
+      if (wordPauseTimer) clearTimeout(wordPauseTimer);
+      wordPauseTimer = setTimeout(finalizeWord, JOT_PAUSE_MS);
+      redraw();
+    } else {
+      var id = nextId++;
+      drawStrokes[id] = { points: stroke.points, bbox: jtBBox(stroke.points) };
+      actions.push({ type: "add-stroke", id: id, points: stroke.points });
+      redraw();
+    }
+  }
+
+  canvas.addEventListener("pointerdown", onDown);
+  canvas.addEventListener("pointermove", onMove);
+  canvas.addEventListener("pointerup", onUp);
+  canvas.addEventListener("pointercancel", onUp);
+
+  function setZoom(scale) {
+    view.scale = Math.max(0.5, Math.min(3, scale));
+    canvas.style.width = (logicalW * view.scale) + "px";
+    canvas.style.height = (logicalH * view.scale) + "px";
+    var label = toolbar.querySelector(".jt-zoom-label");
+    if (label) label.textContent = Math.round(view.scale * 100) + "%";
+  }
+
+  toolbar.addEventListener("click", function(e) {
+    var btn = e.target.closest(".jt-btn");
+    if (!btn) return;
+    var m = btn.getAttribute("data-mode");
+    if (m) {
+      finalizeWord();
+      mode = m;
+      var btns = toolbar.querySelectorAll(".jt-mode");
+      for (var i = 0; i < btns.length; i++) btns[i].classList.toggle("active", btns[i] === btn);
+      return;
+    }
+    var act = btn.getAttribute("data-act");
+    if (act === "undo") { actions.pop(); rebuildFromActions(); writingWord = null; redraw(); }
+    else if (act === "zoomin") setZoom(view.scale * 1.25);
+    else if (act === "zoomout") setZoom(view.scale / 1.25);
+    else if (act === "zoomreset") setZoom(1);
+    else if (act === "clear") { finalizeWord(); actions = []; drawStrokes = {}; words = []; setZoom(1); redraw(); }
   });
-  return jotLoadPromise;
+
+  redraw();
+
+  return {
+    clear: function() { finalizeWord(); actions = []; drawStrokes = {}; words = []; redraw(); },
+    isEmpty: function() { return actions.length === 0 && !writingWord; },
+    getJSON: function() {
+      finalizeWord();
+      var ds = [], id;
+      for (id in drawStrokes) ds.push({ id: id, points: drawStrokes[id].points });
+      var ws = words.map(function(w) { return { id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height }; });
+      return { v: 1, canvasWidth: logicalW, drawStrokes: ds, words: ws };
+    },
+    getSVG: function() {
+      finalizeWord();
+      var maxY = JOT_PARA_TOP;
+      var id;
+      for (id in drawStrokes) maxY = Math.max(maxY, drawStrokes[id].bbox.maxY);
+      for (var i = 0; i < words.length; i++) maxY = Math.max(maxY, words[i].y + 10);
+      var h = Math.ceil(maxY + 20);
+      var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + logicalW + ' ' + h + '" width="' + logicalW + '" height="' + h + '"><rect width="100%" height="100%" fill="#1e1e1e"/>';
+      for (id in drawStrokes) svg += jtOutlineToPath(jtOutline(drawStrokes[id].points));
+      for (i = 0; i < words.length; i++) {
+        var w = words[i];
+        var deg = (-w.rotate * 180 / Math.PI).toFixed(2);
+        svg += '<g transform="translate(' + w.x.toFixed(2) + ',' + w.y.toFixed(2) + ') rotate(' + deg + ') scale(' + w.scale.toFixed(4) + ') translate(' + (-w.anchor[0]).toFixed(2) + ',' + (-w.anchor[1]).toFixed(2) + ')">';
+        for (var s = 0; s < w.rawStrokes.length; s++) svg += jtOutlineToPath(jtOutline(w.rawStrokes[s]));
+        svg += '</g>';
+      }
+      svg += '</svg>';
+      return svg;
+    },
+    loadJSON: function(data) {
+      // Loaded content becomes seed entries in the action log (not just
+      // direct state) so it replays correctly through rebuildFromActions()
+      // — otherwise the first Undo after loading would rebuild from an
+      // empty log and wipe the loaded content instead of the last edit.
+      actions = [];
+      drawStrokes = {}; words = [];
+      if (data && data.drawStrokes) for (var i = 0; i < data.drawStrokes.length; i++) {
+        var d = data.drawStrokes[i];
+        actions.push({ type: "add-stroke", id: d.id, points: d.points });
+        drawStrokes[d.id] = { points: d.points, bbox: jtBBox(d.points) };
+        if (nextId <= Number(d.id)) nextId = Number(d.id) + 1;
+      }
+      if (data && data.words) for (var j = 0; j < data.words.length; j++) {
+        var w = data.words[j];
+        actions.push({ type: "add-word", id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height });
+        words.push({ id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height });
+        if (nextId <= Number(w.id)) nextId = Number(w.id) + 1;
+      }
+      relayout();
+      redraw();
+    },
+    destroy: function() {
+      finalizeWord();
+      canvas.removeEventListener("pointerdown", onDown);
+      canvas.removeEventListener("pointermove", onMove);
+      canvas.removeEventListener("pointerup", onUp);
+      canvas.removeEventListener("pointercancel", onUp);
+    }
+  };
+}
+function jtOutlineToPath(outline) {
+  if (!outline || outline.length < 3) return "";
+  var d = "M " + outline[0][0].toFixed(2) + " " + outline[0][1].toFixed(2);
+  for (var i = 1; i < outline.length; i++) d += " L " + outline[i][0].toFixed(2) + " " + outline[i][1].toFixed(2);
+  d += " Z";
+  return '<path d="' + d + '" fill="#e9ecef"/>';
 }
 
 function initJotEditor() {
   var host = document.getElementById("jot-canvas");
-  if (jotRoot) { resetJotIfNewCall(); return; }
-  host.innerHTML = '<div class="empty">Loading sketchpad…</div>';
-  loadExcalidraw().then(function(bundle) {
-    var React = bundle.React, ReactDOMClient = bundle.ReactDOMClient, ExcalidrawLib = bundle.ExcalidrawLib;
-    jotExcalidrawLib = ExcalidrawLib;
-    host.innerHTML = "";
-    jotRoot = ReactDOMClient.createRoot(host);
-    jotRoot.render(React.createElement(ExcalidrawLib.Excalidraw, {
-      theme: "dark",
-      excalidrawAPI: function(api) { jotApi = api; }
-    }));
-    jotCallId = currentCall ? currentCall.id : null;
-  }).catch(function(e) {
-    host.innerHTML = '<div class="empty">Sketchpad failed to load' + (e && e.message ? ": " + esc(e.message) : "") + '</div>';
-  });
+  if (liveJot) { resetJotIfNewCall(); return; }
+  liveJot = createJot(host);
+  jotCallId = currentCall ? currentCall.id : null;
 }
+
+var liveJot = null, jotCallId = null;
 
 function resetJotIfNewCall() {
   var id = currentCall ? currentCall.id : null;
-  if (jotApi && id !== jotCallId) {
-    if (jotApi.resetScene) jotApi.resetScene(); else jotApi.updateScene({ elements: [] });
+  if (liveJot && id !== jotCallId) {
+    liveJot.clear();
     jotCallId = id;
     setJotStatus("");
   }
 }
 
 function clearJot() {
-  if (!jotApi) return;
-  if (jotApi.resetScene) jotApi.resetScene(); else jotApi.updateScene({ elements: [] });
+  if (!liveJot) return;
+  liveJot.clear();
   setJotStatus("Cleared");
 }
 
@@ -882,26 +1182,18 @@ function setJotStatus(msg) {
 }
 
 function saveJotToNotes() {
-  if (!jotApi || !jotExcalidrawLib) { setJotStatus("Sketchpad not ready"); return; }
-  var elements = jotApi.getSceneElements();
-  if (!elements.length) { setJotStatus("Nothing to save"); return; }
-  setJotStatus("Saving…");
-  jotExcalidrawLib.exportToSvg({
-    elements: elements,
-    appState: Object.assign({}, jotApi.getAppState(), { exportBackground: true, viewBackgroundColor: "#1e1e1e" }),
-    files: jotApi.getFiles()
-  }).then(function(svg) {
-    var html = svg.outerHTML;
-    var ed = (typeof tinymce !== "undefined") ? tinymce.get("call-notes") : null;
-    if (ed) {
-      var cur = ed.getContent();
-      ed.setContent(cur ? (cur + "<br>" + html) : html);
-    } else {
-      var ta = document.getElementById("call-notes");
-      ta.value = (ta.value ? ta.value + String.fromCharCode(10) : "") + "[Jot sketch attached — open Notes with rich text to view]";
-    }
-    setJotStatus("Saved to Notes ✓");
-  }).catch(function() { setJotStatus("Save failed"); });
+  if (!liveJot || liveJot.isEmpty()) { setJotStatus("Nothing to save"); return; }
+  setJotStatus("Saving\u2026");
+  var html = liveJot.getSVG();
+  var ed = (typeof tinymce !== "undefined") ? tinymce.get("call-notes") : null;
+  if (ed) {
+    var cur = ed.getContent();
+    ed.setContent(cur ? (cur + "<br>" + html) : html);
+  } else {
+    var ta = document.getElementById("call-notes");
+    ta.value = (ta.value ? ta.value + String.fromCharCode(10) : "") + "[Jot sketch attached \u2014 open Notes with rich text to view]";
+  }
+  setJotStatus("Saved to Notes \u2713");
 }
 
 // Persist the live in-call Notes editor + Jot sketch (SVG + re-editable JSON)
@@ -916,24 +1208,10 @@ function saveCallRecord() {
   var ed = (typeof tinymce !== "undefined") ? tinymce.get("call-notes") : null;
   var ta = document.getElementById("call-notes");
   var notesHtml = ed ? ed.getContent() : (ta ? ta.value : "");
-  setCallSaveStatus("Saving…");
-
-  if (jotApi && jotExcalidrawLib) {
-    var elements = jotApi.getSceneElements();
-    var jotJson = JSON.stringify({ elements: elements, appState: jotApi.getAppState() });
-    if (elements.length) {
-      jotExcalidrawLib.exportToSvg({
-        elements: elements,
-        appState: Object.assign({}, jotApi.getAppState(), { exportBackground: true, viewBackgroundColor: "#1e1e1e" }),
-        files: jotApi.getFiles()
-      }).then(function(svg) { postCallSave(callId, notesHtml, svg.outerHTML, jotJson); })
-        .catch(function() { postCallSave(callId, notesHtml, "", jotJson); });
-    } else {
-      postCallSave(callId, notesHtml, "", jotJson);
-    }
-  } else {
-    postCallSave(callId, notesHtml, "", "");
-  }
+  setCallSaveStatus("Saving\u2026");
+  var jotSvg = (liveJot && !liveJot.isEmpty()) ? liveJot.getSVG() : "";
+  var jotJson = liveJot ? JSON.stringify(liveJot.getJSON()) : "";
+  postCallSave(callId, notesHtml, jotSvg, jotJson);
 }
 function postCallSave(callId, notesHtml, jotSvg, jotJson) {
   fetch(API + "/call-notes", {
@@ -941,7 +1219,7 @@ function postCallSave(callId, notesHtml, jotSvg, jotJson) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ call_id: callId, notes_html: notesHtml, jot_svg: jotSvg, jot_json: jotJson })
   }).then(function(r) { return r.json(); }).then(function(d) {
-    setCallSaveStatus(d.ok ? "Saved ✓" : "Save failed");
+    setCallSaveStatus(d.ok ? "Saved \u2713" : "Save failed");
   }).catch(function() { setCallSaveStatus("Save failed"); });
 }
 
@@ -1321,7 +1599,8 @@ function openContactFull(c) {
 // A drill-down from History, not a dialog — replaces the whole screen like
 // any other view (see switchView), with a back arrow to return.
 var cdOpenCallId = null, cdLoadedNotes = {}, cdJotData = null, activeCdTab = "details";
-var cdJotRoot = null, cdJotApi = null, cdJotExcalidrawLib = null;
+var cdJot = null;
+
 
 function openCallDetailView(c) {
   c = c || (selected && selected.data);
@@ -1362,7 +1641,7 @@ function switchCallDetailTab(tab) {
   for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle("active", tabs[i].getAttribute("data-tab") === tab);
   var panes = document.querySelectorAll("#view-call-detail .cp-pane");
   for (var j = 0; j < panes.length; j++) panes[j].classList.toggle("hidden", panes[j].id !== "cd-pane-" + tab);
-  if (tab === "jot" && !cdJotRoot) initCallDetailJot();
+  if (tab === "jot" && !cdJot) initCallDetailJot();
 }
 
 function loadCallDetailNotes(callId) {
@@ -1377,9 +1656,7 @@ function loadCallDetailNotes(callId) {
     // If the Jot tab was already opened/mounted before this fetch resolved
     // (fast tap right after opening the call), backfill it now instead of
     // leaving — or letting a later Save persist — a blank scene.
-    if (cdJotApi && cdJotData && cdJotData.elements) {
-      cdJotApi.updateScene({ elements: cdJotData.elements, appState: cdJotData.appState || {} });
-    }
+    if (cdJot && cdJotData) cdJot.loadJSON(cdJotData);
   }).catch(function() { renderCallDetailNotesPane(); });
 }
 
@@ -1414,29 +1691,14 @@ function initCallDetailNotesEditor(html) {
 function initCallDetailJot() {
   var host = document.getElementById("cd-jot-canvas");
   if (!host) return;
-  host.innerHTML = '<div class="empty">Loading sketchpad…</div>';
-  loadExcalidraw().then(function(bundle) {
-    var React = bundle.React, ReactDOMClient = bundle.ReactDOMClient, ExcalidrawLib = bundle.ExcalidrawLib;
-    cdJotExcalidrawLib = ExcalidrawLib;
-    host.innerHTML = "";
-    cdJotRoot = ReactDOMClient.createRoot(host);
-    // Read cdJotData now (not a captured param) — the notes fetch and the
-    // Excalidraw bundle load race each other, and whichever finishes last
-    // should win with the freshest data rather than a stale closure value.
-    cdJotRoot.render(React.createElement(ExcalidrawLib.Excalidraw, {
-      theme: "dark",
-      initialData: cdJotData || undefined,
-      excalidrawAPI: function(api) { cdJotApi = api; }
-    }));
-  }).catch(function(e) {
-    host.innerHTML = '<div class="empty">Sketchpad failed to load' + (e && e.message ? ": " + esc(e.message) : "") + '</div>';
-  });
+  cdJot = createJot(host);
+  if (cdJotData) cdJot.loadJSON(cdJotData);
 }
 
 function destroyCallDetailEditors() {
   try { if (typeof tinymce !== "undefined" && tinymce.get("cd-notes")) tinymce.get("cd-notes").remove(); } catch (e) {}
-  try { if (cdJotRoot) cdJotRoot.unmount(); } catch (e) {}
-  cdJotRoot = null; cdJotApi = null;
+  try { if (cdJot) cdJot.destroy(); } catch (e) {}
+  cdJot = null;
 }
 
 function stripHtml(h) { return String(h || "").replace(/<[^>]*>/g, " ").replace(/ +/g, " ").trim(); }
@@ -1450,19 +1712,10 @@ function saveCallDetailEdits() {
   var ta = document.getElementById("cd-notes");
   var notesHtml = ed ? ed.getContent() : (ta ? ta.value : (cdLoadedNotes.notes_html || ""));
 
-  if (cdJotApi && cdJotExcalidrawLib) {
-    var elements = cdJotApi.getSceneElements();
-    var jotJson = JSON.stringify({ elements: elements, appState: cdJotApi.getAppState() });
-    if (elements.length) {
-      cdJotExcalidrawLib.exportToSvg({
-        elements: elements,
-        appState: Object.assign({}, cdJotApi.getAppState(), { exportBackground: true, viewBackgroundColor: "#1e1e1e" }),
-        files: cdJotApi.getFiles()
-      }).then(function(svg) { postCallDetailSave(notesHtml, svg.outerHTML, jotJson); })
-        .catch(function() { postCallDetailSave(notesHtml, cdLoadedNotes.jot_svg || "", jotJson); });
-    } else {
-      postCallDetailSave(notesHtml, "", jotJson);
-    }
+  if (cdJot) {
+    var jotSvg = cdJot.isEmpty() ? "" : cdJot.getSVG();
+    var jotJson = JSON.stringify(cdJot.getJSON());
+    postCallDetailSave(notesHtml, jotSvg, jotJson);
   } else {
     postCallDetailSave(notesHtml, cdLoadedNotes.jot_svg || "", cdLoadedNotes.jot_json || "");
   }
