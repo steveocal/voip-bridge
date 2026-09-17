@@ -299,14 +299,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
         <button class="cd-callback hidden" id="cd-callback-btn" onclick="dialBackSelected()">📞</button>
       </div>
       <div class="cp-tabs">
-        <button class="cp-tab active" data-tab="details" onclick="switchCallDetailTab('details')">Details</button>
+        <button class="cp-tab" data-tab="details" onclick="switchCallDetailTab('details')">Details</button>
         <button class="cp-tab" data-tab="notes" onclick="switchCallDetailTab('notes')">Notes</button>
-        <button class="cp-tab" data-tab="jot" onclick="switchCallDetailTab('jot')">Jot</button>
+        <button class="cp-tab active" data-tab="jot" onclick="switchCallDetailTab('jot')">Jot</button>
       </div>
       <div class="cd-body">
-        <div class="cp-pane" id="cd-pane-details"></div>
+        <div class="cp-pane hidden" id="cd-pane-details"></div>
         <div class="cp-pane hidden" id="cd-pane-notes"><div class="empty">Loading…</div></div>
-        <div class="cp-pane hidden" id="cd-pane-jot">
+        <div class="cp-pane" id="cd-pane-jot">
           <div class="jot-toolbar"><span class="jot-status" id="cd-jot-status"></span></div>
           <div id="cd-jot-canvas"></div>
         </div>
@@ -816,7 +816,11 @@ var PerfectFreehand=(()=>{var Q=Object.defineProperty;var zn=Object.getOwnProper
 // ── Jot engine: Draw / Write / Erase, undo, zoom, save/load ────
 var JOT_INK = "#e9ecef";
 var JOT_STROKE_OPTS = { size: 6, thinning: 0.6, smoothing: 0.5, streamline: 0.5 };
-var JOT_PAUSE_MS = 1500;
+// Word grouping is really driven by proximity (checked whenever the next
+// stroke actually lands, however long that takes) — this timer only exists
+// as a long-silence backstop to finalize an abandoned word, so it can be
+// generous without hurting normal writing.
+var JOT_PAUSE_MS = 3000;
 var JOT_PROXIMITY = 2.5;      // word-boundary proximity factor (x current word bbox size)
 // Cap the leveling rotation: a lone near-vertical stroke (e.g. a single "l")
 // has no horizontal spread, so the best-fit line through it is ~90° and
@@ -1022,6 +1026,12 @@ function createJot(hostEl) {
     var p = toLogical(e.clientX, e.clientY);
     var pressure = e.pointerType === "mouse" ? 0.5 : (e.pressure || 0.5);
     if (mode === "erase") { erasing = true; eraseAt(p[0], p[1]); return; }
+    // Starting a new stroke always cancels any pending "finalize the word
+    // on pause" timer — otherwise a slightly-longer-than-usual pause before
+    // the next letter (very common right at the start of a word, while
+    // repositioning) can fire mid-stroke and split the word right as the
+    // user keeps writing it.
+    if (mode === "write" && wordPauseTimer) { clearTimeout(wordPauseTimer); wordPauseTimer = null; }
     current = { points: [[p[0], p[1], pressure]] };
     redraw();
   }
@@ -1621,9 +1631,8 @@ function openCallDetailView(c) {
   document.getElementById("cd-caller-sub").textContent = name ? num : "";
   document.getElementById("cd-callback-btn").classList.toggle("hidden", !(num && /^[+0-9*#]/.test(num)));
   renderCallDetailsPane(c);
-  activeCdTab = "details";
   switchView("call-detail");
-  switchCallDetailTab("details");
+  switchCallDetailTab("jot");
   loadCallDetailNotes(c.call_id || null);
 }
 
