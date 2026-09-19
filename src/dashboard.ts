@@ -910,7 +910,7 @@ var JOT_STROKE_OPTS = { size: 6, thinning: 0.6, smoothing: 0.5, streamline: 0.5 
 // needs to be long to avoid splitting words (pointerdown now cancels it,
 // so it can never fire mid-stroke) — keep it short so a finished word
 // doesn't sit around unsettled.
-var JOT_PAUSE_MS = 500;
+var JOT_PAUSE_MS = 700;
 var JOT_PROXIMITY = 2.5;      // word-boundary proximity factor (x current word bbox size)
 // Once a run of writing settles (pause/mode-change), it's split into
 // individual words by the actual gaps between strokes along the run's own
@@ -956,7 +956,7 @@ var JOT_GESTURE_AXIS_DOMINANCE = 1.6; // one axis must outrun the other by this 
 // current width back in as the new wrapWidth and re-wraps at that width.
 var JOT_BOX_MIN_WIDTH = 80;
 var JOT_BOX_MIN_HEIGHT = JOT_PARA_TOP + JOT_LINE_HEIGHT;
-var JOT_NEW_BOX_ROWS = 5;   // boxes made with the + button start this many lines tall
+var JOT_NEW_BOX_ROWS = 1;   // boxes made with the + button start this many lines tall
 var JOT_NEW_BOX_HEIGHT = JOT_PARA_TOP + JOT_NEW_BOX_ROWS * JOT_LINE_HEIGHT;
 var JOT_BOX_HANDLE_SIZE = 18; // kept a constant on-screen size regardless of zoom
 
@@ -1374,11 +1374,9 @@ function createJot(hostEl, onChange) {
         ctx.restore();
       }
       ctx.restore();
-      if (mode !== "jot") {
-        var hs = JOT_BOX_HANDLE_SIZE / camera.scale; // kept a roughly constant on-screen size
-        ctx.fillStyle = "#2563eb";
-        ctx.fillRect(b.x + b.w - hs / 2, b.y + b.h - hs / 2, hs, hs);
-      }
+      var hs = JOT_BOX_HANDLE_SIZE / camera.scale; // kept a roughly constant on-screen size
+      ctx.fillStyle = (mode !== "jot") ? "#2563eb" : "rgba(37,99,235,0.7)";
+      ctx.fillRect(b.x + b.w - hs / 2, b.y + b.h - hs / 2, hs, hs);
     }
     if (writingWord) { ctx.fillStyle = JOT_INK; for (var ws = 0; ws < writingWord.strokes.length; ws++) jtFillOutline(ctx, jtOutline(writingWord.strokes[ws])); }
     if (current) { ctx.fillStyle = JOT_INK; jtFillOutline(ctx, jtOutline(current.points)); }
@@ -1397,6 +1395,11 @@ function createJot(hostEl, onChange) {
   // undoable — so a box touched by Undo reverts to its authored position
   // and auto-height.
   function rebuildFromActions() {
+    // Moves/resizes aren't in the action log, so carry each surviving box's
+    // current geometry across the rebuild (otherwise undoing a word would
+    // snap its box back to the size/position it was created with).
+    var oldGeo = {};
+    for (var oi = 0; oi < boxes.length; oi++) { var ob = boxes[oi]; oldGeo[ob.id] = ob; }
     drawStrokes = {}; boxes = [];
     for (var i = 0; i < actions.length; i++) {
       var a = actions[i];
@@ -1407,7 +1410,11 @@ function createJot(hostEl, onChange) {
       else if (a.type === "add-break") { var b2 = findBox(a.boxId); if (b2) b2.words.push(jtBreakWord(a.id)); }
       else if (a.type === "erase-word") { var b3 = findBox(a.boxId); if (b3) for (var j = 0; j < b3.words.length; j++) if (b3.words[j].id === a.targetId) { b3.words.splice(j, 1); break; } }
     }
-    for (var k = 0; k < boxes.length; k++) relayoutBox(boxes[k]);
+    for (var k = 0; k < boxes.length; k++) {
+      var og = oldGeo[boxes[k].id];
+      if (og) { var nb2 = boxes[k]; nb2.x = og.x; nb2.y = og.y; nb2.wrapWidth = og.wrapWidth; nb2.minH = og.minH; nb2.stretched = og.stretched; nb2.w = og.w; nb2.h = og.h; }
+      relayoutBox(boxes[k]);
+    }
   }
 
   function toLogical(clientX, clientY) {
@@ -1587,6 +1594,16 @@ function createJot(hostEl, onChange) {
       // Tapping inside an existing box continues writing into it (baking in
       // any manual resize it picked up while Jot mode was off). Tapping empty
       // canvas does nothing — boxes are only created with the + button.
+      var jotHandleBox = hitTestBoxHandle(p);
+      if (jotHandleBox) {
+        // Corner handle in Jot mode: resizing changes the box's wrap width
+        // (and minimum height), so the text re-wraps live as it's dragged.
+        finalizeWord();
+        activeBoxId = jotHandleBox.id;
+        if (jotHandleBox.stretched) bakeBox(jotHandleBox);
+        boxResizeState = { box: jotHandleBox, startW: jotHandleBox.w, startH: jotHandleBox.h, startX: p[0], startY: p[1], wrap: true };
+        return;
+      }
       var target = hitTestBoxBody(p);
       if (target) {
         if (activeBoxId !== target.id) { finalizeWord(); activeBoxId = target.id; }
@@ -1634,9 +1651,16 @@ function createJot(hostEl, onChange) {
     if (boxResizeState) {
       var pr = toLogical(e.clientX, e.clientY);
       var rb = boxResizeState.box;
-      rb.w = Math.max(JOT_BOX_MIN_WIDTH, boxResizeState.startW + (pr[0] - boxResizeState.startX));
-      rb.h = Math.max(JOT_BOX_MIN_HEIGHT, boxResizeState.startH + (pr[1] - boxResizeState.startY));
-      rb.stretched = true;
+      if (boxResizeState.wrap) {
+        rb.wrapWidth = Math.max(JOT_BOX_MIN_WIDTH, boxResizeState.startW + (pr[0] - boxResizeState.startX));
+        rb.minH = Math.max(JOT_BOX_MIN_HEIGHT, boxResizeState.startH + (pr[1] - boxResizeState.startY));
+        rb.stretched = false;
+        relayoutBox(rb);
+      } else {
+        rb.w = Math.max(JOT_BOX_MIN_WIDTH, boxResizeState.startW + (pr[0] - boxResizeState.startX));
+        rb.h = Math.max(JOT_BOX_MIN_HEIGHT, boxResizeState.startH + (pr[1] - boxResizeState.startY));
+        rb.stretched = true;
+      }
       redraw();
       e.preventDefault();
       return;
