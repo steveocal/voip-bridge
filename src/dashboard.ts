@@ -18,13 +18,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .app{width:100%;max-width:430px;height:100dvh;display:flex;flex-direction:column;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
 /* header */
 .topbar{display:flex;align-items:center;gap:12px;padding:14px 16px 8px}
-.avatar{width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#4db8ff,#2563eb);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
+.avatar{position:relative;width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#4db8ff,#2563eb);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
+.status-dot{position:absolute;right:-1px;bottom:-1px;width:13px;height:13px;border-radius:50%;background:#888;border:2px solid #000;box-sizing:content-box}
+.status-dot.ok{background:#34d399}
+.status-dot.err{background:#f87171}
+.status-dot.warn{background:#f0a33c}
 .identity{flex:1;min-width:0}
 .user-name{font-size:17px;font-weight:700}
 .caller-id{font-size:13px;color:#999}
-.reg-status{font-size:12px;color:#999;text-align:right;max-width:120px}
-.reg-status.ok{color:#34d399}
-.reg-status.err{color:#f87171}
+.reg-status{display:none}
 .install-btn{flex-shrink:0;border:1px solid #2563eb;border-radius:20px;background:rgba(37,99,235,.15);color:#7fb2ff;font-size:12px;font-weight:600;padding:7px 12px;cursor:pointer}
 .install-btn:active{background:rgba(37,99,235,.3)}
 .install-tip{margin:0 16px 8px;padding:10px 12px;border-radius:10px;background:#1a1a1a;border:1px solid #333;font-size:12px;color:#ccc;display:flex;align-items:center;gap:8px}
@@ -57,16 +59,34 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .call-banner .state{font-size:12px;color:#6ee7b7}
 .call-banner .end{width:44px;height:44px;border-radius:50%;border:none;background:#ef4444;color:#fff;font-size:18px;cursor:pointer;flex-shrink:0}
 .call-banner .answer{width:44px;height:44px;border-radius:50%;border:none;background:#10b981;color:#fff;font-size:18px;cursor:pointer;flex-shrink:0;margin-right:8px}
+.call-banner .keypad{width:40px;height:40px;border-radius:50%;border:none;background:#2c2c2c;color:#ececec;font-size:16px;cursor:pointer;flex-shrink:0;margin-right:8px}
+.call-banner .keypad.active{background:#2563eb}
 .hidden{display:none!important}
 /* views */
-.views{flex:1;overflow-y:auto;padding:4px 16px 8px}
+.views{flex:1;overflow-y:auto;padding:4px 16px 8px;min-height:0}
+/* dial view: entry + recent calls scroll, keypad+call button pinned to the bottom */
+#view-dial{display:flex;flex-direction:column;height:100%;min-height:0}
+#view-dial .entry{flex-shrink:0}
+#view-dial .suggestions{flex:1;overflow-y:auto;min-height:0}
+.dial-recent{flex:1;overflow-y:auto;min-height:40px}
+.dial-recent-row{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid #1c1c1c;cursor:pointer}
+.dial-recent-row:active{background:#161616}
+.dial-recent-row .ic{font-size:15px;flex-shrink:0}
+.dial-recent-row .who{flex:1;min-width:0;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dial-recent-row .meta{font-size:11px;color:#999;flex-shrink:0}
+#view-dial .call-panel{flex:1;flex-shrink:1;overflow-y:auto;min-height:0}
+.dial-bottom{flex-shrink:0}
 .view h2{font-size:15px;color:#999;margin:10px 0;font-weight:600}
-.hist-row,.contact-row{display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid #222}
-.hist-row{cursor:pointer}
+.contact-row{display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid #222}
+.hist-row{padding:10px 4px;border-bottom:1px solid #222;cursor:pointer}
+.hist-main{display:flex;align-items:center;gap:12px}
 .hist-row .ic{font-size:18px}
 .hist-row .who,.contact-row .cname{font-size:15px;font-weight:600}
 .hist-row .sub,.contact-row .sub{font-size:12px;color:#999}
 .hist-row .meta{margin-left:auto;font-size:12px;color:#999;text-align:right}
+.hist-actions{display:flex;gap:6px;margin:8px 0 2px 30px}
+.hist-action{background:#1a1a1a;border:none;color:#ccc;width:30px;height:30px;border-radius:8px;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.hist-action:active{background:#262626}
 .contact-row .mini-call{width:38px;height:38px;border-radius:50%;border:none;background:#10b981;color:#fff;font-size:16px;cursor:pointer;flex-shrink:0}
 .empty{color:#666;text-align:center;padding:28px 0;font-size:14px}
 .day-head{font-size:11px;font-weight:700;letter-spacing:.5px;color:#888;text-transform:uppercase;padding:14px 4px 6px;position:sticky;top:0;background:transparent}
@@ -185,6 +205,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .jt-btn{background:#2c2c2c;border:none;color:#ececec;width:34px;height:34px;border-radius:8px;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0}
 .jt-btn.ghost{background:none;border:1px solid #333;color:#999}
 .jt-btn.jt-mode.active{background:#2563eb;color:#fff}
+.jt-btn.armed{background:#2563eb;color:#fff}
+.jt-btn svg{width:20px;height:20px;display:block}
 .jt-btn.jt-zoom-label{width:auto;padding:0 8px;font-size:12px}
 .jt-sep{width:1px;align-self:stretch;background:#2c2c2c;margin:2px 4px}
 .jt-canvas-wrap{width:100%;border-radius:10px;background:#1e1e1e;border:1px solid #2c2c2c;overflow:hidden}
@@ -217,7 +239,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 <body>
 <div class="app">
   <header class="topbar">
-    <div class="avatar">👤</div>
+    <div class="avatar" id="avatar">👤<span class="status-dot warn" id="status-dot" title="Loading…"></span></div>
     <div class="identity">
       <div class="user-name" id="acc-name-display">Ext 201</div>
       <div class="caller-id" id="acc-caller-display">Caller ID: +44 7898 117226</div>
@@ -237,6 +259,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
       <div class="remote" id="banner-remote"></div>
       <div class="state" id="banner-state"></div>
     </div>
+    <button class="keypad hidden" id="banner-keypad" onclick="toggleInCallKeypad()" aria-label="Keypad">⌨️</button>
     <button class="answer hidden" id="banner-answer" onclick="answerCall()">📞</button>
     <button class="end" onclick="hangup()">📴</button>
   </div>
@@ -248,25 +271,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
         <input id="dial-input" type="text" placeholder="Enter number or name" autocomplete="off" autocapitalize="off">
         <button class="backspace" onclick="backspace()">⌫</button>
       </div>
-      <div class="suggestions" id="dial-suggestions"></div>
-      <div class="dialpad" id="dialpad">
-        <button class="key" data-d="1"><span class="digit">1</span><span class="letters"></span></button>
-        <button class="key" data-d="2"><span class="digit">2</span><span class="letters">ABC</span></button>
-        <button class="key" data-d="3"><span class="digit">3</span><span class="letters">DEF</span></button>
-        <button class="key" data-d="4"><span class="digit">4</span><span class="letters">GHI</span></button>
-        <button class="key" data-d="5"><span class="digit">5</span><span class="letters">JKL</span></button>
-        <button class="key" data-d="6"><span class="digit">6</span><span class="letters">MNO</span></button>
-        <button class="key" data-d="7"><span class="digit">7</span><span class="letters">PQRS</span></button>
-        <button class="key" data-d="8"><span class="digit">8</span><span class="letters">TUV</span></button>
-        <button class="key" data-d="9"><span class="digit">9</span><span class="letters">WXYZ</span></button>
-        <button class="key" data-d="*"><span class="digit">*</span><span class="letters"></span></button>
-        <button class="key" data-d="0"><span class="digit">0</span><span class="letters">+</span></button>
-        <button class="key" data-d="#"><span class="digit">#</span><span class="letters"></span></button>
-      </div>
+      <div class="suggestions hidden" id="dial-suggestions"></div>
+      <div class="dial-recent" id="dial-recent-list"></div>
       <div class="call-panel hidden" id="call-panel">
         <div class="cp-head">
           <div class="cp-caller" id="cp-caller-name">Unknown caller</div>
-          <button class="save-chip" onclick="saveCallRecord()">💾 Save</button>
           <span class="jot-status" id="cp-save-status"></span>
         </div>
         <div class="cp-tabs">
@@ -288,14 +297,30 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
             </div>
           </div>
           <div class="cp-pane hidden" id="cp-pane-jot">
-            <div class="jot-toolbar"><button class="save-chip" onclick="saveJotToNotes()">💾 Save to Notes</button><span class="jot-status" id="jot-status"></span></div>
+            <div class="jot-toolbar"><span class="jot-status" id="jot-status"></span></div>
             <div id="jot-canvas"></div>
           </div>
         </div>
       </div>
-      <div class="callbar">
-        <button class="call-btn" id="btn-call" onclick="dialAction()">📞</button>
-        <button class="call-btn hangup hidden" id="btn-end" onclick="hangup()">📴</button>
+      <div class="dial-bottom" id="dial-bottom">
+        <div class="dialpad" id="dialpad">
+          <button class="key" data-d="1"><span class="digit">1</span><span class="letters"></span></button>
+          <button class="key" data-d="2"><span class="digit">2</span><span class="letters">ABC</span></button>
+          <button class="key" data-d="3"><span class="digit">3</span><span class="letters">DEF</span></button>
+          <button class="key" data-d="4"><span class="digit">4</span><span class="letters">GHI</span></button>
+          <button class="key" data-d="5"><span class="digit">5</span><span class="letters">JKL</span></button>
+          <button class="key" data-d="6"><span class="digit">6</span><span class="letters">MNO</span></button>
+          <button class="key" data-d="7"><span class="digit">7</span><span class="letters">PQRS</span></button>
+          <button class="key" data-d="8"><span class="digit">8</span><span class="letters">TUV</span></button>
+          <button class="key" data-d="9"><span class="digit">9</span><span class="letters">WXYZ</span></button>
+          <button class="key" data-d="*"><span class="digit">*</span><span class="letters"></span></button>
+          <button class="key" data-d="0"><span class="digit">0</span><span class="letters">+</span></button>
+          <button class="key" data-d="#"><span class="digit">#</span><span class="letters"></span></button>
+        </div>
+        <div class="callbar" id="dial-callbar">
+          <button class="call-btn" id="btn-call" onclick="dialAction()">📞</button>
+          <button class="call-btn hangup hidden" id="btn-end" onclick="hangup()">📴</button>
+        </div>
       </div>
     </div>
 
@@ -332,7 +357,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
         </div>
       </div>
       <div class="cd-footer">
-        <button class="save-btn" id="cd-save-btn" onclick="saveCallDetailEdits()">💾 Save</button>
+        <span class="jot-status" id="cd-save-status"></span>
       </div>
     </div>
 
@@ -600,9 +625,12 @@ function initCallNotesEditor() {
     height: 180,
     branding: false,
     skin: "oxide-dark",
-    content_css: "dark"
+    content_css: "dark",
+    setup: function(editor) { editor.on("input change undo redo", scheduleCallSave); }
   });
 }
+// Plain-textarea fallback (TinyMCE failed to load) still autosaves on input.
+document.getElementById("call-notes").addEventListener("input", function() { scheduleCallSave(); });
 
 function initComposeEditor() {
   var el = document.getElementById("comp-body");
@@ -872,7 +900,8 @@ function switchCallTab(tab) {
 // Vendored from perfect-freehand@1.2.3 (MIT, github.com/steveruizok/perfect-freehand).
 var PerfectFreehand=(()=>{var Q=Object.defineProperty;var zn=Object.getOwnPropertyDescriptor;var An=Object.getOwnPropertyNames;var bn=Object.prototype.hasOwnProperty;var In=(n,t)=>{for(var r in t)Q(n,r,{get:t[r],enumerable:!0})},Tn=(n,t,r,u)=>{if(t&&typeof t=="object"||typeof t=="function")for(let i of An(t))!bn.call(n,i)&&i!==r&&Q(n,i,{get:()=>t[i],enumerable:!(u=zn(t,i))||u.enumerable});return n};var jn=n=>Tn(Q({},"__esModule",{value:!0}),n);var Nn={};In(Nn,{default:()=>Kn,getStroke:()=>yn,getStrokeOutlinePoints:()=>dn,getStrokePoints:()=>xn});var{PI:wn}=Math,F=wn+1e-4,rn=.5,un=[1,1];function on(n,t,r,u=i=>i){return n*u(.5-t*(.5-r))}var{min:U}=Math;function gn(n,t,r){let u=U(1,t/r);return U(1,n+(U(1,1-u)-n)*(u*.275))}function Fn(n){return[-n[0],-n[1]]}function g(n,t){return[n[0]+t[0],n[1]+t[1]]}function en(n,t,r){return n[0]=t[0]+r[0],n[1]=t[1]+r[1],n}function L(n,t){return[n[0]-t[0],n[1]-t[1]]}function X(n,t,r){return n[0]=t[0]-r[0],n[1]=t[1]-r[1],n}function y(n,t){return[n[0]*t,n[1]*t]}function V(n,t,r){return n[0]=t[0]*r,n[1]=t[1]*r,n}function On(n,t){return[n[0]/t,n[1]/t]}function vn(n){return[n[1],-n[0]]}function W(n,t){let r=t[0];return n[0]=t[1],n[1]=-r,n}function sn(n,t){return n[0]*t[0]+n[1]*t[1]}function Rn(n,t){return n[0]===t[0]&&n[1]===t[1]}function _n(n){return Math.hypot(n[0],n[1])}function cn(n,t){let r=n[0]-t[0],u=n[1]-t[1];return r*r+u*u}function Mn(n){return On(n,_n(n))}function qn(n,t){return Math.hypot(n[1]-t[1],n[0]-t[0])}function Y(n,t,r){let u=Math.sin(r),i=Math.cos(r),e=n[0]-t[0],o=n[1]-t[1],c=e*i-o*u,v=e*u+o*i;return[c+t[0],v+t[1]]}function ln(n,t,r,u){let i=Math.sin(u),e=Math.cos(u),o=t[0]-r[0],c=t[1]-r[1],v=o*e-c*i,P=o*i+c*e;return n[0]=v+r[0],n[1]=P+r[1],n}function fn(n,t,r){return g(n,y(L(t,n),r))}function Bn(n,t,r,u){let i=r[0]-t[0],e=r[1]-t[1];return n[0]=t[0]+i*u,n[1]=t[1]+e*u,n}function mn(n,t,r){return g(n,y(t,r))}var l=[0,0],d=[0,0],x=[0,0];function Cn(n,t){let r=mn(n,Mn(vn(L(n,g(n,[1,1])))),-t),u=[],i=1/13;for(let e=i;e<=1;e+=i)u.push(Y(r,n,F*2*e));return u}function Dn(n,t,r){let u=[],i=1/r;for(let e=i;e<=1;e+=i)u.push(Y(t,n,F*e));return u}function En(n,t,r){let u=L(t,r),i=y(u,.5),e=y(u,.51);return[L(n,i),L(n,e),g(n,e),g(n,i)]}function Gn(n,t,r,u){let i=[],e=mn(n,t,r),o=1/u;for(let c=o;c<1;c+=o)i.push(Y(e,n,F*3*c));return i}function Hn(n,t,r){return[g(n,y(t,r)),g(n,y(t,r*.99)),L(n,y(t,r*.99)),L(n,y(t,r))]}function hn(n,t,r){return n===!1||n===void 0?0:n===!0?Math.max(t,r):n}function Jn(n,t,r){return n.slice(0,10).reduce((u,i)=>{let e=i.pressure;return t&&(e=gn(u,i.distance,r)),(u+e)/2},n[0].pressure)}function dn(n,t={}){let{size:r=16,smoothing:u=.5,thinning:i=.5,simulatePressure:e=!0,easing:o=s=>s,start:c={},end:v={},last:P=!1}=t,{cap:M=!0,easing:O=s=>s*(2-s)}=c,{cap:f=!0,easing:h=s=>--s*s*s+1}=v;if(n.length===0||r<=0)return[];let p=n[n.length-1].runningLength,A=hn(c.taper,r,p),b=hn(v.taper,r,p),Z=(r*u)**2,I=[],z=[],$=Jn(n,e,r),a=on(r,i,n[n.length-1].pressure,o),C,D=n[0].vector,T=n[0].point,R=T,S=T,k=R,E=!1;for(let s=0;s<n.length;s++){let{pressure:K}=n[s],{point:m,vector:j,distance:Ln,runningLength:w}=n[s],q=s===n.length-1;if(!q&&p-w<3)continue;i?(e&&(K=gn($,Ln,r)),a=on(r,i,K,o)):a=r/2,C===void 0&&(C=a);let Pn=w<A?O(w/A):1,Sn=p-w<b?h((p-w)/b):1;a=Math.max(.01,a*Math.min(Pn,Sn));let nn=(q?n[s]:n[s+1]).vector,N=q?1:sn(j,nn),kn=sn(j,D)<0&&!E,tn=N!==null&&N<0;if(kn||tn){W(l,D),V(l,l,a);for(let B=0;B<=1;B+=.07692307692307693)X(d,m,l),ln(d,d,m,F*B),S=[d[0],d[1]],I.push(S),en(x,m,l),ln(x,x,m,F*-B),k=[x[0],x[1]],z.push(k);T=S,R=k,tn&&(E=!0);continue}if(E=!1,q){W(l,j),V(l,l,a),I.push(L(m,l)),z.push(g(m,l));continue}Bn(l,nn,j,N),W(l,l),V(l,l,a),X(d,m,l),S=[d[0],d[1]],(s<=1||cn(T,S)>Z)&&(I.push(S),T=S),en(x,m,l),k=[x[0],x[1]],(s<=1||cn(R,k)>Z)&&(z.push(k),R=k),$=K,D=j}let G=[n[0].point[0],n[0].point[1]],H=n.length>1?[n[n.length-1].point[0],n[n.length-1].point[1]]:g(n[0].point,[1,1]),J=[],_=[];if(n.length===1){if(!(A||b)||P)return Cn(G,C||a)}else{A||b&&n.length===1||(M?J.push(...Dn(G,z[0],13)):J.push(...En(G,I[0],z[0])));let s=vn(Fn(n[n.length-1].vector));b||A&&n.length===1?_.push(H):f?_.push(...Gn(H,s,a,29)):_.push(...Hn(H,s,a))}return I.concat(_,z.reverse(),J)}var an=[0,0];function pn(n){return n!=null&&n>=0}function xn(n,t={}){let{streamline:r=.5,size:u=16,last:i=!1}=t;if(n.length===0)return[];let e=.15+(1-r)*.85,o=Array.isArray(n[0])?n:n.map(({x:f,y:h,pressure:p=rn})=>[f,h,p]);if(o.length===2){let f=o[1];o=o.slice(0,-1);for(let h=1;h<5;h++)o.push(fn(o[0],f,h/4))}o.length===1&&(o=[...o,[...g(o[0],un),...o[0].slice(2)]]);let c=[{point:[o[0][0],o[0][1]],pressure:pn(o[0][2])?o[0][2]:.25,vector:[...un],distance:0,runningLength:0}],v=!1,P=0,M=c[0],O=o.length-1;for(let f=1;f<o.length;f++){let h=i&&f===O?[o[f][0],o[f][1]]:fn(M.point,o[f],e);if(Rn(M.point,h))continue;let p=qn(h,M.point);if(P+=p,f<O&&!v){if(P<u)continue;v=!0}X(an,M.point,h),M={point:h,pressure:pn(o[f][2])?o[f][2]:rn,vector:Mn(an),distance:p,runningLength:P},c.push(M)}return c[0].vector=c[1]?.vector||[0,0],c}function yn(n,t={}){return dn(xn(n,t),t)}var Kn=yn;return jn(Nn);})();
 
-// ── Jot engine: Draw / Write / Erase, undo, zoom, save/load ────
+// ── Jot engine: Jot (auto-growing, word-wrapping text boxes, handwriting-
+// recognized) / Draw (freehand pencil ink) / Erase, undo, zoom, save/load ──
 var JOT_INK = "#e9ecef";
 var JOT_STROKE_OPTS = { size: 6, thinning: 0.6, smoothing: 0.5, streamline: 0.5 };
 // Word grouping is really driven by proximity (checked whenever the next
@@ -904,17 +933,32 @@ var JOT_PARA_TOP = 32;
 var JOT_DOT_MAX_RAW = 6;   // raw local px — a lone stroke this small or smaller is a tap
 var JOT_DOT_SCALE = 0.5;   // fixed small render scale for a period
 var JOT_DOT_WIDTH = 8;     // layout width reserved for a period
-// Write-mode commands: a single continuous stroke shaped like a capital "L"
-// (drawn the normal way: down, then a corner, then right) rotated 90°.
-// Rotated clockwise — left, corner, then down — it's backspace (undoes the
-// in-progress word, or the last committed action if nothing's in progress).
-// Rotated counterclockwise — right, corner, then up — it's Return, inserting
-// a line break. Each leg must be reasonably long and straight, and the two
-// legs roughly perpendicular, so ordinary letters (which curve, or don't hit
-// these exact two direction pairs) are never mistaken for a command.
+// Jot-mode commands: a single continuous stroke shaped like a capital "L"
+// (drawn either leg first — down-then-across or across-then-down both
+// count), always rotated clockwise, never counterclockwise (see
+// jtClassifyGesture). Rotated 180 degrees — left + down — it's backspace
+// (undoes the in-progress word, or the last committed action if nothing's
+// in progress). Rotated 90 degrees clockwise — right + down — it's Return,
+// inserting a line break. Each leg must be reasonably long and straight, and
+// the two legs roughly perpendicular, so ordinary letters (which curve, or
+// don't hit these exact two direction pairs) are never mistaken for a
+// command.
 var JOT_GESTURE_MIN_LEN = 22;         // logical px — minimum net travel per leg
 var JOT_GESTURE_STRAIGHTNESS = 0.7;   // net displacement / actual path length, per leg
 var JOT_GESTURE_AXIS_DOMINANCE = 1.6; // one axis must outrun the other by this ratio, per leg
+// Text boxes: created by tapping empty canvas in Jot mode. Each owns its own
+// word-wrapped layout (wrapWidth -> contentHeight, exactly like the old
+// single full-page layout, just scoped per box). Outside Jot mode a box
+// becomes a plain movable/resizable object — dragging its body moves it,
+// dragging its corner handle stretches it (w/h independent of wrapWidth,
+// rendered as a uniform scale over the box's content so text grows/shrinks
+// without re-wrapping). Re-entering Jot mode on a stretched box "bakes" its
+// current width back in as the new wrapWidth and re-wraps at that width.
+var JOT_BOX_MIN_WIDTH = 80;
+var JOT_BOX_MIN_HEIGHT = JOT_PARA_TOP + JOT_LINE_HEIGHT;
+var JOT_NEW_BOX_ROWS = 5;   // boxes made with the + button start this many lines tall
+var JOT_NEW_BOX_HEIGHT = JOT_PARA_TOP + JOT_NEW_BOX_ROWS * JOT_LINE_HEIGHT;
+var JOT_BOX_HANDLE_SIZE = 18; // kept a constant on-screen size regardless of zoom
 
 function jtOutline(pts) { return PerfectFreehand.getStroke(pts, JOT_STROKE_OPTS); }
 function jtFillOutline(ctx, outline) {
@@ -970,7 +1014,7 @@ function jtFindCorner(pts) {
   }
   return best;
 }
-// Classifies a single completed Write-mode stroke as the "backspace" or
+// Classifies a single completed Jot-mode stroke as the "backspace" or
 // "return" L-shaped command (see the constants above), or null if it's just
 // ordinary handwriting.
 function jtClassifyGesture(pts) {
@@ -980,8 +1024,12 @@ function jtClassifyGesture(pts) {
   var leg1 = jtLegDir(pts.slice(0, corner + 1));
   var leg2 = jtLegDir(pts.slice(corner));
   if (!leg1 || !leg2 || leg1.axis === leg2.axis) return null;
-  if (leg1.axis === "x" && leg1.sign < 0 && leg2.axis === "y" && leg2.sign > 0) return "backspace"; // left, then down
-  if (leg1.axis === "x" && leg1.sign > 0 && leg2.axis === "y" && leg2.sign < 0) return "return";    // right, then up
+  // Order-independent: the corner can be drawn leading with either leg (a
+  // physical "L" is usually drawn vertical-first — down, then across).
+  var h = (leg1.axis === "x") ? leg1 : leg2;
+  var v = (leg1.axis === "y") ? leg1 : leg2;
+  if (h.sign < 0 && v.sign > 0) return "backspace"; // L rotated 180 degrees: left + down
+  if (h.sign > 0 && v.sign > 0) return "return";    // L rotated 90 degrees clockwise: right + down
   return null;
 }
 function jtBBoxNear(a, b, factor) {
@@ -1000,8 +1048,22 @@ function jtPCAFrame(pts) {
   mx /= n; my /= n;
   var sxx = 0, syy = 0, sxy = 0;
   for (i = 0; i < n; i++) { var dx = pts[i][0] - mx, dy = pts[i][1] - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; }
-  var angle = 0.5 * Math.atan2(2 * sxy, sxx - syy);
-  angle = Math.max(-JOT_MAX_TILT, Math.min(JOT_MAX_TILT, angle));
+  var angle;
+  // A run with little to no horizontal spread (e.g. a single vertical
+  // stroke like "I" or "l") has no reliable tilt to measure — sxy is just
+  // noise there, and atan2 turns that noise into an essentially random
+  // +/-90 degree result. Rather than clamp that noise to +/-JOT_MAX_TILT
+  // (still visibly wrong, and unstable in sign), treat it as untilted.
+  if (Math.sqrt(sxx / n) < Math.sqrt(syy / n) * 0.15) {
+    angle = 0;
+  } else {
+    angle = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+    // Handwriting is only ever leveled clockwise (or left untilted), never
+    // counterclockwise — a negative (counterclockwise) result gets zeroed,
+    // not mirrored, since mirroring would invent a tilt that was never there.
+    angle = Math.min(0, angle);
+    angle = Math.max(-JOT_MAX_TILT, angle);
+  }
   return { mx: mx, my: my, angle: angle };
 }
 function jtToLocal(pt, frame) {
@@ -1095,16 +1157,20 @@ function jtSplitWords(strokes, prevRotate, prevScale) {
   return out;
 }
 
-function createJot(hostEl) {
+function createJot(hostEl, onChange) {
+  function notifyChange() { if (onChange) onChange(); }
   hostEl.innerHTML = "";
   hostEl.classList.add("jt-wrap");
 
   var toolbar = document.createElement("div");
   toolbar.className = "jt-toolbar";
   toolbar.innerHTML =
+    '<button class="jt-btn jt-mode active" data-mode="jot" title="Jot: tap to add/edit a text box">🖊️</button>' +
     '<button class="jt-btn jt-mode" data-mode="draw" title="Draw">✏️</button>' +
-    '<button class="jt-btn jt-mode active" data-mode="write" title="Write">🖊️</button>' +
     '<button class="jt-btn jt-mode" data-mode="erase" title="Erase">🧽</button>' +
+    '<button class="jt-btn" data-act="newbox" title="New jot box: tap this, then tap the page to place a full-width box">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2.5" y="5" width="19" height="14" rx="2" stroke-dasharray="3 2.5"/><path d="M12 9v6M9 12h6"/></svg>' +
+    '</button>' +
     '<span class="jt-sep"></span>' +
     '<button class="jt-btn" data-act="undo" title="Undo">↶</button>' +
     '<button class="jt-btn" data-act="zoomout" title="Zoom out">−</button>' +
@@ -1134,24 +1200,37 @@ function createJot(hostEl) {
   canvas.style.width = viewportW + "px";
   canvas.style.height = viewportH + "px";
   canvas.style.touchAction = "none";
-  // Fixed document-space width used for word-wrap layout. Deliberately not
-  // tied to camera.scale — zooming pans/scales the view of the document, it
-  // doesn't reflow it (matches how an infinite canvas is expected to behave).
+  // DOC_WIDTH is only informational now (persisted for reference / as an SVG
+  // width floor) — each text box owns its own word-wrap width independent of
+  // zoom, unlike the old single full-page layout.
   var DOC_WIDTH = viewportW;
+  function updateDocWidth() {
+    DOC_WIDTH = Math.max(160, viewportW / camera.scale);
+  }
+  // Default width for a freshly-created box — scaled to the viewport so it
+  // reads sensibly on both the narrow in-call panel and the wider call-detail
+  // view.
+  function jotDefaultBoxWidth() {
+    return Math.max(140, Math.min(340, viewportW * 0.55));
+  }
 
-  var mode = "write";       // "draw" | "write" | "erase" | null (deselected -> pan/zoom)
+  var mode = "jot";       // "jot" | "draw" | "erase" | null (deselected -> pan/zoom + box move/resize)
   var camera = { x: 0, y: 0, scale: 1 }; // document-space coords of viewport top-left, and zoom
   var nextId = 1;
-  var drawStrokes = {};   // id -> { points:[[x,y,p],...], bbox }
-  var words = [];          // ordered [{ id, rawStrokes, anchor, rotate, scale, width, height, x, y }]
-  var actions = [];        // undo log
+  var drawStrokes = {};   // id -> { points:[[x,y,p],...], bbox } — freehand pencil ink, not boxed
+  var boxes = [];          // ordered [{ id, x, y, wrapWidth, contentHeight, w, h, stretched, words:[...] }]
+  var activeBoxId = null;  // the box currently being written into in Jot mode
+  var placingBox = false;  // + button armed: the next tap on the canvas drops a new full-width box there
+  var actions = [];        // undo log (box creation, words/breaks within a box, erases — not moves/resizes/pan/zoom)
   var current = null;      // in-progress stroke while pointer is down
-  var writingWord = null;  // { strokes:[...], bbox }
+  var writingWord = null;  // { strokes:[...], bbox } — belongs to activeBoxId
   var wordPauseTimer = null;
   var erasing = false;
   var activePointers = {}; // pointerId -> {x,y}, tracked whenever a tool is deselected (pan/pinch-zoom)
   var panState = null;     // {x,y} last client point, while 1 finger drags with no tool selected
   var pinchState = null;   // {dist, anchorDoc}, while 2 fingers are down with no tool selected
+  var boxDragState = null;   // {box, offsetX, offsetY}, while dragging a box's body with no tool selected
+  var boxResizeState = null; // {box, startW, startH, startX, startY}, while dragging a box's corner handle
 
   function pointerIds() { return Object.keys(activePointers); }
   function pointerDistance(ids) {
@@ -1166,29 +1245,28 @@ function createJot(hostEl) {
     var label = toolbar.querySelector(".jt-zoom-label");
     if (label) label.textContent = Math.round(camera.scale * 100) + "%";
   }
-  // Auto-pans the camera while drawing/writing so the pen is never trapped
-  // short of the page's fixed wrap width by a high zoom level. DOC_WIDTH is
-  // deliberately zoom-independent (so already-written lines never reflow
-  // just because you zoomed) — but that only works if you can still
-  // physically reach it. At e.g. 200% zoom, one screen-width of pen travel
-  // only covers half the document width, so without this, writing across
-  // the whole visible canvas at high zoom would never trigger a wrap.
-  function ensureVisible(docX, docY) {
-    var viewDocW = viewportW / camera.scale, viewDocH = viewportH / camera.scale;
-    var marginX = viewDocW * 0.12, marginY = viewDocH * 0.12;
-    var moved = false;
-    if (docX > camera.x + viewDocW - marginX) { camera.x = docX - viewDocW + marginX; moved = true; }
-    else if (docX < camera.x + marginX) { camera.x = docX - marginX; moved = true; }
-    if (docY > camera.y + viewDocH - marginY) { camera.y = docY - viewDocH + marginY; moved = true; }
-    else if (docY < camera.y + marginY) { camera.y = docY - marginY; moved = true; }
-    return moved;
+
+  function findBox(id) {
+    for (var i = 0; i < boxes.length; i++) if (boxes[i].id === id) return boxes[i];
+    return null;
+  }
+  function activeBox() { return activeBoxId != null ? findBox(activeBoxId) : null; }
+
+  // Content height a box's current words actually need at its wrapWidth —
+  // this is what "the box will grow automatically in length as words are
+  // entered" means: height always tracks this unless the box has been
+  // manually stretched (see "stretched" below).
+  function jtBoxContentHeight(b) {
+    var maxY = JOT_PARA_TOP;
+    for (var i = 0; i < b.words.length; i++) if (b.words[i].y > maxY) maxY = b.words[i].y;
+    return Math.max(Math.ceil(maxY + JOT_PARA_MARGIN + 10), b.minH || JOT_BOX_MIN_HEIGHT);
   }
 
-  function relayout() {
+  function relayoutBox(b) {
     var lineIdx = 0, x = JOT_PARA_MARGIN;
-    var maxWidth = DOC_WIDTH - JOT_PARA_MARGIN * 2;
-    for (var i = 0; i < words.length; i++) {
-      var w = words[i];
+    var maxWidth = b.wrapWidth - JOT_PARA_MARGIN * 2;
+    for (var i = 0; i < b.words.length; i++) {
+      var w = b.words[i];
       // A Return (the down+back gesture) is a hidden marker word, not real
       // ink — it always starts a new line and takes no width itself, same
       // idea as running out of width, but never on the very first item so a
@@ -1204,29 +1282,106 @@ function createJot(hostEl) {
       w.y = JOT_PARA_TOP + lineIdx * JOT_LINE_HEIGHT;
       x += w.width + JOT_WORD_GAP;
     }
+    b.contentHeight = jtBoxContentHeight(b);
+    // Only auto-follow the content size while the box hasn't been manually
+    // stretched (outside Jot mode) — a stretched box keeps its own w/h and
+    // just re-wraps/re-scales relative to them (see bakeBox()).
+    if (!b.stretched) { b.w = b.wrapWidth; b.h = b.contentHeight; }
+  }
+
+  // Adopts a manually-stretched box's current on-screen width as its new
+  // authoring width and re-wraps at that width — this is the "if the box is
+  // resized, words will wordwrap" behavior, triggered the moment Jot mode
+  // resumes editing a box that was resized while Jot mode was off.
+  function bakeBox(b) {
+    if (!b.stretched) return;
+    b.wrapWidth = Math.max(JOT_BOX_MIN_WIDTH, b.w);
+    b.stretched = false;
+    relayoutBox(b);
+  }
+
+  function createBoxAt(p, full) {
+    // full: a box from the + button — spans the visible width and starts
+    // JOT_NEW_BOX_ROWS lines tall (it still grows past that as text needs it).
+    var b = {
+      id: nextId++, x: full ? camera.x : p[0], y: p[1],
+      wrapWidth: full ? Math.max(JOT_BOX_MIN_WIDTH, Math.floor(viewportW / camera.scale)) : jotDefaultBoxWidth(),
+      minH: full ? JOT_NEW_BOX_HEIGHT : 0,
+      contentHeight: full ? JOT_NEW_BOX_HEIGHT : JOT_BOX_MIN_HEIGHT,
+      w: 0, h: 0, stretched: false, words: []
+    };
+    b.w = b.wrapWidth; b.h = b.contentHeight;
+    boxes.push(b);
+    actions.push({ type: "add-box", id: b.id, x: b.x, y: b.y, wrapWidth: b.wrapWidth, minH: b.minH });
+    return b;
+  }
+
+  function hitTestBoxBody(p) {
+    for (var i = boxes.length - 1; i >= 0; i--) {
+      var b = boxes[i];
+      if (p[0] >= b.x && p[0] <= b.x + b.w && p[1] >= b.y && p[1] <= b.y + b.h) return b;
+    }
+    return null;
+  }
+  function hitTestBoxHandle(p) {
+    var pad = Math.max(JOT_BOX_HANDLE_SIZE / camera.scale, 10) * 0.9;
+    for (var i = boxes.length - 1; i >= 0; i--) {
+      var b = boxes[i];
+      var hx = b.x + b.w, hy = b.y + b.h;
+      if (Math.abs(p[0] - hx) <= pad && Math.abs(p[1] - hy) <= pad) return b;
+    }
+    return null;
   }
 
   function redraw() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, viewportW, viewportH);
+    if (!boxes.length && !Object.keys(drawStrokes).length) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.fillStyle = "#777";
+      ctx.font = "14px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(placingBox ? "Tap here to place the jot box" : "Tap the + box button, then tap here", viewportW / 2, viewportH / 2);
+      ctx.textAlign = "start";
+    }
     // Everything below is drawn in document space; this transform maps it
     // through the camera (pan + zoom) onto the viewport-sized canvas.
     ctx.setTransform(camera.scale * dpr, 0, 0, camera.scale * dpr, -camera.x * camera.scale * dpr, -camera.y * camera.scale * dpr);
     ctx.fillStyle = JOT_INK;
     var id;
     for (id in drawStrokes) jtFillOutline(ctx, jtOutline(drawStrokes[id].points));
-    for (var i = 0; i < words.length; i++) {
-      var w = words[i];
+    for (var bi = 0; bi < boxes.length; bi++) {
+      var b = boxes[bi];
+      var sx = b.w / b.wrapWidth, sy = b.h / Math.max(b.contentHeight, 1);
       ctx.save();
-      ctx.translate(w.x, w.y);
-      ctx.rotate(-w.rotate);
-      ctx.scale(w.scale, w.scale);
-      ctx.translate(-w.anchor[0], -w.anchor[1]);
-      for (var s = 0; s < w.rawStrokes.length; s++) jtFillOutline(ctx, jtOutline(w.rawStrokes[s]));
+      ctx.translate(b.x, b.y);
+      ctx.scale(sx, sy);
+      ctx.strokeStyle = (mode !== "jot") ? "rgba(37,99,235,0.55)" : "rgba(255,255,255,0.22)";
+      ctx.setLineDash(mode !== "jot" ? [] : [4, 3]);
+      ctx.lineWidth = 1 / Math.max(Math.min(sx, sy), 0.01);
+      ctx.strokeRect(0, 0, b.wrapWidth, b.contentHeight);
+      ctx.setLineDash([]);
+      ctx.fillStyle = JOT_INK;
+      for (var wi = 0; wi < b.words.length; wi++) {
+        var w = b.words[wi];
+        if (w.isBreak) continue;
+        ctx.save();
+        ctx.translate(w.x, w.y);
+        ctx.rotate(-w.rotate);
+        ctx.scale(w.scale, w.scale);
+        ctx.translate(-w.anchor[0], -w.anchor[1]);
+        for (var s = 0; s < w.rawStrokes.length; s++) jtFillOutline(ctx, jtOutline(w.rawStrokes[s]));
+        ctx.restore();
+      }
       ctx.restore();
+      if (mode !== "jot") {
+        var hs = JOT_BOX_HANDLE_SIZE / camera.scale; // kept a roughly constant on-screen size
+        ctx.fillStyle = "#2563eb";
+        ctx.fillRect(b.x + b.w - hs / 2, b.y + b.h - hs / 2, hs, hs);
+      }
     }
-    if (writingWord) for (var ws = 0; ws < writingWord.strokes.length; ws++) jtFillOutline(ctx, jtOutline(writingWord.strokes[ws]));
-    if (current) jtFillOutline(ctx, jtOutline(current.points));
+    if (writingWord) { ctx.fillStyle = JOT_INK; for (var ws = 0; ws < writingWord.strokes.length; ws++) jtFillOutline(ctx, jtOutline(writingWord.strokes[ws])); }
+    if (current) { ctx.fillStyle = JOT_INK; jtFillOutline(ctx, jtOutline(current.points)); }
   }
 
   // A Return is stored as its own zero-width "word" (rather than a flag
@@ -1237,17 +1392,22 @@ function createJot(hostEl) {
     return { id: id, isBreak: true, rawStrokes: [], anchor: [0, 0], rotate: 0, scale: 1, width: 0, height: JOT_WORD_HEIGHT };
   }
 
+  // Rebuilds boxes/words/ink from the action log (undo). Box moves/resizes
+  // are deliberately not part of this log — same as pan/zoom not being
+  // undoable — so a box touched by Undo reverts to its authored position
+  // and auto-height.
   function rebuildFromActions() {
-    drawStrokes = {}; words = [];
+    drawStrokes = {}; boxes = [];
     for (var i = 0; i < actions.length; i++) {
       var a = actions[i];
       if (a.type === "add-stroke") drawStrokes[a.id] = { points: a.points, bbox: jtBBox(a.points) };
-      else if (a.type === "add-word") words.push({ id: a.id, rawStrokes: a.rawStrokes, anchor: a.anchor, rotate: a.rotate, scale: a.scale, width: a.width, height: a.height });
-      else if (a.type === "add-break") words.push(jtBreakWord(a.id));
       else if (a.type === "erase-stroke") delete drawStrokes[a.targetId];
-      else if (a.type === "erase-word") { for (var j = 0; j < words.length; j++) if (words[j].id === a.targetId) { words.splice(j, 1); break; } }
+      else if (a.type === "add-box") boxes.push({ id: a.id, x: a.x, y: a.y, wrapWidth: a.wrapWidth, minH: a.minH || 0, contentHeight: a.minH || JOT_BOX_MIN_HEIGHT, w: a.wrapWidth, h: a.minH || JOT_BOX_MIN_HEIGHT, stretched: false, words: [] });
+      else if (a.type === "add-word") { var b1 = findBox(a.boxId); if (b1) b1.words.push({ id: a.id, rawStrokes: a.rawStrokes, anchor: a.anchor, rotate: a.rotate, scale: a.scale, width: a.width, height: a.height }); }
+      else if (a.type === "add-break") { var b2 = findBox(a.boxId); if (b2) b2.words.push(jtBreakWord(a.id)); }
+      else if (a.type === "erase-word") { var b3 = findBox(a.boxId); if (b3) for (var j = 0; j < b3.words.length; j++) if (b3.words[j].id === a.targetId) { b3.words.splice(j, 1); break; } }
     }
-    relayout();
+    for (var k = 0; k < boxes.length; k++) relayoutBox(boxes[k]);
   }
 
   function toLogical(clientX, clientY) {
@@ -1258,30 +1418,35 @@ function createJot(hostEl) {
   }
 
   // The rotation/scale to hand a short (1-2 stroke) cluster that's about to
-  // be finalized — the last real (non-break) committed word's own, so a
-  // single letter follows the size and slant of the line it's sitting on
-  // instead of leveling/sizing itself off too little ink to do that
-  // reliably.
+  // be finalized — the last real (non-break) committed word's own (within
+  // the active box), so a single letter follows the size and slant of the
+  // line it's sitting on instead of leveling/sizing itself off too little
+  // ink to do that reliably.
   function jtLastWordRef() {
-    for (var i = words.length - 1; i >= 0; i--) if (!words[i].isBreak) return words[i];
+    var b = activeBox();
+    if (!b) return null;
+    for (var i = b.words.length - 1; i >= 0; i--) if (!b.words[i].isBreak) return b.words[i];
     return null;
   }
 
   function finalizeWord() {
     if (wordPauseTimer) { clearTimeout(wordPauseTimer); wordPauseTimer = null; }
     if (!writingWord || !writingWord.strokes.length) { writingWord = null; return; }
+    var b = activeBox();
+    if (!b) { writingWord = null; return; }
     var lastWord = jtLastWordRef();
     var split = jtSplitWords(writingWord.strokes, lastWord ? lastWord.rotate : null, lastWord ? lastWord.scale : null);
     for (var i = 0; i < split.length; i++) {
       var t = split[i];
       var id = nextId++;
-      var action = { type: "add-word", id: id, rawStrokes: t.rawStrokes, anchor: t.anchor, rotate: t.rotate, scale: t.scale, width: t.width, height: t.height };
+      var action = { type: "add-word", id: id, boxId: b.id, rawStrokes: t.rawStrokes, anchor: t.anchor, rotate: t.rotate, scale: t.scale, width: t.width, height: t.height };
       actions.push(action);
-      words.push({ id: id, rawStrokes: action.rawStrokes, anchor: action.anchor, rotate: action.rotate, scale: action.scale, width: action.width, height: action.height });
+      b.words.push({ id: id, rawStrokes: action.rawStrokes, anchor: action.anchor, rotate: action.rotate, scale: action.scale, width: action.width, height: action.height });
     }
-    relayout();
+    relayoutBox(b);
     writingWord = null;
     redraw();
+    notifyChange();
   }
 
   // Shared by the toolbar Undo button and the back+down backspace gesture.
@@ -1290,6 +1455,7 @@ function createJot(hostEl) {
     rebuildFromActions();
     writingWord = null;
     redraw();
+    notifyChange();
   }
 
   // A single-stroke "L" gesture (see jtClassifyGesture) is recognized and
@@ -1302,31 +1468,41 @@ function createJot(hostEl) {
   // Return).
   function jtGestureBackspace() {
     if (wordPauseTimer) { clearTimeout(wordPauseTimer); wordPauseTimer = null; }
-    if (writingWord) { writingWord = null; redraw(); return; }
+    if (writingWord) { writingWord = null; redraw(); notifyChange(); return; }
     doUndo();
   }
-  // Return (right, corner, up): commits whatever preceded the gesture
+  // Return (right, corner, down): commits whatever preceded the gesture
   // normally, then inserts a hidden line-break marker (see jtBreakWord)
   // immediately — not a flag deferred onto the next word — so it survives a
   // save even if nothing else is written afterward.
   function jtGestureReturn() {
     finalizeWord();
+    var b = activeBox();
+    if (!b) return;
     var id = nextId++;
-    actions.push({ type: "add-break", id: id });
-    words.push(jtBreakWord(id));
-    relayout();
+    actions.push({ type: "add-break", id: id, boxId: b.id });
+    b.words.push(jtBreakWord(id));
+    relayoutBox(b);
+    notifyChange();
   }
 
   function hitTest(lx, ly) {
     var pad = 10;
     var id;
     for (id in drawStrokes) {
-      var b = drawStrokes[id].bbox;
-      if (lx >= b.minX - pad && lx <= b.maxX + pad && ly >= b.minY - pad && ly <= b.maxY + pad) return { kind: "stroke", id: id };
+      var bx = drawStrokes[id].bbox;
+      if (lx >= bx.minX - pad && lx <= bx.maxX + pad && ly >= bx.minY - pad && ly <= bx.maxY + pad) return { kind: "stroke", id: id };
     }
-    for (var i = words.length - 1; i >= 0; i--) {
-      var w = words[i];
-      if (lx >= w.x - pad && lx <= w.x + w.width + pad && ly >= w.y - w.height - pad && ly <= w.y + pad) return { kind: "word", id: w.id };
+    for (var bi = boxes.length - 1; bi >= 0; bi--) {
+      var b = boxes[bi];
+      if (lx < b.x - pad || lx > b.x + b.w + pad || ly < b.y - pad || ly > b.y + b.h + pad) continue;
+      var sx = b.w / b.wrapWidth, sy = b.h / Math.max(b.contentHeight, 1);
+      var localX = (lx - b.x) / sx, localY = (ly - b.y) / sy;
+      for (var wi = b.words.length - 1; wi >= 0; wi--) {
+        var w = b.words[wi];
+        if (w.isBreak) continue;
+        if (localX >= w.x - pad && localX <= w.x + w.width + pad && localY >= w.y - w.height - pad && localY <= w.y + pad) return { kind: "word", boxId: b.id, id: w.id };
+      }
     }
     return null;
   }
@@ -1335,8 +1511,13 @@ function createJot(hostEl) {
     var hit = hitTest(lx, ly);
     if (!hit) return;
     if (hit.kind === "stroke") { delete drawStrokes[hit.id]; actions.push({ type: "erase-stroke", targetId: hit.id }); }
-    else { for (var j = 0; j < words.length; j++) if (words[j].id === hit.id) { words.splice(j, 1); break; } actions.push({ type: "erase-word", targetId: hit.id }); relayout(); }
+    else {
+      var b = findBox(hit.boxId);
+      if (b) { for (var j = 0; j < b.words.length; j++) if (b.words[j].id === hit.id) { b.words.splice(j, 1); break; } relayoutBox(b); }
+      actions.push({ type: "erase-word", boxId: hit.boxId, targetId: hit.id });
+    }
     redraw();
+    notifyChange();
   }
 
   function onDown(e) {
@@ -1345,27 +1526,55 @@ function createJot(hostEl) {
     // Two or more simultaneous touches are always a pinch/pan on the camera,
     // no matter which tool is selected. Previously this pinch/pan handling
     // only ran when no tool was active ("mode" falsy) — pinching while
-    // Draw/Write/Erase was selected instead fed both fingers in as two
-    // independent, interleaved strokes: in Draw that showed up as a single
-    // garbled stroke sweeping the screen (looking like "the whole page
-    // zooms"), and in Write, that stroke got picked up as a "word" whose
-    // huge/tiny bounding box then drove its rendered scale — the word-size-
-    // changes-and-rewraps bug. Reserving 2+ pointers for camera control
-    // fixes both: pinch always zooms the camera, ink is only ever drawn by
-    // a single active pointer.
+    // Draw/Jot was selected instead fed both fingers in as two independent,
+    // interleaved strokes: in Draw that showed up as a single garbled stroke
+    // sweeping the screen (looking like "the whole page zooms"), and in Jot,
+    // that stroke got picked up as a "word" whose huge/tiny bounding box
+    // then drove its rendered scale — the word-size-changes-and-rewraps bug.
+    // Reserving 2+ pointers for camera control fixes both: pinch always
+    // zooms the camera, ink is only ever drawn by a single active pointer.
     if (ids.length >= 2) {
       if (current) { current = null; redraw(); }
       erasing = false;
-      panState = null;
+      panState = null; boxDragState = null; boxResizeState = null;
       var downIds = ids.slice(0, 2);
       var mid = pointerMidpoint(downIds);
       pinchState = { dist: pointerDistance(downIds), anchorDoc: toLogical(mid.x, mid.y) };
       return;
     }
+    if (placingBox) {
+      // + button armed: this tap only places the box (no ink), then the box is
+      // the active one in Jot mode so the next stroke is written into it.
+      finalizeWord();
+      var nb = createBoxAt(toLogical(e.clientX, e.clientY), true);
+      activeBoxId = nb.id;
+      placingBox = false;
+      mode = "jot";
+      syncToolbar();
+      redraw();
+      notifyChange();
+      return;
+    }
     if (!mode) {
-      // No tool selected: the canvas is a fixed viewport-sized window onto
-      // an unbounded document, so single-finger panning is handled entirely
-      // here (there's no native scroll to fall back on).
+      // No tool selected: this is also the "arrange" state — a box's body
+      // moves it, its corner handle resizes it (text scales, no rewrap; see
+      // bakeBox() for what happens when Jot mode resumes editing it).
+      // Otherwise, single-finger panning of the camera, same as before.
+      var p0 = toLogical(e.clientX, e.clientY);
+      var handleBox = hitTestBoxHandle(p0);
+      if (handleBox) {
+        canvas.setPointerCapture(e.pointerId);
+        boxResizeState = { box: handleBox, startW: handleBox.w, startH: handleBox.h, startX: p0[0], startY: p0[1] };
+        pinchState = null;
+        return;
+      }
+      var bodyBox = hitTestBoxBody(p0);
+      if (bodyBox) {
+        canvas.setPointerCapture(e.pointerId);
+        boxDragState = { box: bodyBox, offsetX: p0[0] - bodyBox.x, offsetY: p0[1] - bodyBox.y };
+        pinchState = null;
+        return;
+      }
       panState = { x: e.clientX, y: e.clientY };
       pinchState = null;
       return;
@@ -1374,12 +1583,28 @@ function createJot(hostEl) {
     var p = toLogical(e.clientX, e.clientY);
     var pressure = e.pointerType === "mouse" ? 0.5 : (e.pressure || 0.5);
     if (mode === "erase") { erasing = true; eraseAt(p[0], p[1]); return; }
-    // Starting a new stroke always cancels any pending "finalize the word
-    // on pause" timer — otherwise a slightly-longer-than-usual pause before
-    // the next letter (very common right at the start of a word, while
-    // repositioning) can fire mid-stroke and split the word right as the
-    // user keeps writing it.
-    if (mode === "write" && wordPauseTimer) { clearTimeout(wordPauseTimer); wordPauseTimer = null; }
+    if (mode === "jot") {
+      // Tapping inside an existing box continues writing into it (baking in
+      // any manual resize it picked up while Jot mode was off). Tapping empty
+      // canvas does nothing — boxes are only created with the + button.
+      var target = hitTestBoxBody(p);
+      if (target) {
+        if (activeBoxId !== target.id) { finalizeWord(); activeBoxId = target.id; }
+        // Bake regardless of whether this was already the active box — it
+        // may have been stretched (outside Jot mode) since it was last
+        // written into, even without activeBoxId ever changing.
+        if (target.stretched) bakeBox(target);
+      } else {
+        finalizeWord();
+        return;
+      }
+      // Starting a new stroke always cancels any pending "finalize the word
+      // on pause" timer — otherwise a slightly-longer-than-usual pause
+      // before the next letter (very common right at the start of a word,
+      // while repositioning) can fire mid-stroke and split the word right as
+      // the user keeps writing it.
+      if (wordPauseTimer) { clearTimeout(wordPauseTimer); wordPauseTimer = null; }
+    }
     current = { points: [[p[0], p[1], pressure]] };
     redraw();
   }
@@ -1400,8 +1625,28 @@ function createJot(hostEl) {
         camera.x = pinchState.anchorDoc[0] - sx / newScale;
         camera.y = pinchState.anchorDoc[1] - sy / newScale;
         updateZoomLabel();
+        updateDocWidth();
         redraw();
       }
+      e.preventDefault();
+      return;
+    }
+    if (boxResizeState) {
+      var pr = toLogical(e.clientX, e.clientY);
+      var rb = boxResizeState.box;
+      rb.w = Math.max(JOT_BOX_MIN_WIDTH, boxResizeState.startW + (pr[0] - boxResizeState.startX));
+      rb.h = Math.max(JOT_BOX_MIN_HEIGHT, boxResizeState.startH + (pr[1] - boxResizeState.startY));
+      rb.stretched = true;
+      redraw();
+      e.preventDefault();
+      return;
+    }
+    if (boxDragState) {
+      var pd = toLogical(e.clientX, e.clientY);
+      var db = boxDragState.box;
+      db.x = pd[0] - boxDragState.offsetX;
+      db.y = pd[1] - boxDragState.offsetY;
+      redraw();
       e.preventDefault();
       return;
     }
@@ -1421,13 +1666,14 @@ function createJot(hostEl) {
     if (!current) return; // mid-pinch (this pointer was cancelled when a 2nd finger landed)
     var pressure = e.pointerType === "mouse" ? 0.5 : (e.pressure || 0.5);
     current.points.push([p[0], p[1], pressure]);
-    ensureVisible(p[0], p[1]);
     redraw();
   }
   function onUp(e) {
     delete activePointers[e.pointerId];
     var ids = pointerIds();
     if (ids.length < 2) pinchState = null;
+    if (boxResizeState) { boxResizeState = null; notifyChange(); return; }
+    if (boxDragState) { boxDragState = null; notifyChange(); return; }
     panState = (!mode && ids.length === 1) ? { x: activePointers[ids[0]].x, y: activePointers[ids[0]].y } : null;
     if (!mode) return;
     if (pinchState) return; // still mid-pinch (a 3rd+ finger lifted) — not the end of a stroke
@@ -1436,7 +1682,7 @@ function createJot(hostEl) {
     var stroke = current;
     current = null;
     if (stroke.points.length < 2) stroke.points.push([stroke.points[0][0] + 0.1, stroke.points[0][1] + 0.1, stroke.points[0][2]]);
-    if (mode === "write") {
+    if (mode === "jot") {
       // A single-stroke L-shaped command (see jtClassifyGesture) is checked
       // before treating the stroke as ink — a real command never gets added
       // to the word as a stray mark.
@@ -1455,11 +1701,13 @@ function createJot(hostEl) {
       if (wordPauseTimer) clearTimeout(wordPauseTimer);
       wordPauseTimer = setTimeout(finalizeWord, JOT_PAUSE_MS);
       redraw();
+      notifyChange();
     } else {
       var id = nextId++;
       drawStrokes[id] = { points: stroke.points, bbox: jtBBox(stroke.points) };
       actions.push({ type: "add-stroke", id: id, points: stroke.points });
       redraw();
+      notifyChange();
     }
   }
 
@@ -1482,7 +1730,17 @@ function createJot(hostEl) {
     camera.x = anchorDoc[0] - sx / newScale;
     camera.y = anchorDoc[1] - sy / newScale;
     updateZoomLabel();
+    updateDocWidth();
     redraw();
+  }
+
+  function syncToolbar() {
+    var btns = toolbar.querySelectorAll(".jt-mode");
+    for (var i = 0; i < btns.length; i++) btns[i].classList.toggle("active", btns[i].getAttribute("data-mode") === mode);
+    var nbBtn = toolbar.querySelector('[data-act="newbox"]');
+    if (nbBtn) nbBtn.classList.toggle("armed", placingBox);
+    canvas.style.outline = placingBox ? "2px dashed #2563eb" : "";
+    canvas.style.outlineOffset = "-2px";
   }
 
   toolbar.addEventListener("click", function(e) {
@@ -1492,44 +1750,68 @@ function createJot(hostEl) {
     if (m) {
       finalizeWord();
       mode = (mode === m) ? null : m;
-      var btns = toolbar.querySelectorAll(".jt-mode");
-      for (var i = 0; i < btns.length; i++) btns[i].classList.toggle("active", btns[i].getAttribute("data-mode") === mode);
+      placingBox = false;
+      syncToolbar();
+      redraw();
       return;
     }
     var act = btn.getAttribute("data-act");
+    if (act === "newbox") {
+      // Arm placement (tap again to cancel). Jot mode is switched on so the
+      // new box can be written into straight away.
+      finalizeWord();
+      placingBox = !placingBox;
+      if (placingBox) mode = "jot";
+      syncToolbar();
+      redraw();
+      return;
+    }
     if (act === "undo") doUndo();
     else if (act === "zoomin") setZoom(camera.scale * 1.25);
     else if (act === "zoomout") setZoom(camera.scale / 1.25);
     else if (act === "zoomreset") setZoom(1);
-    else if (act === "clear") { finalizeWord(); actions = []; drawStrokes = {}; words = []; camera.x = 0; camera.y = 0; setZoom(1); redraw(); }
+    else if (act === "clear") { finalizeWord(); actions = []; drawStrokes = {}; boxes = []; activeBoxId = null; camera.x = 0; camera.y = 0; setZoom(1); redraw(); notifyChange(); }
   });
 
   redraw();
 
   return {
-    clear: function() { finalizeWord(); actions = []; drawStrokes = {}; words = []; camera.x = 0; camera.y = 0; camera.scale = 1; updateZoomLabel(); redraw(); },
+    clear: function() { finalizeWord(); actions = []; drawStrokes = {}; boxes = []; activeBoxId = null; camera.x = 0; camera.y = 0; camera.scale = 1; updateZoomLabel(); updateDocWidth(); redraw(); },
     isEmpty: function() { return actions.length === 0 && !writingWord; },
     getJSON: function() {
       finalizeWord();
       var ds = [], id;
       for (id in drawStrokes) ds.push({ id: id, points: drawStrokes[id].points });
-      var ws = words.map(function(w) { return w.isBreak ? { id: w.id, isBreak: true } : { id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height }; });
-      return { v: 1, canvasWidth: DOC_WIDTH, drawStrokes: ds, words: ws };
+      var bs = boxes.map(function(b) {
+        return {
+          id: b.id, x: b.x, y: b.y, wrapWidth: b.wrapWidth, minH: b.minH || 0, w: b.w, h: b.h, stretched: b.stretched,
+          words: b.words.map(function(w) { return w.isBreak ? { id: w.id, isBreak: true } : { id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height }; })
+        };
+      });
+      return { v: 2, canvasWidth: DOC_WIDTH, drawStrokes: ds, boxes: bs };
     },
     getSVG: function() {
       finalizeWord();
-      var maxY = JOT_PARA_TOP;
+      var maxY = JOT_PARA_TOP, maxX = DOC_WIDTH;
       var id;
-      for (id in drawStrokes) maxY = Math.max(maxY, drawStrokes[id].bbox.maxY);
-      for (var i = 0; i < words.length; i++) maxY = Math.max(maxY, words[i].y + 10);
+      for (id in drawStrokes) { maxY = Math.max(maxY, drawStrokes[id].bbox.maxY); maxX = Math.max(maxX, drawStrokes[id].bbox.maxX); }
+      for (var i = 0; i < boxes.length; i++) { var bx = boxes[i]; maxY = Math.max(maxY, bx.y + bx.h + 10); maxX = Math.max(maxX, bx.x + bx.w + 10); }
       var h = Math.ceil(maxY + 20);
-      var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + DOC_WIDTH + ' ' + h + '" width="' + DOC_WIDTH + '" height="' + h + '"><rect width="100%" height="100%" fill="#1e1e1e"/>';
+      var wSvg = Math.ceil(maxX);
+      var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + wSvg + ' ' + h + '" width="' + wSvg + '" height="' + h + '"><rect width="100%" height="100%" fill="#1e1e1e"/>';
       for (id in drawStrokes) svg += jtOutlineToPath(jtOutline(drawStrokes[id].points));
-      for (i = 0; i < words.length; i++) {
-        var w = words[i];
-        var deg = (-w.rotate * 180 / Math.PI).toFixed(2);
-        svg += '<g transform="translate(' + w.x.toFixed(2) + ',' + w.y.toFixed(2) + ') rotate(' + deg + ') scale(' + w.scale.toFixed(4) + ') translate(' + (-w.anchor[0]).toFixed(2) + ',' + (-w.anchor[1]).toFixed(2) + ')">';
-        for (var s = 0; s < w.rawStrokes.length; s++) svg += jtOutlineToPath(jtOutline(w.rawStrokes[s]));
+      for (i = 0; i < boxes.length; i++) {
+        var b = boxes[i];
+        var sx = b.w / b.wrapWidth, sy = b.h / Math.max(b.contentHeight, 1);
+        svg += '<g transform="translate(' + b.x.toFixed(2) + ',' + b.y.toFixed(2) + ') scale(' + sx.toFixed(4) + ',' + sy.toFixed(4) + ')">';
+        for (var wi = 0; wi < b.words.length; wi++) {
+          var w = b.words[wi];
+          if (w.isBreak) continue;
+          var deg = (-w.rotate * 180 / Math.PI).toFixed(2);
+          svg += '<g transform="translate(' + w.x.toFixed(2) + ',' + w.y.toFixed(2) + ') rotate(' + deg + ') scale(' + w.scale.toFixed(4) + ') translate(' + (-w.anchor[0]).toFixed(2) + ',' + (-w.anchor[1]).toFixed(2) + ')">';
+          for (var s = 0; s < w.rawStrokes.length; s++) svg += jtOutlineToPath(jtOutline(w.rawStrokes[s]));
+          svg += '</g>';
+        }
         svg += '</g>';
       }
       svg += '</svg>';
@@ -1541,25 +1823,54 @@ function createJot(hostEl) {
       // — otherwise the first Undo after loading would rebuild from an
       // empty log and wipe the loaded content instead of the last edit.
       actions = [];
-      drawStrokes = {}; words = [];
+      drawStrokes = {}; boxes = []; activeBoxId = null;
       if (data && data.drawStrokes) for (var i = 0; i < data.drawStrokes.length; i++) {
         var d = data.drawStrokes[i];
         actions.push({ type: "add-stroke", id: d.id, points: d.points });
         drawStrokes[d.id] = { points: d.points, bbox: jtBBox(d.points) };
         if (nextId <= Number(d.id)) nextId = Number(d.id) + 1;
       }
-      if (data && data.words) for (var j = 0; j < data.words.length; j++) {
-        var w = data.words[j];
-        if (w.isBreak) {
-          actions.push({ type: "add-break", id: w.id });
-          words.push(jtBreakWord(w.id));
-        } else {
-          actions.push({ type: "add-word", id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height });
-          words.push({ id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height });
+      if (data && data.boxes) {
+        for (var j = 0; j < data.boxes.length; j++) {
+          var bd = data.boxes[j];
+          actions.push({ type: "add-box", id: bd.id, x: bd.x, y: bd.y, wrapWidth: bd.wrapWidth, minH: bd.minH || 0 });
+          var b = { id: bd.id, x: bd.x, y: bd.y, wrapWidth: bd.wrapWidth, minH: bd.minH || 0, contentHeight: bd.minH || JOT_BOX_MIN_HEIGHT, w: bd.w || bd.wrapWidth, h: bd.h || bd.minH || JOT_BOX_MIN_HEIGHT, stretched: !!bd.stretched, words: [] };
+          boxes.push(b);
+          if (nextId <= Number(bd.id)) nextId = Number(bd.id) + 1;
+          if (bd.words) for (var k = 0; k < bd.words.length; k++) {
+            var w = bd.words[k];
+            if (w.isBreak) {
+              actions.push({ type: "add-break", id: w.id, boxId: b.id });
+              b.words.push(jtBreakWord(w.id));
+            } else {
+              actions.push({ type: "add-word", id: w.id, boxId: b.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height });
+              b.words.push({ id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height });
+            }
+            if (nextId <= Number(w.id)) nextId = Number(w.id) + 1;
+          }
+          relayoutBox(b);
         }
-        if (nextId <= Number(w.id)) nextId = Number(w.id) + 1;
+      } else if (data && data.words && data.words.length) {
+        // Legacy (v1) content: a single flat page of handwritten words with
+        // no boxes — migrate it into one implicit box so old saved notes
+        // keep showing instead of disappearing.
+        for (var mi = 0; mi < data.words.length; mi++) if (nextId <= Number(data.words[mi].id)) nextId = Number(data.words[mi].id) + 1;
+        var legacyWidth = Math.max(jotDefaultBoxWidth(), data.canvasWidth || jotDefaultBoxWidth());
+        var lb = { id: nextId++, x: JOT_PARA_MARGIN, y: JOT_PARA_MARGIN, wrapWidth: legacyWidth, contentHeight: JOT_BOX_MIN_HEIGHT, w: legacyWidth, h: JOT_BOX_MIN_HEIGHT, stretched: false, words: [] };
+        boxes.push(lb);
+        actions.push({ type: "add-box", id: lb.id, x: lb.x, y: lb.y, wrapWidth: lb.wrapWidth });
+        for (var m = 0; m < data.words.length; m++) {
+          var lw = data.words[m];
+          if (lw.isBreak) {
+            actions.push({ type: "add-break", id: lw.id, boxId: lb.id });
+            lb.words.push(jtBreakWord(lw.id));
+          } else {
+            actions.push({ type: "add-word", id: lw.id, boxId: lb.id, rawStrokes: lw.rawStrokes, anchor: lw.anchor, rotate: lw.rotate, scale: lw.scale, width: lw.width, height: lw.height });
+            lb.words.push({ id: lw.id, rawStrokes: lw.rawStrokes, anchor: lw.anchor, rotate: lw.rotate, scale: lw.scale, width: lw.width, height: lw.height });
+          }
+        }
+        relayoutBox(lb);
       }
-      relayout();
       redraw();
     },
     destroy: function() {
@@ -1582,7 +1893,7 @@ function jtOutlineToPath(outline) {
 function initJotEditor() {
   var host = document.getElementById("jot-canvas");
   if (liveJot) { resetJotIfNewCall(); return; }
-  liveJot = createJot(host);
+  liveJot = createJot(host, scheduleCallSave);
   jotCallId = currentCall ? currentCall.id : null;
 }
 
@@ -1608,29 +1919,31 @@ function setJotStatus(msg) {
   if (el) el.textContent = msg;
 }
 
-function saveJotToNotes() {
-  if (!liveJot || liveJot.isEmpty()) { setJotStatus("Nothing to save"); return; }
-  setJotStatus("Saving\u2026");
-  var html = liveJot.getSVG();
-  var ed = (typeof tinymce !== "undefined") ? tinymce.get("call-notes") : null;
-  if (ed) {
-    var cur = ed.getContent();
-    ed.setContent(cur ? (cur + "<br>" + html) : html);
-  } else {
-    var ta = document.getElementById("call-notes");
-    ta.value = (ta.value ? ta.value + String.fromCharCode(10) : "") + "[Jot sketch attached \u2014 open Notes with rich text to view]";
-  }
-  setJotStatus("Saved to Notes \u2713");
-}
-
 // Persist the live in-call Notes editor + Jot sketch (SVG + re-editable JSON)
 // to the call_log row created by logCallEvent("ring").
 function setCallSaveStatus(msg) {
   var el = document.getElementById("cp-save-status");
   if (el) el.textContent = msg;
 }
+// Autosave: any edit to notes or the jot sketch schedules a debounced save,
+// so there's no separate save action for the user to remember to press.
+var callSaveTimer = null;
+function scheduleCallSave() {
+  if (!currentCall) return;
+  setCallSaveStatus("Saving\u2026");
+  clearTimeout(callSaveTimer);
+  callSaveTimer = setTimeout(saveCallRecord, 900);
+}
+function flushCallSave() {
+  if (!callSaveTimer) return;
+  clearTimeout(callSaveTimer);
+  callSaveTimer = null;
+  saveCallRecord();
+}
 function saveCallRecord() {
-  if (!currentCall) { setCallSaveStatus("No active call"); return; }
+  clearTimeout(callSaveTimer);
+  callSaveTimer = null;
+  if (!currentCall) { setCallSaveStatus(""); return; }
   var callId = currentCall.id;
   var ed = (typeof tinymce !== "undefined") ? tinymce.get("call-notes") : null;
   var ta = document.getElementById("call-notes");
@@ -1734,6 +2047,8 @@ pad.addEventListener("pointerleave", function(e) {
 var suggestTimer = null;
 function onDialInput() {
   var q = document.getElementById("dial-input").value.trim();
+  document.getElementById("dial-suggestions").classList.toggle("hidden", !q);
+  document.getElementById("dial-recent-list").classList.toggle("hidden", !!q || !!currentCall);
   if (suggestTimer) clearTimeout(suggestTimer);
   suggestTimer = setTimeout(function() { searchSuggestions(q); }, 220);
 }
@@ -1755,6 +2070,38 @@ function pickSuggestion(num, name) {
   document.getElementById("dial-suggestions").innerHTML = "";
 }
 function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/'/g,"&#39;").replace(/"/g,"&quot;"); }
+
+// ── dial view: recent calls (tap to load into the input for redial) ────
+var dialRecentCache = {};
+function loadDialRecent() {
+  var el = document.getElementById("dial-recent-list");
+  fetch(API + "/call-history?limit=8").then(function(r){return r.json();}).then(function(d){
+    var calls = d.calls || [];
+    if (!calls.length) { el.innerHTML = '<div class="empty">No recent calls</div>'; return; }
+    dialRecentCache = {};
+    el.innerHTML = calls.map(function(c) {
+      var dir = c.direction === "outgoing" ? "out" : "in";
+      var missed = c.state === "missed" || c.state === "rejected" || c.state === "aborted";
+      var icon = missed ? "🔴" : (dir === "out" ? "🟦" : "🟢");
+      var arrow = dir === "out" ? "⬆" : "⬇";
+      var name = (c.partner_name || "").trim();
+      var num = (c.phone_number && c.phone_number !== "unknown") ? String(c.phone_number) : (c.did || "unknown");
+      var who = name || num;
+      var when = c.start_date ? fmtTime(c.start_date) : "";
+      var key = "r-" + c.id;
+      dialRecentCache[key] = num;
+      return '<div class="dial-recent-row" data-key="' + esc(key) + '"><span class="ic">' + icon + '</span><span class="who">' + arrow + ' ' + esc(who) + '</span><span class="meta">' + when + '</span></div>';
+    }).join("");
+  }).catch(function(){ el.innerHTML = ""; });
+}
+document.getElementById("dial-recent-list").addEventListener("click", function(e) {
+  var row = e.target.closest(".dial-recent-row");
+  if (!row) return;
+  var num = dialRecentCache[row.getAttribute("data-key")];
+  if (!num || num === "unknown") return;
+  document.getElementById("dial-input").value = num;
+  onDialInput();
+});
 
 // ── call actions ───────────────────────────────────────────────
 // ── call logging (D1 call_log) ──────────────────────────────────
@@ -1788,6 +2135,15 @@ function dialOut(num) {
   if (!num) return;
   num = String(num).replace(/[^+0-9*#]/g, "");
   if (num.startsWith("0")) num = "+44" + num.slice(1);
+  // Asterisk strips the leading "+" from caller ID (see caller-lookup /
+  // history), so a redialled/history number often arrives here as bare
+  // digits with the country code already included (e.g. "441283246490")
+  // instead of "+441283246490". Left alone, that reaches the trunk
+  // unnormalized and gets rejected outright (voip.ms: 403, Twilio: 400
+  // Invalid phone number) instead of ringing. Only real international
+  // numbers are this long — short internal extensions (200/201/202) and
+  // feature codes are never mistaken for one.
+  else if (!num.startsWith("+") && num.length > 6) num = "+" + num;
   if (!sipUA) { setStatus("❌ Not registered", true); return; }
   var acc = activeAccount();
   var domain = (acc && acc.domain) || "64.176.181.195";
@@ -1837,9 +2193,35 @@ function answerCall() {
 }
 function resetCall() {
   stopRingtone();
+  flushCallSave();
   if (heldSession) { try { heldSession.dispose(); } catch(e) {} heldSession = null; }
   sipSession = null; currentCall = null; onHold = false; muted = false;
   renderCallUI();
+  loadDialRecent();
+}
+// The dialpad is only useful before a call connects (dialing) or as an
+// explicit DTMF overlay during one (see toggleInCallKeypad) — once
+// connected it defaults to hidden so the in-call tabs (call-panel) get the
+// screen space instead.
+var keypadOverlayOpen = false;
+function toggleInCallKeypad() {
+  if (!inCall()) return;
+  keypadOverlayOpen = !keypadOverlayOpen;
+  updateDialBottomVisibility();
+}
+function updateDialBottomVisibility() {
+  // Keypad (+ recent calls, + the plain call button) hides for the whole
+  // life of a call — ringing/dialling included, not just once connected —
+  // so the in-call tabs showing who it is take over the screen right away.
+  // The DTMF overlay (banner-keypad) is the one exception: it's only
+  // meaningful, and only offered, once the call is actually connected.
+  var inAnyCall = !!currentCall;
+  var connected = !!(currentCall && currentCall.state === "active");
+  document.getElementById("dialpad").classList.toggle("hidden", inAnyCall && !keypadOverlayOpen);
+  document.getElementById("dial-callbar").classList.toggle("hidden", inAnyCall);
+  document.getElementById("dial-recent-list").classList.toggle("hidden", inAnyCall);
+  document.getElementById("banner-keypad").classList.toggle("hidden", !connected);
+  document.getElementById("banner-keypad").classList.toggle("active", connected && keypadOverlayOpen);
 }
 function renderCallUI() {
   var banner = document.getElementById("call-banner");
@@ -1849,7 +2231,9 @@ function renderCallUI() {
     banner.classList.add("hidden");
     btnCall.classList.remove("hidden"); btnCall.classList.remove("hangup");
     btnEnd.classList.add("hidden");
+    keypadOverlayOpen = false;
     showCallPanel(false);
+    updateDialBottomVisibility();
     return;
   }
   banner.classList.remove("hidden");
@@ -1860,12 +2244,19 @@ function renderCallUI() {
   btnCall.classList.add("hidden");
   btnEnd.classList.remove("hidden");
   showCallPanel(true);
+  updateDialBottomVisibility();
 }
 
 function setStatus(msg, isErr) {
   var el = document.getElementById("phone-status");
   el.textContent = msg;
   el.className = "reg-status" + (isErr ? " err" : " ok");
+  var dot = document.getElementById("status-dot");
+  if (dot) {
+    var state = isErr ? "err" : (/registered/i.test(msg) && !/unregistered/i.test(msg)) ? "ok" : "warn";
+    dot.className = "status-dot " + state;
+    dot.title = msg;
+  }
 }
 
 // ── history ────────────────────────────────────────────────────
@@ -1905,7 +2296,15 @@ function renderHistoryRow(c) {
   var notesFlag = c.has_notes ? ' <span title="Has notes">📝</span>' : "";
   var key = "h-" + c.id;
   callsCache[key] = c;
-  return '<div class="hist-row" data-key="' + esc(key) + '"><span class="ic">' + icon + '</span><div><div class="who">' + arrow + ' ' + esc(who) + notesFlag + '</div>' + (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div><div class="meta">' + when + dur + '</div></div>';
+  var canCall = num && num !== "unknown" && /^[+0-9*#]/.test(num);
+  var actions = (canCall ? '<button class="hist-action" data-action="call" title="Call">📞</button>' : "")
+    + (c.partner_email ? '<button class="hist-action" data-action="email" title="New Email">✉️</button>' : "")
+    + '<button class="hist-action" data-action="details" title="Details">📄</button>'
+    + (c.partner_id ? '<button class="hist-action" data-action="contact" title="Open contact">👤</button>' : "");
+  return '<div class="hist-row" data-key="' + esc(key) + '">'
+    + '<div class="hist-main"><span class="ic">' + icon + '</span><div><div class="who">' + arrow + ' ' + esc(who) + notesFlag + '</div>' + (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div><div class="meta">' + when + dur + '</div></div>'
+    + '<div class="hist-actions">' + actions + '</div>'
+    + '</div>';
 }
 function fmtDur(sec) {
   sec = Math.round(sec || 0);
@@ -1929,8 +2328,27 @@ document.getElementById("history-list").addEventListener("click", function(e) {
   if (!row) return;
   var c = callsCache[row.getAttribute("data-key")];
   if (!c) return;
+  var actionBtn = e.target.closest(".hist-action");
+  if (actionBtn) {
+    e.stopPropagation();
+    var action = actionBtn.getAttribute("data-action");
+    var num = (c.phone_number && c.phone_number !== "unknown") ? c.phone_number : c.did;
+    if (action === "call") prepareDial(num);
+    else if (action === "email") openCompose(c.partner_email, "", "");
+    else if (action === "details") openCallDetailView(c);
+    else if (action === "contact") openContactById(c.partner_id);
+    return;
+  }
   rowClick(row.getAttribute("data-key"), "call", c, function() { openCallDetailView(c); });
 });
+function openContactById(id) {
+  if (!id) return;
+  fetch(API + "/contacts/" + id).then(function(r) { return r.json(); }).then(function(d) {
+    if (!d || !d.contact) return;
+    selectItem("contact", d.contact, "hc-" + d.contact.id);
+    openContactFull(d.contact);
+  }).catch(function() {});
+}
 function fmtTime(ts) {
   var d = new Date(ts);
   var now = new Date();
@@ -2009,6 +2427,7 @@ function prepareDial(num) {
   document.getElementById("dial-input").value = num || "";
   document.getElementById("dial-suggestions").innerHTML = "";
   switchView("dial");
+  onDialInput();
 }
 function openMessages() { switchView("messages"); }
 
@@ -2154,6 +2573,7 @@ function renderCallDetailNotesPane() {
   var pane = document.getElementById("cd-pane-notes");
   if (!pane) return; // navigated away before the fetch resolved
   pane.innerHTML = '<textarea id="cd-notes"></textarea>';
+  document.getElementById("cd-notes").addEventListener("input", function() { scheduleCallDetailSave(); });
   loadTinyMce().then(function() { initCallDetailNotesEditor(cdLoadedNotes.notes_html || ""); })
     .catch(function() {
       var ta = document.getElementById("cd-notes");
@@ -2174,18 +2594,22 @@ function initCallDetailNotesEditor(html) {
     branding: false,
     skin: "oxide-dark",
     content_css: "dark",
-    setup: function(editor) { editor.on("init", function() { editor.setContent(html || ""); }); }
+    setup: function(editor) {
+      editor.on("init", function() { editor.setContent(html || ""); });
+      editor.on("input change undo redo", scheduleCallDetailSave);
+    }
   });
 }
 
 function initCallDetailJot() {
   var host = document.getElementById("cd-jot-canvas");
   if (!host) return;
-  cdJot = createJot(host);
+  cdJot = createJot(host, scheduleCallDetailSave);
   if (cdJotData) cdJot.loadJSON(cdJotData);
 }
 
 function destroyCallDetailEditors() {
+  flushCallDetailSave();
   try { if (typeof tinymce !== "undefined" && tinymce.get("cd-notes")) tinymce.get("cd-notes").remove(); } catch (e) {}
   try { if (cdJot) cdJot.destroy(); } catch (e) {}
   cdJot = null;
@@ -2194,10 +2618,29 @@ function destroyCallDetailEditors() {
 function stripHtml(h) { return String(h || "").replace(/<[^>]*>/g, " ").replace(/ +/g, " ").trim(); }
 function safeParseJson(s) { if (!s) return null; try { return JSON.parse(s); } catch (e) { return null; } }
 
+function setCallDetailSaveStatus(msg) {
+  var el = document.getElementById("cd-save-status");
+  if (el) el.textContent = msg;
+}
+// Autosave: same debounced pattern as the live in-call panel (see
+// scheduleCallSave) — no separate save action for the user to press.
+var cdSaveTimer = null;
+function scheduleCallDetailSave() {
+  if (!cdOpenCallId) return;
+  setCallDetailSaveStatus("Saving…");
+  clearTimeout(cdSaveTimer);
+  cdSaveTimer = setTimeout(saveCallDetailEdits, 900);
+}
+function flushCallDetailSave() {
+  if (!cdSaveTimer) return;
+  clearTimeout(cdSaveTimer);
+  cdSaveTimer = null;
+  saveCallDetailEdits();
+}
 function saveCallDetailEdits() {
-  if (!cdOpenCallId) { alert("This call has no call_id to save against."); return; }
-  var btn = document.getElementById("cd-save-btn");
-  if (btn) { btn.textContent = "Saving…"; btn.disabled = true; }
+  clearTimeout(cdSaveTimer);
+  cdSaveTimer = null;
+  if (!cdOpenCallId) return;
   var ed = (typeof tinymce !== "undefined" && tinymce.get("cd-notes")) ? tinymce.get("cd-notes") : null;
   var ta = document.getElementById("cd-notes");
   var notesHtml = ed ? ed.getContent() : (ta ? ta.value : (cdLoadedNotes.notes_html || ""));
@@ -2212,24 +2655,19 @@ function saveCallDetailEdits() {
 }
 
 function postCallDetailSave(notesHtml, jotSvg, jotJson) {
+  var callId = cdOpenCallId;
   fetch(API + "/call-notes", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ call_id: cdOpenCallId, notes_html: notesHtml, jot_svg: jotSvg, jot_json: jotJson })
+    body: JSON.stringify({ call_id: callId, notes_html: notesHtml, jot_svg: jotSvg, jot_json: jotJson })
   }).then(function(r) { return r.json(); }).then(function(d) {
-    var btn = document.getElementById("cd-save-btn");
     if (d.ok) {
-      cdLoadedNotes = { notes_html: notesHtml, jot_svg: jotSvg, jot_json: jotJson };
-      if (btn) { btn.disabled = false; btn.textContent = "Saved ✓"; setTimeout(function() { btn.textContent = "💾 Save"; }, 1500); }
+      if (cdOpenCallId === callId) cdLoadedNotes = { notes_html: notesHtml, jot_svg: jotSvg, jot_json: jotJson };
+      setCallDetailSaveStatus("Saved ✓");
     } else {
-      if (btn) { btn.disabled = false; btn.textContent = "💾 Save"; }
-      alert("Save failed: " + (d.error || "unknown"));
+      setCallDetailSaveStatus("Save failed");
     }
-  }).catch(function() {
-    var btn = document.getElementById("cd-save-btn");
-    if (btn) { btn.disabled = false; btn.textContent = "💾 Save"; }
-    alert("Save failed");
-  });
+  }).catch(function() { setCallDetailSaveStatus("Save failed"); });
 }
 function openMessageFull(m) {
   m = m || (selected && selected.data);
@@ -2596,6 +3034,7 @@ function initSoftphone() {
 // ── boot ───────────────────────────────────────────────────────
 function applyBoot() {
   updateAccountHeader();
+  loadDialRecent();
   if (settings.devMode) { setStatus("🛠 Dev mode", false); return; }
   loadSipJs().then(initSoftphone).catch(function(e) { setStatus("❌ " + e.message, true); });
 }

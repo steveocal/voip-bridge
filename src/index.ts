@@ -146,6 +146,7 @@ async function handleCallHistory(request: Request, env: Env): Promise<Response> 
        CASE WHEN c.end_date > c.start_date THEN (c.end_date - c.start_date) / 1000 ELSE 0 END AS duration,
        c.partner_id AS partner_id,
        COALESCE(p.name, '') AS partner_name,
+       COALESCE(p.email, '') AS partner_email,
        CASE WHEN COALESCE(c.notes_html, '') != '' THEN 1 ELSE 0 END AS has_notes
      FROM call_log c
      LEFT JOIN contacts p ON p.id = c.partner_id`;
