@@ -903,7 +903,7 @@ var PerfectFreehand=(()=>{var Q=Object.defineProperty;var zn=Object.getOwnProper
 // ── Jot engine: Jot (auto-growing, word-wrapping text boxes, handwriting-
 // recognized) / Draw (freehand pencil ink) / Erase, undo, zoom, save/load ──
 var JOT_INK = "#e9ecef";
-var JOT_STROKE_OPTS = { size: 6, thinning: 0.6, smoothing: 0.5, streamline: 0.5 };
+var JOT_STROKE_OPTS = { size: 5, thinning: 0.6, smoothing: 0.5, streamline: 0.5 };
 // Word grouping is really driven by proximity (checked whenever the next
 // stroke actually lands, however long that takes) — this timer is just a
 // backstop to settle an abandoned word into the paragraph. It no longer
@@ -1356,8 +1356,9 @@ function createJot(hostEl, onChange) {
       ctx.save();
       ctx.translate(b.x, b.y);
       ctx.scale(sx, sy);
-      ctx.strokeStyle = (mode !== "jot") ? "rgba(37,99,235,0.55)" : "rgba(255,255,255,0.22)";
-      ctx.setLineDash(mode !== "jot" ? [] : [4, 3]);
+      var isSelected = mode === "jot" && b.id === activeBoxId;
+      ctx.strokeStyle = isSelected ? "rgba(37,99,235,0.95)" : (mode !== "jot") ? "rgba(37,99,235,0.55)" : "rgba(255,255,255,0.22)";
+      ctx.setLineDash(mode !== "jot" || isSelected ? [] : [4, 3]);
       ctx.lineWidth = 1 / Math.max(Math.min(sx, sy), 0.01);
       ctx.strokeRect(0, 0, b.wrapWidth, b.contentHeight);
       ctx.setLineDash([]);
@@ -1593,7 +1594,8 @@ function createJot(hostEl, onChange) {
     if (mode === "jot") {
       // Tapping inside an existing box continues writing into it (baking in
       // any manual resize it picked up while Jot mode was off). Tapping empty
-      // canvas does nothing — boxes are only created with the + button.
+      // canvas keeps writing into the selected box; boxes are only created
+      // with the + button.
       var jotHandleBox = hitTestBoxHandle(p);
       if (jotHandleBox) {
         // Corner handle in Jot mode: resizing changes the box's wrap width
@@ -1611,10 +1613,14 @@ function createJot(hostEl, onChange) {
         // may have been stretched (outside Jot mode) since it was last
         // written into, even without activeBoxId ever changing.
         if (target.stretched) bakeBox(target);
-      } else {
+      } else if (!activeBox()) {
+        // No box selected: nothing to write into.
         finalizeWord();
         return;
       }
+      // else: the selected box stays the write target even when the stroke
+      // lands outside its outline (a 1-line box is easy to write past) — the
+      // word is normalized into the box once it's finalized.
       // Starting a new stroke always cancels any pending "finalize the word
       // on pause" timer — otherwise a slightly-longer-than-usual pause
       // before the next letter (very common right at the start of a word,
@@ -1774,6 +1780,9 @@ function createJot(hostEl, onChange) {
     if (m) {
       finalizeWord();
       mode = (mode === m) ? null : m;
+      // The selected box lasts exactly as long as Jot mode: leaving it (to
+      // Draw/Erase/none) deselects, so re-entering means picking a box again.
+      if (mode !== "jot") activeBoxId = null;
       placingBox = false;
       syncToolbar();
       redraw();
