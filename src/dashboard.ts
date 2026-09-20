@@ -904,14 +904,39 @@ var PerfectFreehand=(()=>{var Q=Object.defineProperty;var zn=Object.getOwnProper
 // recognized) / Draw (freehand pencil ink) / Erase, undo, zoom, save/load ──
 var JOT_INK = "#e9ecef";
 var JOT_STROKE_OPTS = { size: 5, thinning: 0.6, smoothing: 0.5, streamline: 0.5 };
-// Word grouping is really driven by proximity (checked whenever the next
-// stroke actually lands, however long that takes) — this timer is just a
-// backstop to settle an abandoned word into the paragraph. It no longer
-// needs to be long to avoid splitting words (pointerdown now cancels it,
-// so it can never fire mid-stroke) — keep it short so a finished word
-// doesn't sit around unsettled.
-var JOT_PAUSE_MS = 700;
-var JOT_PROXIMITY = 2.5;      // word-boundary proximity factor (x current word bbox size)
+// End-of-word detection: a new stroke starts a new word when
+//   A*t + B*t*g + C*g + D > 0
+// with t = pause since the previous stroke lifted (SECONDS) and g = gap in mm
+// (on screen, so zoom-independent) between the new stroke and the word so
+// far. B*t*g makes a gap count for more the longer the pause; C*g is the gap
+// alone; D sets how much has to build up before it trips. The same formula at
+// g = 0 gives the timer that settles a word once nothing more is written
+// (the gap is unknown until the next stroke lands).
+var JOT_WORD_A = 500;
+var JOT_WORD_B = 2;
+var JOT_WORD_C = 2;
+var JOT_WORD_D = -800;
+var JOT_PX_PER_MM = 96 / 25.4;  // CSS px per mm (nominal)
+// The first letter of a word gets extra benefit of the doubt: it's the letter
+// most often followed by a long hesitation and a wide gap (capitals, a lone
+// "I"/"a", or a pause to think of the next letter), which would otherwise
+// split "Hello" into "H" + "ello". While a word is still just its first
+// stroke, t and g are scaled by this (<1 = more lenient).
+var JOT_FIRST_LETTER_EASE = 0.5;
+function jtWordEnds(tSec, gMm) {
+  return JOT_WORD_A * tSec + JOT_WORD_B * tSec * gMm + JOT_WORD_C * gMm + JOT_WORD_D > 0;
+}
+// Pause (ms) after which a word settles with no further stroke: solves the
+// formula at g = 0 for t.
+function jtWordTimeoutMs() {
+  return JOT_WORD_A > 0 ? Math.max(50, -JOT_WORD_D / JOT_WORD_A * 1000) : 700;
+}
+// Shortest distance between two bboxes (0 if they overlap), logical px.
+function jtBBoxGap(a, b) {
+  var dx = Math.max(0, a.minX - b.maxX, b.minX - a.maxX);
+  var dy = Math.max(0, a.minY - b.maxY, b.minY - a.maxY);
+  return Math.sqrt(dx * dx + dy * dy);
+}
 // Once a run of writing settles (pause/mode-change), it's split into
 // individual words by the actual gaps between strokes along the run's own
 // baseline — a fraction of the run's own (leveled) height, since that scales
@@ -943,7 +968,7 @@ var JOT_DOT_WIDTH = 8;     // layout width reserved for a period
 // the two legs roughly perpendicular, so ordinary letters (which curve, or
 // don't hit these exact two direction pairs) are never mistaken for a
 // command.
-var JOT_GESTURE_MIN_LEN = 22;         // logical px — minimum net travel per leg
+var JOT_GESTURE_MIN_LEN = 22;         // screen px — minimum net travel per leg (zoom-independent)
 var JOT_GESTURE_STRAIGHTNESS = 0.7;   // net displacement / actual path length, per leg
 var JOT_GESTURE_AXIS_DOMINANCE = 1.6; // one axis must outrun the other by this ratio, per leg
 // Text boxes: created by tapping empty canvas in Jot mode. Each owns its own
@@ -984,11 +1009,11 @@ function jtBBoxUnion(a, b) {
 // Straight-line direction of one leg of a candidate gesture stroke — the
 // dominant cardinal axis + sign of its net displacement — or null if it's
 // too short/curved/diagonal to count as a deliberate straight leg.
-function jtLegDir(pts) {
+function jtLegDir(pts, scale) {
   var p0 = pts[0], pN = pts[pts.length - 1];
   var dx = pN[0] - p0[0], dy = pN[1] - p0[1];
   var net = Math.hypot(dx, dy);
-  if (net < JOT_GESTURE_MIN_LEN) return null;
+  if (net * (scale || 1) < JOT_GESTURE_MIN_LEN) return null;
   var pathLen = 0;
   for (var i = 1; i < pts.length; i++) pathLen += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
   if (!pathLen || net / pathLen < JOT_GESTURE_STRAIGHTNESS) return null;
@@ -1017,12 +1042,12 @@ function jtFindCorner(pts) {
 // Classifies a single completed Jot-mode stroke as the "backspace" or
 // "return" L-shaped command (see the constants above), or null if it's just
 // ordinary handwriting.
-function jtClassifyGesture(pts) {
-  if (pts.length < 5) return null;
+function jtClassifyGesture(pts, scale) {
+  if (pts.length < 3) return null;
   var corner = jtFindCorner(pts);
   if (corner < 1 || corner > pts.length - 2) return null;
-  var leg1 = jtLegDir(pts.slice(0, corner + 1));
-  var leg2 = jtLegDir(pts.slice(corner));
+  var leg1 = jtLegDir(pts.slice(0, corner + 1), scale);
+  var leg2 = jtLegDir(pts.slice(corner), scale);
   if (!leg1 || !leg2 || leg1.axis === leg2.axis) return null;
   // Order-independent: the corner can be drawn leading with either leg (a
   // physical "L" is usually drawn vertical-first — down, then across).
@@ -1031,14 +1056,6 @@ function jtClassifyGesture(pts) {
   if (h.sign < 0 && v.sign > 0) return "backspace"; // L rotated 180 degrees: left + down
   if (h.sign > 0 && v.sign > 0) return "return";    // L rotated 90 degrees clockwise: right + down
   return null;
-}
-function jtBBoxNear(a, b, factor) {
-  // Absolute floor matters most right after the word's first letter, when
-  // its bbox is still tiny — scaling a tiny box by "factor" alone still
-  // gives a tiny pad, which is exactly when the next letter is most likely
-  // to land outside it and get wrongly split into a new word.
-  var pad = Math.max(Math.max(a.maxX - a.minX, a.maxY - a.minY) * factor, 60);
-  return !(b.minX > a.maxX + pad || b.maxX < a.minX - pad || b.minY > a.maxY + pad || b.maxY < a.minY - pad);
 }
 // Best-fit line through a whole written run's combined points -> rotation
 // to level it, and the run's own centroid (mx,my) to rotate around.
@@ -1225,6 +1242,8 @@ function createJot(hostEl, onChange) {
   var current = null;      // in-progress stroke while pointer is down
   var writingWord = null;  // { strokes:[...], bbox } — belongs to activeBoxId
   var wordPauseTimer = null;
+  var lastStrokeUpAt = 0;  // performance.now() when the last Jot stroke lifted
+  var strokeDownAt = 0;    // performance.now() when the in-progress Jot stroke landed
   var erasing = false;
   var activePointers = {}; // pointerId -> {x,y}, tracked whenever a tool is deselected (pan/pinch-zoom)
   var panState = null;     // {x,y} last client point, while 1 finger drags with no tool selected
@@ -1628,6 +1647,7 @@ function createJot(hostEl, onChange) {
       // the user keeps writing it.
       if (wordPauseTimer) { clearTimeout(wordPauseTimer); wordPauseTimer = null; }
     }
+    strokeDownAt = performance.now();
     current = { points: [[p[0], p[1], pressure]] };
     redraw();
   }
@@ -1716,12 +1736,16 @@ function createJot(hostEl, onChange) {
       // A single-stroke L-shaped command (see jtClassifyGesture) is checked
       // before treating the stroke as ink — a real command never gets added
       // to the word as a stray mark.
-      var gestureCmd = jtClassifyGesture(stroke.points);
+      var gestureCmd = jtClassifyGesture(stroke.points, camera.scale);
       if (gestureCmd === "backspace") { jtGestureBackspace(); redraw(); return; }
       if (gestureCmd === "return") { jtGestureReturn(); redraw(); return; }
 
       var bbox = jtBBox(stroke.points);
-      if (writingWord && jtBBoxNear(writingWord.bbox, bbox, JOT_PROXIMITY)) {
+      var pauseSec = lastStrokeUpAt ? Math.max(0, strokeDownAt - lastStrokeUpAt) / 1000 : 0;
+      var gapMm = writingWord ? jtBBoxGap(writingWord.bbox, bbox) * camera.scale / JOT_PX_PER_MM : 0;
+      lastStrokeUpAt = performance.now();
+      if (writingWord && writingWord.strokes.length === 1) { pauseSec *= JOT_FIRST_LETTER_EASE; gapMm *= JOT_FIRST_LETTER_EASE; }
+      if (writingWord && !jtWordEnds(pauseSec, gapMm)) {
         writingWord.strokes.push(stroke.points);
         writingWord.bbox = jtBBoxUnion(writingWord.bbox, bbox);
       } else {
@@ -1729,7 +1753,7 @@ function createJot(hostEl, onChange) {
         writingWord = { strokes: [stroke.points], bbox: bbox };
       }
       if (wordPauseTimer) clearTimeout(wordPauseTimer);
-      wordPauseTimer = setTimeout(finalizeWord, JOT_PAUSE_MS);
+      wordPauseTimer = setTimeout(finalizeWord, jtWordTimeoutMs());
       redraw();
       notifyChange();
     } else {
