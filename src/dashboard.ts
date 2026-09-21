@@ -102,6 +102,29 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .menu-btn{flex:1;background:none;border:none;color:#888;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;font-size:10px}
 .menu-btn .ico{font-size:20px}
 .menu-btn.active{color:#4db8ff}
+/* big green handset button in the bottom bar: dials a typed number, otherwise opens the keypad */
+.dial-fab{flex:1;background:none;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.dial-fab .fab{width:64px;height:64px;margin:-14px 0 -4px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:30px;background:linear-gradient(135deg,#34d399,#10b981);box-shadow:0 4px 18px rgba(16,185,129,.45)}
+.dial-fab:active .fab{transform:scale(.95)}
+.callbar{display:none}
+/* compact settings dialog */
+.modal-card.compact{padding:14px;max-width:380px;max-height:92vh;overflow-y:auto}
+.modal-card.compact .modal-head{margin-bottom:10px;font-size:16px}
+.modal-card.compact .set-field{margin-bottom:8px}
+.modal-card.compact .set-field label{font-size:11px;margin-bottom:3px}
+.modal-card.compact .set-field input[type=text],.modal-card.compact .acc-select{padding:8px 10px;font-size:14px;border-radius:8px}
+.modal-card.compact textarea{min-height:56px;padding:8px 10px}
+.modal-card.compact .switch-row{margin-bottom:8px}
+.modal-card.compact .dev-hint{margin-top:8px;font-size:11px}
+.set-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 8px}
+.set-grid .wide{grid-column:1/-1}
+.acc-row{display:flex;gap:6px;margin-bottom:8px}
+.acc-row .acc-select{flex:1;min-width:0}
+.acc-mini{flex-shrink:0;width:38px;border:none;border-radius:8px;background:#2c2c2c;color:#ececec;font-size:16px;cursor:pointer}
+.acc-mini.del{background:#3f1d1d}
+.set-actions{display:flex;gap:8px;margin-top:4px}
+.set-actions button{flex:1;width:auto;padding:11px;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer}
+.set-cancel{background:#2c2c2c;color:#ececec}
 /* menu + settings */
 .menu-icon{background:none;border:none;color:#ececec;font-size:22px;cursor:pointer;padding:4px;line-height:1;flex-shrink:0}
 .menu-drawer{position:fixed;top:64px;right:12px;background:#1a1a1a;border:1px solid #2c2c2c;border-radius:12px;padding:6px;z-index:40;min-width:170px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
@@ -139,6 +162,28 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 }
 /* selection highlight */
 .hist-row.selected,.msg-row.selected{background:#262626;border-radius:10px}
+/* parameter table */
+.p-head{display:flex;align-items:center;gap:8px;padding:2px 0 8px;position:sticky;top:0;z-index:6;background:#000}
+.p-filter{width:100%;box-sizing:border-box;padding:9px 12px;border:none;border-radius:10px;background:#1a1a1a;color:#fff;font-size:14px;outline:none;margin-bottom:4px}
+.ptable{width:100%;border-collapse:collapse;font-size:13px}
+.ptable td{padding:7px 4px;border-bottom:1px solid #1c1c1c;vertical-align:middle}
+.ptable tr.hidden{display:none}
+.ptable .p-group td{padding:16px 4px 6px;font-size:11px;font-weight:700;letter-spacing:.5px;color:#f0a33c;text-transform:uppercase;border-bottom:1px solid #2c2c2c}
+.ptable .p-name{width:46%;line-height:1.25}
+.ptable tr.changed .p-name{color:#ffd479}
+.p-note{font-size:11px;color:#888;margin-top:2px;line-height:1.3;font-weight:400}
+.p-val{width:32%}
+.p-val input{width:100%;box-sizing:border-box;min-width:64px;padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;color:#fff;font-size:14px;outline:none}
+.p-val input.bad{outline:1px solid #ef4444}
+.p-unit{display:block;font-size:10px;color:#888;margin-top:1px}
+.p-def{color:#888;font-size:12px;text-align:right;white-space:nowrap}
+.p-reset{background:none;border:none;color:#4db8ff;cursor:pointer;font-size:15px;padding:2px 4px}
+.p-foot{padding:14px 0 8px;text-align:center}
+.p-foot button{width:100%;padding:11px;border:none;border-radius:10px;background:#2c2c2c;color:#ececec;font-size:14px;cursor:pointer;margin-bottom:8px}
+.hist-toolbar{display:flex;gap:6px;padding:6px 0 8px;position:sticky;top:0;z-index:5;background:#000}
+.hist-toolbar button{flex:1;padding:10px 2px;border:none;border-radius:10px;background:#2c2c2c;color:#ececec;font-size:13px;cursor:pointer;white-space:nowrap}
+.hist-toolbar button:disabled{opacity:.35;cursor:default}
+.hist-toolbar button.green:not(:disabled){background:linear-gradient(135deg,#34d399,#10b981);color:#04210f;font-weight:600}
 /* action bar */
 .action-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:76px;background:#1a1a1a;border:1px solid #2c2c2c;border-radius:14px;padding:8px;display:flex;gap:8px;z-index:45;box-shadow:0 8px 30px rgba(0,0,0,.6);max-width:94vw}
 .action-bar button{background:#2c2c2c;border:none;color:#ececec;padding:10px 16px;border-radius:10px;font-size:14px;cursor:pointer;white-space:nowrap}
@@ -330,7 +375,28 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
       <div class="entry">
         <input id="history-search" type="text" placeholder="Search calls (name / number)" autocomplete="off" autocapitalize="off">
       </div>
+      <div class="hist-toolbar" id="hist-toolbar">
+        <button class="green" data-action="call" onclick="histAction('call')" disabled>📞 Call</button>
+        <button data-action="email" onclick="histAction('email')" disabled>✉️ Email</button>
+        <button data-action="details" onclick="histAction('details')" disabled>📄 Details</button>
+        <button data-action="contact" onclick="histAction('contact')" disabled>👤 Contact</button>
+      </div>
       <div id="history-list"><div class="empty">Loading…</div></div>
+    </div>
+
+    <!-- PARAMETERS VIEW (opened from the menu) -->
+    <div class="view hidden" id="view-params">
+      <div class="p-head">
+        <button class="cd-back" onclick="closeParams()" aria-label="Back">←</button>
+        <div class="cd-title"><strong>Parameters</strong></div>
+        <span class="jot-status" id="params-status"></span>
+      </div>
+      <input class="p-filter" id="params-filter" type="text" placeholder="Filter (name, group…)" autocomplete="off" autocapitalize="off">
+      <table class="ptable" id="params-table"></table>
+      <div class="p-foot">
+        <button id="params-reset-all" onclick="resetAllParams()">Reset all to defaults</button>
+        <div class="p-note">Saved automatically, on this device only. Jot values apply to Jot boxes opened afterwards.</div>
+      </div>
     </div>
 
     <!-- CALL DETAIL VIEW (drill-down from History — in-screen, not a dialog) -->
@@ -386,7 +452,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
   <nav class="bottom-menu">
     <button class="menu-btn" data-view="history" onclick="switchView('history')"><span class="ico">🕐</span><span>History</span></button>
     <button class="menu-btn" data-view="favourites" onclick="switchView('favourites')"><span class="ico">⭐</span><span>Favourites</span></button>
-    <button class="menu-btn active" data-view="dial" onclick="switchView('dial')"><span class="ico">📞</span><span>Dial</span></button>
+    <button class="dial-fab" id="nav-dial" onclick="navDialAction()" aria-label="Dial"><span class="fab">📞</span></button>
     <button class="menu-btn" data-view="contacts" onclick="switchView('contacts')"><span class="ico">👥</span><span>Contacts</span></button>
     <button class="menu-btn" data-view="messages" onclick="switchView('messages')"><span class="ico">💬</span><span>Messages</span></button>
   </nav>
@@ -395,56 +461,36 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 
 <div class="menu-drawer hidden" id="menu-drawer">
   <button onclick="openSettings()">⚙️ Settings</button>
+  <button onclick="openParams()">📋 Parameters</button>
 </div>
 
 <div class="modal hidden" id="settings-modal">
-  <div class="modal-card">
-    <div class="modal-head"><span>⚙️ Settings</span><button onclick="closeSettings()">✕</button></div>
+  <div class="modal-card compact">
+    <div class="modal-head"><span>⚙️ Settings</span><button onclick="cancelSettings()" aria-label="Cancel">✕</button></div>
 
-    <div class="set-field">
-      <label>SIP Account</label>
+    <div class="acc-row">
       <select id="set-account" class="acc-select" onchange="onAccountSelect()"></select>
+      <button class="acc-mini" onclick="newAccount()" title="New account" aria-label="New account">＋</button>
+      <button class="acc-mini del" onclick="deleteAccount()" title="Delete account" aria-label="Delete account">🗑</button>
     </div>
 
     <div id="account-editor" class="hidden">
-      <div class="set-field">
-        <label>Name</label>
-        <input id="acc-name" type="text" placeholder="Asterisk (WebPhone 201)" autocomplete="off">
-      </div>
-      <div class="set-field">
-        <label>Username</label>
-        <input id="acc-username" type="text" placeholder="201" autocomplete="off" autocapitalize="off" spellcheck="false">
-      </div>
-      <div class="set-field">
-        <label>Password</label>
-        <input id="acc-password" type="text" placeholder="webphone201" autocomplete="off" autocapitalize="off" spellcheck="false">
-      </div>
-      <div class="set-field">
-        <label>Proxy / Server</label>
-        <input id="acc-server" type="text" placeholder="wss://host/ws" autocomplete="off" autocapitalize="off" spellcheck="false">
-      </div>
-      <div class="set-field">
-        <label>Transport</label>
-        <select id="acc-transport" class="acc-select">
-          <option value="wss">WSS (secure WebSocket)</option>
-          <option value="ws">WS (WebSocket)</option>
-          <option value="udp">UDP</option>
-          <option value="tcp">TCP</option>
-          <option value="tls">TLS</option>
-        </select>
-      </div>
-      <div class="set-field">
-        <label>Domain (SIP URI host)</label>
-        <input id="acc-domain" type="text" placeholder="64.176.181.195" autocomplete="off" autocapitalize="off" spellcheck="false">
-      </div>
-      <div class="set-field">
-        <label>Caller ID</label>
-        <input id="acc-callerid" type="text" placeholder="+44 7898 117226" autocomplete="off">
-      </div>
-      <div class="acc-actions">
-        <button class="acc-save" onclick="saveAccount()">💾 Save account</button>
-        <button class="acc-delete" onclick="deleteAccount()">🗑 Delete</button>
-        <button class="acc-new" onclick="newAccount()">＋ New</button>
+      <div class="set-grid">
+        <div class="set-field"><label>Name</label><input id="acc-name" type="text" placeholder="Asterisk (WebPhone 201)" autocomplete="off"></div>
+        <div class="set-field"><label>Caller ID</label><input id="acc-callerid" type="text" placeholder="+44 7898 117226" autocomplete="off"></div>
+        <div class="set-field"><label>Username</label><input id="acc-username" type="text" placeholder="201" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+        <div class="set-field"><label>Password</label><input id="acc-password" type="text" placeholder="webphone201" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+        <div class="set-field wide"><label>Proxy / Server</label><input id="acc-server" type="text" placeholder="wss://host/ws" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+        <div class="set-field"><label>Transport</label>
+          <select id="acc-transport" class="acc-select">
+            <option value="wss">WSS (secure WebSocket)</option>
+            <option value="ws">WS (WebSocket)</option>
+            <option value="udp">UDP</option>
+            <option value="tcp">TCP</option>
+            <option value="tls">TLS</option>
+          </select>
+        </div>
+        <div class="set-field"><label>Domain</label><input id="acc-domain" type="text" placeholder="64.176.181.195" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
       </div>
     </div>
 
@@ -458,8 +504,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
       <textarea id="set-quicktext" placeholder="#1 **Order received**&#10;#2 **Call back later**"></textarea>
     </div>
 
-    <button class="save-btn" onclick="applyAndReconnect()">Save &amp; Reconnect</button>
-    <div class="dev-hint">Dev Mode skips the server connection. Browser softphones only support WSS/WS — Twilio SIP Domains don't accept WebSocket, so a direct-Twilio account won't register here (use Linphone for that).</div>
+    <div class="set-actions">
+      <button class="set-cancel" onclick="cancelSettings()">Cancel</button>
+      <button class="save-btn" onclick="applyAndReconnect()">Save</button>
+    </div>
+    <div class="dev-hint">Save reconnects with these settings. Dev Mode skips the server connection.</div>
   </div>
 </div>
 
@@ -487,6 +536,234 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 <script>
 // ── config ─────────────────────────────────────────────────────
 var API = "https://voip-bridge.wandering-mode-c597.workers.dev";
+
+// ── Parameter table ────────────────────────────────────────────
+// Every tunable that used to be a hardcoded literal is declared here once
+// (label, unit, default, valid range). Overrides are per-device
+// (localStorage "vb_params") and applied at startup: code reads PV.<id>, or
+// the JOT_*/... globals that a parameter's setter assigns.
+var PARAMS = [], PV = {};
+function defParam(group, id, label, def, o, set) {
+  o = o || {};
+  PARAMS.push({ group: group, id: id, label: label, def: def, type: typeof def === "string" ? "text" : "number",
+    unit: o.unit || "", min: o.min, max: o.max, step: o.step || 1, note: o.note || "", set: set || null });
+  PV[id] = def;
+}
+var G_CALL = "Calls & audio", G_LIST = "Lists & search", G_TIME = "Timing (typing & taps)";
+var J_INK = "Jot: ink", J_WORD = "Jot: word detection", J_LAY = "Jot: layout & splitting", J_DOT = "Jot: periods", J_GEST = "Jot: gestures", J_BOX = "Jot: boxes & zoom";
+
+defParam(G_CALL, "regTimeoutMs", "SIP registration timeout", 8000, { unit: "ms", min: 1000, max: 120000, step: 500, note: "Give up if the server never answers REGISTER" }, function(v) { REG_TIMEOUT_MS = v; });
+defParam(G_CALL, "sipLoadTimeoutMs", "SIP.js load timeout", 15000, { unit: "ms", min: 1000, max: 120000, step: 1000 });
+defParam(G_CALL, "defaultWs", "Default SIP WebSocket", "wss://64.176.181.195.nip.io/ws", { note: "Used for new accounts and a blank Proxy field" }, function(v) { DEFAULT_WS = v; });
+defParam(G_CALL, "defaultDomain", "Default SIP domain", "64.176.181.195", { note: "Used when an account has no domain" });
+defParam(G_CALL, "autoAnswerWindowMs", "Answer-tap window", 30000, { unit: "ms", min: 1000, max: 300000, step: 1000, note: "After tapping the call notification, a call arriving within this time auto-answers" });
+defParam(G_CALL, "autoAnswerDelayMs", "Auto-answer delay", 400, { unit: "ms", min: 0, max: 5000, step: 50, note: "Pause between the call ringing in and answering it" });
+defParam(G_CALL, "ringIntervalMs", "Incoming ring repeat", 3000, { unit: "ms", min: 1000, max: 15000, step: 250 });
+defParam(G_CALL, "ringbackIntervalMs", "Ringback tone repeat", 3000, { unit: "ms", min: 1000, max: 15000, step: 250 });
+defParam(G_CALL, "longPressPlusMs", "Hold 0 for +", 600, { unit: "ms", min: 200, max: 3000, step: 50, note: "Long-press time on the 0 key" });
+
+defParam(G_LIST, "historyLimit", "History rows loaded", 200, { min: 1, max: 1000, step: 10 });
+defParam(G_LIST, "recentCallsLimit", "Recent calls on Dial screen", 8, { min: 1, max: 50 });
+defParam(G_LIST, "callPanelHistoryLimit", "Call history in call panel", 20, { min: 1, max: 200, step: 5 });
+defParam(G_LIST, "suggestionsLimit", "Contact suggestions while dialling", 6, { min: 1, max: 30 });
+defParam(G_LIST, "contactsLimit", "Contacts loaded", 100, { min: 1, max: 1000, step: 10 });
+defParam(G_LIST, "callPanelMessagesLimit", "Messages in call panel", 100, { min: 1, max: 500, step: 10 });
+defParam(G_LIST, "contactMessagesLimit", "Messages per contact", 50, { min: 1, max: 500, step: 10 });
+defParam(G_LIST, "recentMessagesDays", "Recent messages: days back", 7, { unit: "days", min: 1, max: 90 });
+defParam(G_LIST, "recentMessagesLimit", "Recent messages: max", 50, { min: 1, max: 500, step: 10 });
+
+defParam(G_TIME, "suggestDebounceMs", "Dial suggestions delay", 220, { unit: "ms", min: 0, max: 2000, step: 10, note: "Wait after typing before searching" });
+defParam(G_TIME, "historyDebounceMs", "History search delay", 250, { unit: "ms", min: 0, max: 2000, step: 10 });
+defParam(G_TIME, "contactsDebounceMs", "Contacts search delay", 250, { unit: "ms", min: 0, max: 2000, step: 10 });
+defParam(G_TIME, "doubleTapMs", "Double-tap window", 300, { unit: "ms", min: 100, max: 1000, step: 10, note: "Contacts / messages rows" });
+defParam(G_TIME, "notesAutosaveMs", "Notes autosave delay", 900, { unit: "ms", min: 200, max: 10000, step: 100, note: "Wait after the last edit before saving" });
+defParam(G_TIME, "quickTextTimeoutMs", "Quick-text panel timeout", 4000, { unit: "ms", min: 500, max: 30000, step: 500 });
+
+defParam(J_INK, "jotInk", "Ink colour", "#e9ecef", { note: "CSS colour" }, function(v) { JOT_INK = v; });
+defParam(J_INK, "jotStrokeSize", "Stroke width", 5, { unit: "px", min: 0.5, max: 30, step: 0.5 }, function(v) { JOT_STROKE_OPTS.size = v; });
+defParam(J_INK, "jotStrokeThinning", "Stroke thinning", 0.6, { min: -1, max: 1, step: 0.05, note: "How much speed thins the line" }, function(v) { JOT_STROKE_OPTS.thinning = v; });
+defParam(J_INK, "jotStrokeSmoothing", "Stroke smoothing", 0.5, { min: 0, max: 1, step: 0.05 }, function(v) { JOT_STROKE_OPTS.smoothing = v; });
+defParam(J_INK, "jotStrokeStreamline", "Stroke streamline", 0.5, { min: 0, max: 1, step: 0.05 }, function(v) { JOT_STROKE_OPTS.streamline = v; });
+
+defParam(J_WORD, "jotWordA", "Word end: A (pause)", 500, { min: -100000, max: 100000, step: 10, note: "A*t + B*t*g + C*g + D > 0 starts a new word; t = pause in seconds, g = gap in mm" }, function(v) { JOT_WORD_A = v; });
+defParam(J_WORD, "jotWordB", "Word end: B (pause x gap)", 2, { min: -1000, max: 1000, step: 0.5 }, function(v) { JOT_WORD_B = v; });
+defParam(J_WORD, "jotWordC", "Word end: C (gap)", 2, { min: -1000, max: 1000, step: 0.5 }, function(v) { JOT_WORD_C = v; });
+defParam(J_WORD, "jotWordD", "Word end: D (offset)", -800, { min: -100000, max: 100000, step: 10, note: "Negative = leaning towards continuing the word; -D/A is the settle timeout" }, function(v) { JOT_WORD_D = v; });
+defParam(J_WORD, "jotFirstLetterEase", "First-letter leniency", 0.5, { min: 0.05, max: 2, step: 0.05, note: "Below 1 = more forgiving after the first stroke of a word" }, function(v) { JOT_FIRST_LETTER_EASE = v; });
+defParam(J_WORD, "jotPxPerMm", "Screen px per mm", 96 / 25.4, { unit: "px/mm", min: 1, max: 20, step: 0.01, note: "Nominal CSS pixels per millimetre" }, function(v) { JOT_PX_PER_MM = v; });
+
+defParam(J_LAY, "jotSplitGapFactor", "Split gap (fraction of height)", 0.7, { min: 0.05, max: 3, step: 0.05, note: "Gap between strokes that separates words in a run" }, function(v) { JOT_SPLIT_GAP_FACTOR = v; });
+defParam(J_LAY, "jotSplitGapMin", "Split gap minimum", 18, { unit: "px", min: 0, max: 200, step: 1 }, function(v) { JOT_SPLIT_GAP_MIN = v; });
+defParam(J_LAY, "jotMaxTilt", "Max levelling tilt", 30, { unit: "deg", min: 0, max: 90, step: 1, note: "Cap on how far a run is rotated flat" }, function(v) { JOT_MAX_TILT = v * Math.PI / 180; });
+defParam(J_LAY, "jotLineHeight", "Line height", 42, { unit: "px", min: 10, max: 200, step: 1 }, function(v) { JOT_LINE_HEIGHT = v; });
+defParam(J_LAY, "jotWordHeight", "Word height", 26, { unit: "px", min: 5, max: 150, step: 1, note: "Handwriting is scaled to this" }, function(v) { JOT_WORD_HEIGHT = v; });
+defParam(J_LAY, "jotWordGap", "Word gap", 10, { unit: "px", min: 0, max: 100, step: 1 }, function(v) { JOT_WORD_GAP = v; });
+defParam(J_LAY, "jotParaMargin", "Paragraph margin", 14, { unit: "px", min: 0, max: 100, step: 1 }, function(v) { JOT_PARA_MARGIN = v; });
+defParam(J_LAY, "jotParaTop", "Top padding", 32, { unit: "px", min: 0, max: 200, step: 1 }, function(v) { JOT_PARA_TOP = v; });
+defParam(J_LAY, "jotRunScaleMax", "Max handwriting enlargement", 4, { min: 1, max: 20, step: 0.5, note: "Upper limit when scaling small writing up to word height" });
+
+defParam(J_DOT, "jotDotMaxRaw", "Tap size counted as a period", 6, { unit: "px", min: 0, max: 50, step: 1 }, function(v) { JOT_DOT_MAX_RAW = v; });
+defParam(J_DOT, "jotDotScale", "Period render scale", 0.5, { min: 0.1, max: 3, step: 0.05 }, function(v) { JOT_DOT_SCALE = v; });
+defParam(J_DOT, "jotDotWidth", "Period layout width", 8, { unit: "px", min: 0, max: 60, step: 1 }, function(v) { JOT_DOT_WIDTH = v; });
+
+defParam(J_GEST, "jotGestureMinLen", "Gesture leg minimum length", 22, { unit: "px", min: 5, max: 200, step: 1, note: "Backspace / Return strokes; screen px, zoom-independent" }, function(v) { JOT_GESTURE_MIN_LEN = v; });
+defParam(J_GEST, "jotGestureStraightness", "Gesture straightness", 0.7, { min: 0.3, max: 1, step: 0.05, note: "Net travel / path length, per leg" }, function(v) { JOT_GESTURE_STRAIGHTNESS = v; });
+defParam(J_GEST, "jotGestureAxisDominance", "Gesture axis dominance", 1.6, { min: 1, max: 6, step: 0.1, note: "One axis must beat the other by this ratio" }, function(v) { JOT_GESTURE_AXIS_DOMINANCE = v; });
+
+defParam(J_BOX, "jotBoxMinWidth", "Box minimum width", 80, { unit: "px", min: 20, max: 600, step: 5 }, function(v) { JOT_BOX_MIN_WIDTH = v; });
+defParam(J_BOX, "jotNewBoxRows", "New box height", 1, { unit: "lines", min: 1, max: 20, step: 1, note: "For boxes made with the + button" }, function(v) { JOT_NEW_BOX_ROWS = v; });
+defParam(J_BOX, "jotBoxHandleSize", "Resize handle size", 18, { unit: "px", min: 8, max: 60, step: 1 }, function(v) { JOT_BOX_HANDLE_SIZE = v; });
+defParam(J_BOX, "jotNewBoxWMin", "Default new-box width: min", 140, { unit: "px", min: 40, max: 1000, step: 5 });
+defParam(J_BOX, "jotNewBoxWMax", "Default new-box width: max", 340, { unit: "px", min: 40, max: 2000, step: 5 });
+defParam(J_BOX, "jotNewBoxWFrac", "Default new-box width: screen share", 0.55, { min: 0.1, max: 1, step: 0.05 });
+defParam(J_BOX, "jotZoomMin", "Zoom minimum", 0.25, { min: 0.05, max: 1, step: 0.05 });
+defParam(J_BOX, "jotZoomMax", "Zoom maximum", 4, { min: 1, max: 20, step: 0.5 });
+defParam(J_BOX, "jotZoomStep", "Zoom button step", 1.25, { min: 1.05, max: 3, step: 0.05 });
+
+function paramOverrides() {
+  try { var o = JSON.parse(localStorage.getItem("vb_params") || "{}"); return (o && typeof o === "object") ? o : {}; } catch (e) { return {}; }
+}
+function saveParamOverrides(o) { try { localStorage.setItem("vb_params", JSON.stringify(o)); } catch (e) {} }
+function hasOverride(o, id) { return Object.prototype.hasOwnProperty.call(o, id); }
+function paramFind(id) { for (var i = 0; i < PARAMS.length; i++) if (PARAMS[i].id === id) return PARAMS[i]; return null; }
+function paramFmt(v) { return typeof v === "number" ? String(parseFloat(v.toPrecision(6))) : String(v); }
+function paramValid(p, v) {
+  if (p.type === "text") return typeof v === "string" && v.trim() !== "";
+  if (typeof v !== "number" || !isFinite(v)) return false;
+  if (p.min !== undefined && v < p.min) return false;
+  if (p.max !== undefined && v > p.max) return false;
+  return true;
+}
+function paramApply(p, v) {
+  PV[p.id] = v;
+  if (p.set) p.set(v);
+  if (p.group.indexOf("Jot") === 0) {
+    // derived from the layout values above
+    JOT_BOX_MIN_HEIGHT = JOT_PARA_TOP + JOT_LINE_HEIGHT;
+    JOT_NEW_BOX_HEIGHT = JOT_PARA_TOP + JOT_NEW_BOX_ROWS * JOT_LINE_HEIGHT;
+  }
+}
+function applyAllParams() {
+  var o = paramOverrides();
+  for (var i = 0; i < PARAMS.length; i++) {
+    var p = PARAMS[i];
+    if (hasOverride(o, p.id) && paramValid(p, o[p.id])) paramApply(p, o[p.id]);
+  }
+}
+
+var paramsReturnView = "dial", paramTimers = {}, paramStatusTimer = null, resetAllArmed = null;
+function paramStatus(msg, bad) {
+  var el = document.getElementById("params-status");
+  el.textContent = msg;
+  el.style.color = bad ? "#f87171" : "";
+  clearTimeout(paramStatusTimer);
+  if (!bad) paramStatusTimer = setTimeout(function() { el.textContent = ""; }, 2500);
+}
+function openParams() {
+  document.getElementById("menu-drawer").classList.add("hidden");
+  var views = document.querySelectorAll(".view");
+  for (var i = 0; i < views.length; i++) {
+    if (!views[i].classList.contains("hidden") && views[i].id !== "view-params") paramsReturnView = views[i].id.replace("view-", "");
+  }
+  document.getElementById("params-filter").value = "";
+  renderParams();
+  switchView("params");
+}
+function closeParams() { switchView(paramsReturnView || "dial"); }
+function renderParams() {
+  var o = paramOverrides(), html = "", grp = "";
+  for (var i = 0; i < PARAMS.length; i++) {
+    var p = PARAMS[i];
+    if (p.group !== grp) { grp = p.group; html += '<tr class="p-group"><td colspan="3">' + esc(grp) + '</td></tr>'; }
+    var changed = hasOverride(o, p.id) && paramValid(p, o[p.id]);
+    var attrs = p.type === "text" ? ' type="text" autocapitalize="off" spellcheck="false"'
+      : ' type="number" step="' + p.step + '"' + (p.min !== undefined ? ' min="' + p.min + '"' : "") + (p.max !== undefined ? ' max="' + p.max + '"' : "");
+    html += '<tr class="p-row' + (changed ? " changed" : "") + '" data-id="' + p.id + '" data-search="' + esc((p.group + " " + p.label + " " + p.id).toLowerCase()) + '">'
+      + '<td class="p-name">' + esc(p.label) + (p.note ? '<div class="p-note">' + esc(p.note) + '</div>' : "") + '</td>'
+      + '<td class="p-val"><input data-id="' + p.id + '"' + attrs + ' value="' + esc(paramFmt(PV[p.id])) + '" autocomplete="off">' + (p.unit ? '<span class="p-unit">' + esc(p.unit) + '</span>' : "") + '</td>'
+      + '<td class="p-def">' + esc(paramFmt(p.def)) + '<button class="p-reset" data-id="' + p.id + '" title="Reset to default"' + (changed ? "" : ' style="visibility:hidden"') + '>↺</button></td></tr>';
+  }
+  document.getElementById("params-table").innerHTML = html;
+  filterParams();
+}
+function filterParams() {
+  var q = document.getElementById("params-filter").value.trim().toLowerCase();
+  var rows = document.querySelectorAll("#params-table tr");
+  var groupRow = null, groupHas = false;
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (r.classList.contains("p-group")) {
+      if (groupRow) groupRow.classList.toggle("hidden", !groupHas);
+      groupRow = r; groupHas = false;
+      continue;
+    }
+    var show = !q || r.getAttribute("data-search").indexOf(q) !== -1;
+    r.classList.toggle("hidden", !show);
+    if (show) groupHas = true;
+  }
+  if (groupRow) groupRow.classList.toggle("hidden", !groupHas);
+}
+function commitParam(id, inp) {
+  var p = paramFind(id);
+  if (!p) return;
+  clearTimeout(paramTimers[id]);
+  var raw = inp.value.trim();
+  var v = p.type === "text" ? raw : (raw === "" ? NaN : Number(raw));
+  if (!paramValid(p, v)) {
+    inp.classList.add("bad");
+    paramStatus("⚠ " + p.label + ": " + (p.type === "number" ? "enter a number" + (p.min !== undefined ? " from " + p.min : "") + (p.max !== undefined ? " to " + p.max : "") : "can't be empty"), true);
+    return;
+  }
+  inp.classList.remove("bad");
+  var o = paramOverrides();
+  var same = p.type === "text" ? v === p.def : Math.abs(v - p.def) < 0.0001;
+  if (same) { delete o[id]; paramApply(p, p.def); } else { o[id] = v; paramApply(p, v); }
+  saveParamOverrides(o);
+  var row = inp.closest(".p-row");
+  row.classList.toggle("changed", !same);
+  row.querySelector(".p-reset").style.visibility = same ? "hidden" : "visible";
+  paramStatus("Saved ✓ " + p.label, false);
+}
+function resetParam(id) {
+  var p = paramFind(id);
+  if (!p) return;
+  var o = paramOverrides();
+  delete o[id];
+  saveParamOverrides(o);
+  paramApply(p, p.def);
+  renderParams();
+  paramStatus("Reset ✓ " + p.label, false);
+}
+function resetAllParams() {
+  var btn = document.getElementById("params-reset-all");
+  if (!resetAllArmed) {
+    btn.textContent = "Tap again to confirm";
+    resetAllArmed = setTimeout(function() { resetAllArmed = null; btn.textContent = "Reset all to defaults"; }, 3000);
+    return;
+  }
+  clearTimeout(resetAllArmed); resetAllArmed = null;
+  btn.textContent = "Reset all to defaults";
+  saveParamOverrides({});
+  for (var i = 0; i < PARAMS.length; i++) paramApply(PARAMS[i], PARAMS[i].def);
+  renderParams();
+  paramStatus("All parameters reset ✓", false);
+}
+document.getElementById("params-filter").addEventListener("input", filterParams);
+document.getElementById("params-table").addEventListener("input", function(e) {
+  var inp = e.target.closest("input");
+  if (!inp) return;
+  var id = inp.getAttribute("data-id");
+  clearTimeout(paramTimers[id]);
+  paramTimers[id] = setTimeout(function() { commitParam(id, inp); }, 700);
+});
+document.getElementById("params-table").addEventListener("change", function(e) {
+  var inp = e.target.closest("input");
+  if (inp) commitParam(inp.getAttribute("data-id"), inp);
+});
+document.getElementById("params-table").addEventListener("click", function(e) {
+  var b = e.target.closest(".p-reset");
+  if (b) resetParam(b.getAttribute("data-id"));
+});
 var DEFAULT_WS = "wss://64.176.181.195.nip.io/ws";
 var settings = loadSettings();
 var accounts = loadAccounts();
@@ -589,7 +866,7 @@ function loadSipJs() {
       document.head.appendChild(s2);
     };
     document.head.appendChild(s);
-    setTimeout(function() { if (typeof SIP === "undefined") reject(new Error("sip.js load timeout")); }, 15000);
+    setTimeout(function() { if (typeof SIP === "undefined") reject(new Error("sip.js load timeout")); }, PV.sipLoadTimeoutMs);
   });
 }
 
@@ -694,7 +971,7 @@ function ringCycle() {
     osc1.stop(t0 + 1); osc2.stop(t0 + 1);
   }
   try { if (navigator.vibrate) navigator.vibrate([400, 200, 400]); } catch (e) {}
-  ringTimer = setTimeout(ringCycle, 3000);
+  ringTimer = setTimeout(ringCycle, PV.ringIntervalMs);
 }
 function stopRingtone() {
   if (ringTimer) { clearTimeout(ringTimer); ringTimer = null; }
@@ -724,7 +1001,7 @@ function rbCycle() {
       o.connect(gain); o.start(t0 + off); o.stop(t0 + off + 0.4);
     });
   });
-  rbTimer = setTimeout(rbCycle, 3000);
+  rbTimer = setTimeout(rbCycle, PV.ringbackIntervalMs);
 }
 function stopRingback() {
   if (rbTimer) { clearTimeout(rbTimer); rbTimer = null; }
@@ -732,6 +1009,20 @@ function stopRingback() {
 }
 
 // ── view switching ─────────────────────────────────────────────
+// The big green button. From another tab it lands on Dial with the keypad open. On
+// Dial: a typed number gets dialled; otherwise it opens/closes the keypad
+// (which starts tucked away). During a call it toggles the in-call keypad.
+var dialKeypadOpen = false;
+function onDialView() { return !document.getElementById("view-dial").classList.contains("hidden"); }
+function navDialAction() {
+  if (!onDialView()) { switchView("dial"); dialKeypadOpen = true; updateDialBottomVisibility(); return; }
+  if (currentCall) { toggleInCallKeypad(); return; }
+  if (document.getElementById("dial-input").value.trim()) { dialAction(); return; }
+  dialKeypadOpen = !dialKeypadOpen;
+  updateDialBottomVisibility();
+}
+document.addEventListener("DOMContentLoaded", updateDialBottomVisibility);
+
 function switchView(name) {
   var views = document.querySelectorAll(".view");
   for (var i = 0; i < views.length; i++) views[i].classList.add("hidden");
@@ -763,7 +1054,7 @@ function backspace() {
 
 function keyDown(d) {
   if (inCall()) { padTone(d); return; }
-  if (d === "0") { longPressFired = false; pressTimer = setTimeout(function() { longPressFired = true; insertChar("+"); }, 600); return; }
+  if (d === "0") { longPressFired = false; pressTimer = setTimeout(function() { longPressFired = true; insertChar("+"); }, PV.longPressPlusMs); return; }
   insertChar(d);
 }
 function keyUp(d) {
@@ -842,7 +1133,7 @@ function openQuickText() {
   panel.classList.remove("hidden");
   // auto-close after a few seconds if the user doesn't pick a code
   clearTimeout(qtTimer);
-  qtTimer = setTimeout(function() { panel.classList.add("hidden"); qtBuffer = ""; }, 4000);
+  qtTimer = setTimeout(function() { panel.classList.add("hidden"); qtBuffer = ""; }, PV.quickTextTimeoutMs);
 }
 
 function tryQuickText() {
@@ -988,15 +1279,17 @@ var JOT_DOT_MAX_RAW = 6;   // raw local px — a lone stroke this small or small
 var JOT_DOT_SCALE = 0.5;   // fixed small render scale for a period
 var JOT_DOT_WIDTH = 8;     // layout width reserved for a period
 // Jot-mode commands: a single continuous stroke shaped like a capital "L"
-// (drawn either leg first — down-then-across or across-then-down both
-// count), always rotated clockwise, never counterclockwise (see
-// jtClassifyGesture). Rotated 180 degrees — left + down — it's backspace
-// (undoes the in-progress word, or the last committed action if nothing's
-// in progress). Rotated 90 degrees clockwise — right + down — it's Return,
-// inserting a line break. Each leg must be reasonably long and straight, and
-// the two legs roughly perpendicular, so ordinary letters (which curve, or
-// don't hit these exact two direction pairs) are never mistaken for a
-// command.
+// turned onto its side, drawn in either order (either leg first). The shape is
+// what counts, named by where the two legs point away from the corner:
+//   ┌  legs go right + down  (an L rotated 90 degrees clockwise)  = Return,
+//      inserting a line break: the next word starts on the next line, left-aligned.
+//   ┐  legs go left + down   (an L rotated 180 degrees)           = Backspace
+//      (undoes the in-progress word, or the last committed action if nothing's
+//      in progress).
+// An ordinary "L" (legs up + right) is deliberately neither. Each leg must be
+// reasonably long and straight, and the two legs roughly perpendicular, so
+// ordinary letters (which curve, or aren't these two shapes) are never mistaken
+// for a command. See jtClassifyGesture.
 var JOT_GESTURE_MIN_LEN = 22;         // screen px — minimum net travel per leg (zoom-independent)
 var JOT_GESTURE_STRAIGHTNESS = 0.7;   // net displacement / actual path length, per leg
 var JOT_GESTURE_AXIS_DOMINANCE = 1.6; // one axis must outrun the other by this ratio, per leg
@@ -1078,12 +1371,17 @@ function jtClassifyGesture(pts, scale) {
   var leg1 = jtLegDir(pts.slice(0, corner + 1), scale);
   var leg2 = jtLegDir(pts.slice(corner), scale);
   if (!leg1 || !leg2 || leg1.axis === leg2.axis) return null;
-  // Order-independent: the corner can be drawn leading with either leg (a
-  // physical "L" is usually drawn vertical-first — down, then across).
-  var h = (leg1.axis === "x") ? leg1 : leg2;
-  var v = (leg1.axis === "y") ? leg1 : leg2;
-  if (h.sign < 0 && v.sign > 0) return "backspace"; // L rotated 180 degrees: left + down
-  if (h.sign > 0 && v.sign > 0) return "return";    // L rotated 90 degrees clockwise: right + down
+  // The commands are shapes, named by where each leg points AWAY FROM THE
+  // CORNER — not by which way the pen travelled. leg1 runs start -> corner, so
+  // measure it the other way round (corner -> start); leg2 already runs away.
+  // That makes the shape independent of which leg is drawn first, and keeps a
+  // plain "L" (legs up + right from its corner) and the return-key arrow (up +
+  // left) from ever matching a command.
+  var d1 = { axis: leg1.axis, sign: -leg1.sign };
+  var h = (d1.axis === "x") ? d1 : leg2;
+  var v = (d1.axis === "y") ? d1 : leg2;
+  if (h.sign < 0 && v.sign > 0) return "backspace"; // ┐  an L rotated 180 degrees: legs go left + down
+  if (h.sign > 0 && v.sign > 0) return "return";    // ┌  an L rotated 90 degrees clockwise: legs go right + down
   return null;
 }
 // Best-fit line through a whole written run's combined points -> rotation
@@ -1155,7 +1453,7 @@ function jtSplitWords(strokes, prevRotate, prevScale) {
       clusters.push(cur);
     }
   }
-  var runScale = Math.min(JOT_WORD_HEIGHT / overallH, 4);
+  var runScale = Math.min(JOT_WORD_HEIGHT / overallH, PV.jotRunScaleMax);
   var out = [];
   var rot = (typeof prevRotate === "number") ? prevRotate : null;
   var lastScale = (typeof prevScale === "number") ? prevScale : null;
@@ -1257,7 +1555,7 @@ function createJot(hostEl, onChange) {
   // reads sensibly on both the narrow in-call panel and the wider call-detail
   // view.
   function jotDefaultBoxWidth() {
-    return Math.max(140, Math.min(340, viewportW * 0.55));
+    return Math.max(PV.jotNewBoxWMin, Math.min(PV.jotNewBoxWMax, viewportW * PV.jotNewBoxWFrac));
   }
 
   var mode = "jot";       // "jot" | "draw" | "erase" | null (deselected -> pan/zoom + box move/resize)
@@ -1527,7 +1825,7 @@ function createJot(hostEl, onChange) {
     if (writingWord) { writingWord = null; redraw(); notifyChange(); return; }
     doUndo();
   }
-  // Return (right, corner, down): commits whatever preceded the gesture
+  // Return (┌: legs go right + down): commits whatever preceded the gesture
   // normally, then inserts a hidden line-break marker (see jtBreakWord)
   // immediately — not a flag deferred onto the next word — so it survives a
   // save even if nothing else is written afterward.
@@ -1688,7 +1986,7 @@ function createJot(hostEl, onChange) {
       var mid = pointerMidpoint(downIds);
       var d = pointerDistance(downIds);
       if (d) {
-        var newScale = Math.max(0.25, Math.min(4, camera.scale * (d / pinchState.dist)));
+        var newScale = Math.max(PV.jotZoomMin, Math.min(PV.jotZoomMax, camera.scale * (d / pinchState.dist)));
         pinchState.dist = d;
         var r = canvas.getBoundingClientRect();
         var sx = (mid.x - r.left) / r.width * viewportW;
@@ -1802,7 +2100,7 @@ function createJot(hostEl, onChange) {
   // Zooms while keeping the document point under (pivotClientX, pivotClientY)
   // — the viewport center by default — fixed on screen.
   function setZoom(scale, pivotClientX, pivotClientY) {
-    var newScale = Math.max(0.25, Math.min(4, scale));
+    var newScale = Math.max(PV.jotZoomMin, Math.min(PV.jotZoomMax, scale));
     var r = canvas.getBoundingClientRect();
     var px = (pivotClientX != null) ? pivotClientX : (r.left + r.width / 2);
     var py = (pivotClientY != null) ? pivotClientY : (r.top + r.height / 2);
@@ -1853,8 +2151,8 @@ function createJot(hostEl, onChange) {
       return;
     }
     if (act === "undo") doUndo();
-    else if (act === "zoomin") setZoom(camera.scale * 1.25);
-    else if (act === "zoomout") setZoom(camera.scale / 1.25);
+    else if (act === "zoomin") setZoom(camera.scale * PV.jotZoomStep);
+    else if (act === "zoomout") setZoom(camera.scale / PV.jotZoomStep);
     else if (act === "zoomreset") setZoom(1);
     else if (act === "clear") { finalizeWord(); actions = []; drawStrokes = {}; boxes = []; activeBoxId = null; camera.x = 0; camera.y = 0; setZoom(1); redraw(); notifyChange(); }
   });
@@ -2018,7 +2316,7 @@ function scheduleCallSave() {
   if (!currentCall) return;
   setCallSaveStatus("Saving\u2026");
   clearTimeout(callSaveTimer);
-  callSaveTimer = setTimeout(saveCallRecord, 900);
+  callSaveTimer = setTimeout(saveCallRecord, PV.notesAutosaveMs);
 }
 function flushCallSave() {
   if (!callSaveTimer) return;
@@ -2054,7 +2352,7 @@ function loadCallHistoryTab() {
   var num = currentCall && currentCall.remote;
   if (!num) { el.innerHTML = '<div class="empty">No number</div>'; return; }
   el.innerHTML = '<div class="empty">Loading…</div>';
-  fetch(API + "/call-history?limit=20&q=" + encodeURIComponent(num)).then(function(r){return r.json();}).then(function(d){
+  fetch(API + "/call-history?limit=" + PV.callPanelHistoryLimit + "&q=" + encodeURIComponent(num)).then(function(r){return r.json();}).then(function(d){
     var calls = (d.calls || []).filter(function(c) { return !currentCall || c.call_id !== currentCall.id; });
     if (!calls.length) { el.innerHTML = '<div class="empty">No previous calls with this number</div>'; return; }
     el.innerHTML = calls.map(function(c) {
@@ -2098,7 +2396,7 @@ function loadEmailsTab() {
   var el = document.getElementById("cp-pane-emails");
   if (!currentCallPartner) { el.innerHTML = '<div class="empty">No matching contact yet</div>'; return; }
   el.innerHTML = '<div class="empty">Loading…</div>';
-  fetch(API + "/messages?contact=" + encodeURIComponent(currentCallPartner.id) + "&limit=100").then(function(r){return r.json();}).then(function(d){
+  fetch(API + "/messages?contact=" + encodeURIComponent(currentCallPartner.id) + "&limit=" + PV.callPanelMessagesLimit).then(function(r){return r.json();}).then(function(d){
     var msgs = (d.messages || []).filter(function(m) { return m.source === "gmail"; });
     if (!msgs.length) { el.innerHTML = '<div class="empty">No emails found</div>'; return; }
     el.innerHTML = msgs.map(function(m) { return renderMessageRow(m); }).join("");
@@ -2136,12 +2434,12 @@ function onDialInput() {
   document.getElementById("dial-suggestions").classList.toggle("hidden", !q);
   document.getElementById("dial-recent-list").classList.toggle("hidden", !!q || !!currentCall);
   if (suggestTimer) clearTimeout(suggestTimer);
-  suggestTimer = setTimeout(function() { searchSuggestions(q); }, 220);
+  suggestTimer = setTimeout(function() { searchSuggestions(q); }, PV.suggestDebounceMs);
 }
 function searchSuggestions(q) {
   var el = document.getElementById("dial-suggestions");
   if (!q) { el.innerHTML = ""; return; }
-  fetch(API + "/contacts?q=" + encodeURIComponent(q) + "&limit=6").then(function(r){return r.json();}).then(function(d){
+  fetch(API + "/contacts?q=" + encodeURIComponent(q) + "&limit=" + PV.suggestionsLimit).then(function(r){return r.json();}).then(function(d){
     var list = d.contacts || [];
     if (!list.length) { el.innerHTML = ""; return; }
     el.innerHTML = list.map(function(c) {
@@ -2161,7 +2459,7 @@ function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replac
 var dialRecentCache = {};
 function loadDialRecent() {
   var el = document.getElementById("dial-recent-list");
-  fetch(API + "/call-history?limit=8").then(function(r){return r.json();}).then(function(d){
+  fetch(API + "/call-history?limit=" + PV.recentCallsLimit).then(function(r){return r.json();}).then(function(d){
     var calls = d.calls || [];
     if (!calls.length) { el.innerHTML = '<div class="empty">No recent calls</div>'; return; }
     dialRecentCache = {};
@@ -2232,7 +2530,7 @@ function dialOut(num) {
   else if (!num.startsWith("+") && num.length > 6) num = "+" + num;
   if (!sipUA) { setStatus("❌ Not registered", true); return; }
   var acc = activeAccount();
-  var domain = (acc && acc.domain) || "64.176.181.195";
+  var domain = (acc && acc.domain) || PV.defaultDomain;
   var target = SIP.UserAgent.makeURI("sip:" + num + "@" + domain);
   // earlyMedia: apply the SDP from a 183 Session Progress so the carrier's
   // in-band ringback tone is actually heard (SIP.js ignores it by default).
@@ -2312,7 +2610,7 @@ function updateDialBottomVisibility() {
   // meaningful, and only offered, once the call is actually connected.
   var inAnyCall = !!currentCall;
   var connected = !!(currentCall && currentCall.state === "active");
-  document.getElementById("dialpad").classList.toggle("hidden", inAnyCall && !keypadOverlayOpen);
+  document.getElementById("dialpad").classList.toggle("hidden", inAnyCall ? !keypadOverlayOpen : !dialKeypadOpen);
   document.getElementById("dial-callbar").classList.toggle("hidden", inAnyCall);
   document.getElementById("dial-recent-list").classList.toggle("hidden", inAnyCall);
   document.getElementById("banner-keypad").classList.toggle("hidden", !connected);
@@ -2360,9 +2658,10 @@ function loadHistory() {
   var q = document.getElementById("history-search").value.trim();
   var el = document.getElementById("history-list");
   el.innerHTML = '<div class="empty">Loading…</div>';
-  fetch(API + "/call-history?limit=200&q=" + encodeURIComponent(q)).then(function(r){return r.json();}).then(function(d){
+  fetch(API + "/call-history?limit=" + PV.historyLimit + "&q=" + encodeURIComponent(q)).then(function(r){return r.json();}).then(function(d){
     var calls = d.calls || [];
     if (!calls.length) { el.innerHTML = '<div class="empty">' + (q ? "No matching calls" : "No calls yet") + '</div>'; return; }
+    if (selected && selected.type === "call") deselect();
     el.innerHTML = renderHistory(calls);
   }).catch(function(){ el.innerHTML = '<div class="empty">Error loading history</div>'; });
 }
@@ -2391,14 +2690,8 @@ function renderHistoryRow(c) {
   var notesFlag = c.has_notes ? ' <span title="Has notes">📝</span>' : "";
   var key = "h-" + c.id;
   callsCache[key] = c;
-  var canCall = num && num !== "unknown" && /^[+0-9*#]/.test(num);
-  var actions = (canCall ? '<button class="hist-action" data-action="call" title="Call">📞</button>' : "")
-    + (c.partner_email ? '<button class="hist-action" data-action="email" title="New Email">✉️</button>' : "")
-    + '<button class="hist-action" data-action="details" title="Details">📄</button>'
-    + (c.partner_id ? '<button class="hist-action" data-action="contact" title="Open contact">👤</button>' : "");
   return '<div class="hist-row" data-key="' + esc(key) + '">'
     + '<div class="hist-main"><span class="ic">' + icon + '</span><div><div class="who">' + arrow + ' ' + esc(who) + notesFlag + '</div>' + (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div><div class="meta">' + when + dur + '</div></div>'
-    + '<div class="hist-actions">' + actions + '</div>'
     + '</div>';
 }
 function fmtDur(sec) {
@@ -2416,26 +2709,34 @@ function fmtDay(ts) {
 }
 document.getElementById("history-search").addEventListener("input", function(e) {
   if (historyTimer) clearTimeout(historyTimer);
-  historyTimer = setTimeout(loadHistory, 250);
+  historyTimer = setTimeout(loadHistory, PV.historyDebounceMs);
 });
 document.getElementById("history-list").addEventListener("click", function(e) {
   var row = e.target.closest(".hist-row");
   if (!row) return;
-  var c = callsCache[row.getAttribute("data-key")];
+  var key = row.getAttribute("data-key");
+  var c = callsCache[key];
   if (!c) return;
-  var actionBtn = e.target.closest(".hist-action");
-  if (actionBtn) {
-    e.stopPropagation();
-    var action = actionBtn.getAttribute("data-action");
-    var num = (c.phone_number && c.phone_number !== "unknown") ? c.phone_number : c.did;
-    if (action === "call") prepareDial(num);
-    else if (action === "email") openCompose(c.partner_email, "", "");
-    else if (action === "details") openCallDetailView(c);
-    else if (action === "contact") openContactById(c.partner_id);
-    return;
-  }
-  rowClick(row.getAttribute("data-key"), "call", c, function() { openCallDetailView(c); });
+  // Selecting is all a tap does; the toolbar above the list acts on the selection.
+  if (row.classList.contains("selected")) deselect(); else selectItem("call", c, key);
 });
+function histSelectedCall() { return (selected && selected.type === "call") ? selected.data : null; }
+function histNumber(c) { return (c.phone_number && c.phone_number !== "unknown") ? c.phone_number : (c.did || ""); }
+function updateHistToolbar() {
+  var c = histSelectedCall();
+  var num = c ? histNumber(c) : "";
+  var can = { call: !!(num && /^[+0-9*#]/.test(num)), email: !!(c && c.partner_email), details: !!c, contact: !!(c && c.partner_id) };
+  var btns = document.querySelectorAll("#hist-toolbar button");
+  for (var i = 0; i < btns.length; i++) btns[i].disabled = !can[btns[i].getAttribute("data-action")];
+}
+function histAction(action) {
+  var c = histSelectedCall();
+  if (!c) return;
+  if (action === "call") dialOut(histNumber(c));
+  else if (action === "email") openCompose(c.partner_email, "", "");
+  else if (action === "details") openCallDetailView(c);
+  else if (action === "contact") openContactById(c.partner_id);
+}
 function openContactById(id) {
   if (!id) return;
   fetch(API + "/contacts/" + id).then(function(r) { return r.json(); }).then(function(d) {
@@ -2478,7 +2779,7 @@ var contactsCache = {};
 function loadContacts(q) {
   var el = document.getElementById("contacts-list");
   el.innerHTML = '<div class="empty">Loading…</div>';
-  fetch(API + "/contacts/cache?q=" + encodeURIComponent(q) + "&limit=100").then(function(r){return r.json();}).then(function(d){
+  fetch(API + "/contacts/cache?q=" + encodeURIComponent(q) + "&limit=" + PV.contactsLimit).then(function(r){return r.json();}).then(function(d){
     var list = d.contacts || [];
     contactsCache = {};
     for (var i = 0; i < list.length; i++) contactsCache[list[i].id] = list[i];
@@ -2494,7 +2795,7 @@ function loadContacts(q) {
 document.getElementById("contact-search").addEventListener("input", function(e) {
   var q = e.target.value.trim();
   if (contactTimer) clearTimeout(contactTimer);
-  contactTimer = setTimeout(function() { loadContacts(q); }, 250);
+  contactTimer = setTimeout(function() { loadContacts(q); }, PV.contactsDebounceMs);
 });
 document.getElementById("contacts-list").addEventListener("click", function(e) {
   var fav = e.target.closest(".fav-star");
@@ -2542,7 +2843,7 @@ function rowClick(key, type, data, openFn) {
   selectItem(type, data, key);
   pendingKey = key;
   if (clickTimer) clearTimeout(clickTimer);
-  clickTimer = setTimeout(function() { clickTimer = null; pendingKey = null; }, 300);
+  clickTimer = setTimeout(function() { clickTimer = null; pendingKey = null; }, PV.doubleTapMs);
 }
 function selectItem(type, data, key) {
   selected = { type: type, data: data };
@@ -2558,9 +2859,12 @@ function deselect() {
   var rows = document.querySelectorAll(".hist-row.selected,.contact-row.selected,.msg-row.selected");
   for (var i = 0; i < rows.length; i++) rows[i].classList.remove("selected");
   document.getElementById("action-bar").classList.add("hidden");
+  updateHistToolbar();
 }
 function renderActionBar() {
   var bar = document.getElementById("action-bar");
+  updateHistToolbar();
+  if (selected && selected.type === "call") { bar.classList.add("hidden"); bar.innerHTML = ""; return; }
   if (!selected) { bar.classList.add("hidden"); bar.innerHTML = ""; return; }
   var h = "";
   if (selected.type === "contact") {
@@ -2724,7 +3028,7 @@ function scheduleCallDetailSave() {
   if (!cdOpenCallId) return;
   setCallDetailSaveStatus("Saving…");
   clearTimeout(cdSaveTimer);
-  cdSaveTimer = setTimeout(saveCallDetailEdits, 900);
+  cdSaveTimer = setTimeout(saveCallDetailEdits, PV.notesAutosaveMs);
 }
 function flushCallDetailSave() {
   if (!cdSaveTimer) return;
@@ -2838,7 +3142,7 @@ function loadMessages() {
     document.getElementById("msg-title").textContent = "📥 Recent emails (7 days)";
     el.innerHTML = '<div class="empty">Downloading recent emails…</div>';
     messagesCache = {};
-    fetch(API + "/messages/recent?days=7&limit=50").then(function(r){return r.json();}).then(function(d){
+    fetch(API + "/messages/recent?days=" + PV.recentMessagesDays + "&limit=" + PV.recentMessagesLimit).then(function(r){return r.json();}).then(function(d){
       var msgs = d.messages || [];
       if (!msgs.length) { el.innerHTML = '<div class="empty">No emails in the last week</div>'; return; }
       el.innerHTML = msgs.map(function(m) { return renderMessageRow(m); }).join("");
@@ -2848,7 +3152,7 @@ function loadMessages() {
   document.getElementById("msg-title").textContent = "💬 " + activeContact.name;
   el.innerHTML = '<div class="empty">Downloading messages…</div>';
   messagesCache = {};
-  fetch(API + "/messages?contact=" + encodeURIComponent(activeContact.id) + "&limit=50").then(function(r){return r.json();}).then(function(d){
+  fetch(API + "/messages?contact=" + encodeURIComponent(activeContact.id) + "&limit=" + PV.contactMessagesLimit).then(function(r){return r.json();}).then(function(d){
     var msgs = d.messages || [];
     if (!msgs.length) { el.innerHTML = '<div class="empty">No messages found</div>'; return; }
     el.innerHTML = msgs.map(function(m) { return renderMessageRow(m); }).join("");
@@ -2912,12 +3216,21 @@ function dismissInstallTip() {
 function toggleMenu() {
   document.getElementById("menu-drawer").classList.toggle("hidden");
 }
+var settingsBackup = null;
 function openSettings() {
   document.getElementById("menu-drawer").classList.add("hidden");
+  // Picking/adding an account in the form switches activeAccountId right away;
+  // remember it so Cancel can put it back.
+  settingsBackup = { activeAccountId: activeAccountId };
   document.getElementById("set-dev").checked = settings.devMode;
   document.getElementById("set-quicktext").value = settings.quickText || "";
   renderAccountSelect();
   document.getElementById("settings-modal").classList.remove("hidden");
+}
+function cancelSettings() {
+  if (settingsBackup) activeAccountId = settingsBackup.activeAccountId;
+  settingsBackup = null;
+  closeSettings();
 }
 function closeSettings() {
   document.getElementById("settings-modal").classList.add("hidden");
@@ -2972,10 +3285,10 @@ function saveAccount() {
     password: document.getElementById("acc-password").value,
     server: document.getElementById("acc-server").value.trim() || DEFAULT_WS,
     transport: document.getElementById("acc-transport").value,
-    domain: document.getElementById("acc-domain").value.trim() || "64.176.181.195",
+    domain: document.getElementById("acc-domain").value.trim() || PV.defaultDomain,
     callerId: document.getElementById("acc-callerid").value.trim()
   };
-  if (!a.username) { alert("Username is required"); return; }
+  if (!a.username) { alert("Username is required"); return false; }
   var found = -1;
   for (var i = 0; i < accounts.length; i++) if (accounts[i].id === a.id) { found = i; break; }
   if (found >= 0) accounts[found] = a; else accounts.push(a);
@@ -2985,6 +3298,7 @@ function saveAccount() {
   renderAccountSelect();
   updateAccountHeader();
   setStatus("💾 Saved — reconnect to apply", false);
+  return true;
 }
 function deleteAccount() {
   if (accounts.length <= 1) { alert("Need at least one account"); return; }
@@ -3013,10 +3327,11 @@ function updateAccountHeader() {
 }
 function applyAndReconnect() {
   // persist any pending form edit before reconnecting
-  if (editingAccountId) saveAccount();
+  if (editingAccountId && !saveAccount()) return;
   settings.devMode = document.getElementById("set-dev").checked;
   settings.quickText = document.getElementById("set-quicktext").value;
   saveSettings();
+  settingsBackup = null;
   closeSettings();
   teardownSoftphone();
   if (settings.devMode) { setStatus("🛠 Dev mode", false); }
@@ -3129,7 +3444,7 @@ function autoAnswerStamp() {
     var kv = parts[i].split("=");
     if (kv[0].trim() === "vb_autoanswer") stamp = Number(kv[1]) || 0;
   }
-  return (stamp && Date.now() - stamp < 30000) ? stamp : 0;
+  return (stamp && Date.now() - stamp < PV.autoAnswerWindowMs) ? stamp : 0;
 }
 function consumeAutoAnswer() {
   var fresh = autoAnswerStamp() > 0;
@@ -3146,7 +3461,7 @@ function initSoftphone() {
   setStatus("Connecting…", false);
   try {
     sipUA = new SIP.UserAgent({
-      uri: SIP.UserAgent.makeURI("sip:" + acc.username + "@" + (acc.domain || "64.176.181.195")),
+      uri: SIP.UserAgent.makeURI("sip:" + acc.username + "@" + (acc.domain || PV.defaultDomain)),
       transportOptions: { server: acc.server || DEFAULT_WS },
       authorizationUsername: acc.username,
       authorizationPassword: acc.password,
@@ -3178,7 +3493,7 @@ function initSoftphone() {
       renderCallUI();
       logCallEvent("ring");
       startRingtone();
-      if (consumeAutoAnswer()) setTimeout(function() { if (currentCall && currentCall.state === "ringing") answerCall(); }, 400);
+      if (consumeAutoAnswer()) setTimeout(function() { if (currentCall && currentCall.state === "ringing") answerCall(); }, PV.autoAnswerDelayMs);
       inv.stateChange.on(function(state) {
         if (state === SIP.SessionState.Established) { stopRingtone(); ensureRemoteAudio(inv); currentCall.state = "active"; currentCall.answeredAt = Date.now(); renderCallUI(); logCallEvent("answer"); }
         if (state === SIP.SessionState.Terminated) { stopRingtone(); logHangup(); resetCall(); }
@@ -3209,6 +3524,7 @@ function applyBoot() {
   if (settings.devMode) { setStatus("🛠 Dev mode", false); return; }
   loadSipJs().then(initSoftphone).catch(function(e) { setStatus("❌ " + e.message, true); });
 }
+applyAllParams();
 var bootStarted = false;
 function applyBootOnce() { if (bootStarted) return; bootStarted = true; applyBoot(); }
 function boot() {
