@@ -80,7 +80,7 @@ public class CallMessagingService extends FirebaseMessagingService {
         Uri ring = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
         ch.setSound(ring, new AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIC)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build());
         ch.enableVibration(true);
         ch.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);

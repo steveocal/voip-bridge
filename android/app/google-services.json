@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "244711112266",
+    "project_id": "voip-bridge",
+    "storage_bucket": "voip-bridge.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:244711112266:android:668470871d784c282d30b3",
+        "android_client_info": {
+          "package_name": "info.systecgroup.voipbridge"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDRfWr3sqrbk-wfcBEDP-1t4xGfJNvOI4A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
