@@ -702,6 +702,35 @@ function stopRingtone() {
   try { if (navigator.vibrate) navigator.vibrate(0); } catch (e) {}
 }
 
+// ── outgoing ringback (UK-style 400+450Hz double burst) ────────
+// Only used when the far end says "180 Ringing" without sending early-media
+// audio (SDP) of its own — if the carrier does send ringback in-band, that
+// plays through the remote-audio element instead and this stays silent.
+var rbCtx = null, rbTimer = null;
+function startRingback() {
+  if (rbCtx) return;
+  try { rbCtx = new (window.AudioContext || window.webkitAudioContext)(); rbCtx.resume().catch(function() {}); } catch (e) { rbCtx = null; return; }
+  rbCycle();
+}
+function rbCycle() {
+  if (!rbCtx) return;
+  var t0 = rbCtx.currentTime;
+  var gain = rbCtx.createGain();
+  gain.gain.value = 0.1;
+  gain.connect(rbCtx.destination);
+  [0, 0.6].forEach(function(off) {
+    [400, 450].forEach(function(f) {
+      var o = rbCtx.createOscillator(); o.type = "sine"; o.frequency.value = f;
+      o.connect(gain); o.start(t0 + off); o.stop(t0 + off + 0.4);
+    });
+  });
+  rbTimer = setTimeout(rbCycle, 3000);
+}
+function stopRingback() {
+  if (rbTimer) { clearTimeout(rbTimer); rbTimer = null; }
+  if (rbCtx) { try { rbCtx.close(); } catch (e) {} rbCtx = null; }
+}
+
 // ── view switching ─────────────────────────────────────────────
 function switchView(name) {
   var views = document.querySelectorAll(".view");
@@ -2205,17 +2234,24 @@ function dialOut(num) {
   var acc = activeAccount();
   var domain = (acc && acc.domain) || "64.176.181.195";
   var target = SIP.UserAgent.makeURI("sip:" + num + "@" + domain);
-  var inviter = new SIP.Inviter(sipUA, target, { sessionDescriptionHandlerOptions: { constraints: { audio: true, video: false } } });
+  // earlyMedia: apply the SDP from a 183 Session Progress so the carrier's
+  // in-band ringback tone is actually heard (SIP.js ignores it by default).
+  var inviter = new SIP.Inviter(sipUA, target, { earlyMedia: true, sessionDescriptionHandlerOptions: { constraints: { audio: true, video: false } } });
   sipSession = inviter;
   currentCall = { id: inviter.request.callId, dir: "out", remote: num, state: "calling" };
   renderCallUI();
   logCallEvent("ring");
   inviter.stateChange.on(function(state) {
-    if (state === SIP.SessionState.Established) { currentCall.state = "active"; currentCall.answeredAt = Date.now(); renderCallUI(); logCallEvent("answer"); }
+    if (state === SIP.SessionState.Established) { stopRingback(); currentCall.state = "active"; currentCall.answeredAt = Date.now(); renderCallUI(); logCallEvent("answer"); }
     if (state === SIP.SessionState.Terminated) { logHangup(); resetCall(); }
   });
   attachRemoteAudio(inviter);
-  inviter.invite();
+  inviter.invite({ requestDelegate: { onProgress: function(response) {
+    // 183 with SDP = carrier is sending ringback as audio; 180 without = we
+    // have to make the ringing tone ourselves.
+    var hasMedia = !!(response && response.message && response.message.body);
+    if (hasMedia) stopRingback(); else if (currentCall && currentCall.state === "calling") startRingback();
+  } } });
 }
 function hangup() {
   stopRingtone();
@@ -2250,6 +2286,7 @@ function answerCall() {
 }
 function resetCall() {
   stopRingtone();
+  stopRingback();
   flushCallSave();
   if (heldSession) { try { heldSession.dispose(); } catch(e) {} heldSession = null; }
   sipSession = null; currentCall = null; onHold = false; muted = false;
