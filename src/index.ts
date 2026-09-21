@@ -3,6 +3,7 @@ import { lookupCaller, logCompletedCall, trackCall, searchContacts, syncContacts
 import { searchGmailMessages, searchRecentGmailMessages, getGmailBody, sendGmailMessage } from "./gmail";
 import { ariRequest } from "./asterisk";
 import { serveDashboard } from "./dashboard";
+import { handlePushRegister, handlePushWake } from "./push";
 import type { Contact, Message } from "./odoo";
 
 // Durable Object class must be exported from the entrypoint module.
@@ -449,6 +450,8 @@ export default {
     else if (request.method === "POST" && url.pathname === "/answer") response = await handleAnswer(request, env);
     else if (request.method === "POST" && url.pathname === "/hangup-call") response = await handleHangupCall(request, env);
     else if (request.method === "POST" && url.pathname === "/sync") response = await handleSync(env);
+    else if (request.method === "POST" && url.pathname === "/push/register") response = await handlePushRegister(request, env);
+    else if ((request.method === "POST" || request.method === "GET") && url.pathname === "/push/wake") response = await handlePushWake(request, env);
     else if (request.method === "GET" && url.pathname === "/settings") response = await handleGetSettings(env);
     else if (request.method === "POST" && url.pathname === "/settings") response = await handleSetSettings(request, env);
     else if (request.method === "GET" && url.pathname === "/caller-lookup") response = await handleCallerLookup(request, env);

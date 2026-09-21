@@ -3065,6 +3065,33 @@ function attachRemoteAudio(session) {
   wire();
 }
 
+// ── Android app (Capacitor) push registration ──────────────────
+// Only runs inside the native shell. Ties this device's FCM token to the SIP
+// extension it registers as, so the worker can wake the app for inbound calls.
+var pushListenerAdded = false;
+function nativePush() {
+  var Cap = window.Capacitor;
+  if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform()) return null;
+  return (Cap.Plugins && Cap.Plugins.PushNotifications) || null;
+}
+function registerPush() {
+  var PN = nativePush();
+  if (!PN) return;
+  if (!pushListenerAdded) {
+    pushListenerAdded = true;
+    PN.addListener("registration", function(t) {
+      var a = activeAccount();
+      if (!a || !t || !t.value) return;
+      fetch(API + "/push/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: t.value, extension: a.username })
+      }).catch(function() {});
+    });
+  }
+  PN.requestPermissions().then(function(r) { if (r && r.receive === "granted") PN.register(); }).catch(function() {});
+}
+
 function initSoftphone() {
   var el = document.getElementById("phone-status");
   if (typeof SIP === "undefined") { setStatus("❌ sip.js missing", true); return; }
@@ -3084,7 +3111,7 @@ function initSoftphone() {
 
   var registerer = new SIP.Registerer(sipUA, { expires: 3600 });
   registerer.stateChange.on(function(state) {
-    if (state === SIP.RegistererState.Registered) { clearTimeout(regTimer); setStatus("✅ Registered", false); }
+    if (state === SIP.RegistererState.Registered) { clearTimeout(regTimer); setStatus("✅ Registered", false); registerPush(); }
     else if (state === SIP.RegistererState.Unregistered) { clearTimeout(regTimer); setStatus("❌ Unregistered", true); }
     else setStatus("⏳ " + state, false);
   });
@@ -3097,6 +3124,10 @@ function initSoftphone() {
       // instead of just failing the call; this session's own active call
       // is left completely untouched.
       if (currentCall) { inv.reject({ statusCode: 486 }).catch(function() {}); return; }
+      // Call reached the page — drop the native "incoming call" notification
+      // (it would keep ringing over the in-page ringtone otherwise).
+      var PN = nativePush();
+      if (PN && PN.removeAllDeliveredNotifications) PN.removeAllDeliveredNotifications().catch(function() {});
       sipSession = inv;
       currentCall = { id: inv.request.callId, dir: "in", remote: inv.remoteIdentity.uri.user || inv.remoteIdentity.displayName, state: "ringing" };
       renderCallUI();

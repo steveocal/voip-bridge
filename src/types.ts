@@ -73,4 +73,6 @@ export interface Env {
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
   GOOGLE_REFRESH_TOKEN: string;
+  FCM_SERVICE_ACCOUNT: string; // Firebase service-account JSON (secret)
+  PUSH_SECRET: string; // shared secret Asterisk sends to /push/wake (secret)
 }

@@ -17,6 +17,7 @@ new_sqlite_classes = ["CallState"]
 # Secrets (set with: wrangler secret put <name>)
 # ODOO_URL, ODOO_DB, ODOO_USER, ODOO_PASS
 # ASTERISK_URL, ASTERISK_USER, ASTERISK_PASS
+# FCM_SERVICE_ACCOUNT (Firebase service-account JSON), PUSH_SECRET (shared with Asterisk)
 
 [vars]
 ODOO_URL = "https://www.infraredheaterpanels.co.uk"
