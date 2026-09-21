@@ -3095,10 +3095,16 @@ function registerPush() {
 // Native app only: MainActivity leaves a short-lived cookie when the person
 // tapped the incoming-call notification, meaning "answer as soon as it arrives".
 function consumeAutoAnswer() {
-  var m = /(?:^|;\s*)vb_autoanswer=(\d+)/.exec(document.cookie || "");
-  if (!m) return false;
+  // No regex/backslashes here: this file is a template literal, which strips them.
+  var parts = String(document.cookie || "").split(";");
+  var stamp = 0;
+  for (var i = 0; i < parts.length; i++) {
+    var kv = parts[i].split("=");
+    if (kv[0].trim() === "vb_autoanswer") stamp = Number(kv[1]) || 0;
+  }
+  if (!stamp) return false;
   document.cookie = "vb_autoanswer=; Max-Age=0; Path=/";
-  return Date.now() - Number(m[1]) < 30000;
+  return Date.now() - stamp < 30000;
 }
 
 function initSoftphone() {
