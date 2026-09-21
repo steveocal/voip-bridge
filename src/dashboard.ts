@@ -3091,28 +3091,6 @@ function attachRemoteAudio(session) {
   wire();
 }
 
-function wire() {
-    var pc = null;
-    try { pc = session.sessionDescriptionHandler && session.sessionDescriptionHandler.peerConnection; } catch (e) {}
-    if (pc && pc.ontrack !== undefined) {
-      pc.ontrack = function(evt) {
-        if (evt.track && evt.track.kind === "audio") {
-          var stream = evt.streams && evt.streams[0];
-          if (stream) {
-            var a = document.createElement("audio");
-            a.autoplay = true; a.srcObject = stream;
-            a.play().catch(function(){});
-            document.body.appendChild(a);
-          }
-        }
-      };
-      return;
-    }
-    if (++tries < 50) setTimeout(wire, 100);
-  }
-  wire();
-}
-
 // ── Android app (Capacitor) push registration ──────────────────
 // Only runs inside the native shell. Ties this device's FCM token to the SIP
 // extension it registers as, so the worker can wake the app for inbound calls.
