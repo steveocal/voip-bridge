@@ -6,7 +6,9 @@
   "scripts": {
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:dashboard": "node scripts/check-dashboard.mjs",
+    "predeploy": "node scripts/check-dashboard.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.2",
