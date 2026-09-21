@@ -3092,6 +3092,15 @@ function registerPush() {
   PN.requestPermissions().then(function(r) { if (r && r.receive === "granted") PN.register(); }).catch(function() {});
 }
 
+// Native app only: MainActivity leaves a short-lived cookie when the person
+// tapped the incoming-call notification, meaning "answer as soon as it arrives".
+function consumeAutoAnswer() {
+  var m = /(?:^|;\s*)vb_autoanswer=(\d+)/.exec(document.cookie || "");
+  if (!m) return false;
+  document.cookie = "vb_autoanswer=; Max-Age=0; Path=/";
+  return Date.now() - Number(m[1]) < 30000;
+}
+
 function initSoftphone() {
   var el = document.getElementById("phone-status");
   if (typeof SIP === "undefined") { setStatus("❌ sip.js missing", true); return; }
@@ -3133,6 +3142,7 @@ function initSoftphone() {
       renderCallUI();
       logCallEvent("ring");
       startRingtone();
+      if (consumeAutoAnswer()) setTimeout(function() { if (currentCall && currentCall.state === "ringing") answerCall(); }, 400);
       inv.stateChange.on(function(state) {
         if (state === SIP.SessionState.Established) { stopRingtone(); currentCall.state = "active"; currentCall.answeredAt = Date.now(); renderCallUI(); logCallEvent("answer"); }
         if (state === SIP.SessionState.Terminated) { stopRingtone(); logHangup(); resetCall(); }

@@ -8,14 +8,14 @@ mic permission, and waking the phone for an inbound call.
 ## Incoming-call flow
 
 1. Inbound call hits Asterisk's `[voipms-inbound]` dialplan.
-2. Dialplan calls the worker: `GET /push/wake?secret=…&extension=202&caller=…`.
+2. Dialplan calls the worker: `GET /push/wake?secret=…&extension=202&caller=…` (see the dialplan section below).
 3. Worker sends a high-priority FCM data message to every device token
    registered for that extension (`push_tokens` table).
 4. `CallMessagingService` shows a full-screen ringing notification (works with
    the app closed, and over the lock screen).
-5. The app opens, the dashboard registers extension 202 over WSS, and Asterisk
-   — which has been holding the call — delivers the INVITE. The page rings and
-   the native notification is cleared.
+5. Tapping the notification opens the app; the dashboard registers extension 202
+   over WSS and Asterisk — which has been holding the call — delivers the INVITE.
+   The tap also auto-answers it, and the native notification is cleared.
 
 ## One-time setup
 
@@ -49,27 +49,39 @@ APK lands in `android/app/build/outputs/apk/debug/`. After changing
 - Turn off battery optimisation for the app (Settings → Battery → Unrestricted).
 - Set the app's SIP account to the phone's own extension (202) in the dashboard.
 
-## Asterisk dialplan (apply on the VPS — not applied automatically)
+## Asterisk dialplan (live on the VPS since 2026-09-21)
 
-Before the inbound `Dial()`, wake the phone and give it a few seconds to
-register. Adapt names to the live `extensions.conf`; back it up first and
-`dialplan reload` afterwards.
+`/opt/asterisk/config/extensions.conf` on `vps`. Both `[voipms-inbound]` and
+`[default]` call `Gosub(wake-phone,s,1)` before the inbound `Dial()`:
 
-    ; Only wake/wait when the phone isn't already registered.
-    same => n,GotoIf($["${PJSIP_DIAL_CONTACTS(202)}" != ""]?dial)
-    same => n,Set(WAKE=${CURL(https://voip-bridge.wandering-mode-c597.workers.dev/push/wake?secret=YOUR_PUSH_SECRET&extension=202&caller=${URIENCODE(${CALLERID(num)})})})
+    [wake-phone]
+    exten => s,1,GotoIf($["${PJSIP_DIAL_CONTACTS(202)}" != ""]?done)
+    same => n,Set(CURLOPT(conntimeout)=2)
+    same => n,Set(CURLOPT(httptimeout)=4)
+    same => n,Set(WAKE=${CURL(https://voip-bridge.wandering-mode-c597.workers.dev/push/wake?secret=<PUSH_SECRET>&extension=202&caller=${URIENCODE(${CALLERID(num)})})})
+    same => n,Set(PUSHED=${JSON_DECODE(WAKE,sent)})
+    same => n,GotoIf($["${PUSHED}" = ""]?done)
+    same => n,GotoIf($["${PUSHED}" = "0"]?done)
+    same => n,Ringing()
     same => n,Set(TRIES=0)
-    same => n,While($["${PJSIP_DIAL_CONTACTS(202)}" = "" & ${TRIES} < 8])
+    same => n,While($["${PJSIP_DIAL_CONTACTS(202)}" = "" & ${TRIES} < 20])
     same => n,Wait(1)
     same => n,Set(TRIES=$[${TRIES} + 1])
     same => n,EndWhile
-    same => n(dial),Dial(PJSIP/200&PJSIP/201&PJSIP/202&PJSIP/+66926181049@voipms,30)
+    same => n(done),Return()
 
-Trade-offs:
-- The other extensions and the mobile leg ring up to 8s later when the phone
-  needs waking. Alternative: keep the `Dial()` as-is and add a second dial
-  attempt for 202 after the wake (more complex; ask if wanted).
-- A backgrounded app can leave a stale registration (expires=3600), so
-  Asterisk sees a contact and skips the wake, then rings a dead socket.
-  Fix options: lower `expires` in `initSoftphone`, or unregister when the app
-  is paused (Capacitor `App` plugin `pause` event).
+- Only wakes/waits when 202 has no live registration *and* FCM accepted a push
+  (`sent` > 0); otherwise callers are never delayed. Waits up to 20s for the app
+  to register (time to tap the notification + cold start).
+- Tapping the notification auto-answers the call when it arrives (see
+  `MainActivity.markAnswerRequested` and `consumeAutoAnswer` in the dashboard).
+- The mobile handset leg (`[ring-mobile]`) is rung by Asterisk via **voip.ms**
+  after a 20s head start (`Wait(20)`), with the business DID as caller ID and
+  the original caller in the display name. The parent `Dial()` timeout is 45s
+  (20s delay + 25s handset ring). If the app or a desk phone answers first, the
+  handset never rings.
+
+Known limitation: a backgrounded app can leave a stale registration
+(expires=3600), so Asterisk sees a contact and skips the push, then rings a dead
+socket. Fix options: lower `expires` in `initSoftphone`, or unregister when the
+app is paused (Capacitor `App` plugin `pause` event).

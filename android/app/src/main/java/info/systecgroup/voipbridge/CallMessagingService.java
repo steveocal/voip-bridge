@@ -51,7 +51,7 @@ public class CallMessagingService extends FirebaseMessagingService {
 
         Intent open = new Intent(this, MainActivity.class)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            .putExtra("incoming_call", true);
+            .putExtra("incoming_call_at", System.currentTimeMillis());
         PendingIntent pi = PendingIntent.getActivity(
             this, 0, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
