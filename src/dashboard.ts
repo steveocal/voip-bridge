@@ -2242,7 +2242,7 @@ function dialOut(num) {
   renderCallUI();
   logCallEvent("ring");
   inviter.stateChange.on(function(state) {
-    if (state === SIP.SessionState.Established) { stopRingback(); currentCall.state = "active"; currentCall.answeredAt = Date.now(); renderCallUI(); logCallEvent("answer"); }
+    if (state === SIP.SessionState.Established) { stopRingback(); ensureRemoteAudio(inviter); currentCall.state = "active"; currentCall.answeredAt = Date.now(); renderCallUI(); logCallEvent("answer"); }
     if (state === SIP.SessionState.Terminated) { logHangup(); resetCall(); }
   });
   attachRemoteAudio(inviter);
@@ -2287,6 +2287,7 @@ function answerCall() {
 function resetCall() {
   stopRingtone();
   stopRingback();
+  clearRemoteAudio();
   flushCallSave();
   if (heldSession) { try { heldSession.dispose(); } catch(e) {} heldSession = null; }
   sipSession = null; currentCall = null; onHold = false; muted = false;
@@ -3041,9 +3042,56 @@ document.addEventListener("click", function(e) {
 // (Invitation) and outbound (Inviter) paths must do this, or calls are one-way
 // (you hear nothing on the outbound leg). Works for both, with a retry loop
 // because the peer connection is created asynchronously during invite/answer.
+// One shared <audio> element for the remote party. Built from the receiver's
+// track rather than only from the "track" event, because on an incoming call
+// that event fires the instant the call is answered (often before we hook it)
+// and the offer may carry no stream id, leaving evt.streams empty — either way
+// the call connected with full RTP both ways but nothing was ever played.
+var remoteAudioEl = null;
+function playRemoteStream(stream) {
+  if (!remoteAudioEl) {
+    remoteAudioEl = document.createElement("audio");
+    remoteAudioEl.autoplay = true;
+    document.body.appendChild(remoteAudioEl);
+  }
+  remoteAudioEl.srcObject = stream;
+  remoteAudioEl.play().catch(function() {});
+}
+function ensureRemoteAudio(session) {
+  try {
+    var pc = session && session.sessionDescriptionHandler && session.sessionDescriptionHandler.peerConnection;
+    if (!pc) return;
+    var tracks = pc.getReceivers().map(function(r) { return r.track; }).filter(function(t) { return t && t.kind === "audio" && t.readyState === "live"; });
+    if (!tracks.length) return;
+    if (remoteAudioEl && remoteAudioEl.srcObject && remoteAudioEl.srcObject.getAudioTracks().length) return;
+    playRemoteStream(new MediaStream(tracks));
+  } catch (e) {}
+}
+function clearRemoteAudio() {
+  if (!remoteAudioEl) return;
+  try { remoteAudioEl.srcObject = null; remoteAudioEl.remove(); } catch (e) {}
+  remoteAudioEl = null;
+}
 function attachRemoteAudio(session) {
   var tries = 0;
   function wire() {
+    var pc = null;
+    try { pc = session.sessionDescriptionHandler && session.sessionDescriptionHandler.peerConnection; } catch (e) {}
+    if (pc && pc.ontrack !== undefined) {
+      pc.ontrack = function(evt) {
+        if (evt.track && evt.track.kind === "audio") {
+          playRemoteStream((evt.streams && evt.streams[0]) || new MediaStream([evt.track]));
+        }
+      };
+      ensureRemoteAudio(session);
+      return;
+    }
+    if (++tries < 50) setTimeout(wire, 100);
+  }
+  wire();
+}
+
+function wire() {
     var pc = null;
     try { pc = session.sessionDescriptionHandler && session.sessionDescriptionHandler.peerConnection; } catch (e) {}
     if (pc && pc.ontrack !== undefined) {
@@ -3094,7 +3142,8 @@ function registerPush() {
 
 // Native app only: MainActivity leaves a short-lived cookie when the person
 // tapped the incoming-call notification, meaning "answer as soon as it arrives".
-function consumeAutoAnswer() {
+// Timestamp of a fresh tap-to-answer cookie, or 0. Peeking doesn't consume it.
+function autoAnswerStamp() {
   // No regex/backslashes here: this file is a template literal, which strips them.
   var parts = String(document.cookie || "").split(";");
   var stamp = 0;
@@ -3102,9 +3151,12 @@ function consumeAutoAnswer() {
     var kv = parts[i].split("=");
     if (kv[0].trim() === "vb_autoanswer") stamp = Number(kv[1]) || 0;
   }
-  if (!stamp) return false;
+  return (stamp && Date.now() - stamp < 30000) ? stamp : 0;
+}
+function consumeAutoAnswer() {
+  var fresh = autoAnswerStamp() > 0;
   document.cookie = "vb_autoanswer=; Max-Age=0; Path=/";
-  return Date.now() - stamp < 30000;
+  return fresh;
 }
 
 function initSoftphone() {
@@ -3150,7 +3202,7 @@ function initSoftphone() {
       startRingtone();
       if (consumeAutoAnswer()) setTimeout(function() { if (currentCall && currentCall.state === "ringing") answerCall(); }, 400);
       inv.stateChange.on(function(state) {
-        if (state === SIP.SessionState.Established) { stopRingtone(); currentCall.state = "active"; currentCall.answeredAt = Date.now(); renderCallUI(); logCallEvent("answer"); }
+        if (state === SIP.SessionState.Established) { stopRingtone(); ensureRemoteAudio(inv); currentCall.state = "active"; currentCall.answeredAt = Date.now(); renderCallUI(); logCallEvent("answer"); }
         if (state === SIP.SessionState.Terminated) { stopRingtone(); logHangup(); resetCall(); }
       });
       // Remote audio is attached once actually answered (see answerCall) —
@@ -3179,10 +3231,16 @@ function applyBoot() {
   if (settings.devMode) { setStatus("🛠 Dev mode", false); return; }
   loadSipJs().then(initSoftphone).catch(function(e) { setStatus("❌ " + e.message, true); });
 }
+var bootStarted = false;
+function applyBootOnce() { if (bootStarted) return; bootStarted = true; applyBoot(); }
 function boot() {
   // Merge server-side settings (D1) over localStorage, then start. SIP
   // accounts/activeAccount are deliberately excluded — those are per-device
   // identity (see persistAccounts), not a shared preference.
+  // If the app was opened from a ringing-call notification, the caller is
+  // waiting on us to register: start SIP right away instead of after the
+  // settings round trip (which can still merge in afterwards).
+  if (autoAnswerStamp()) applyBootOnce();
   fetch(API + "/settings").then(function(r){return r.json();}).then(function(d){
     var s = d.settings || {};
     if (s.devMode === "1") settings.devMode = true;
@@ -3193,8 +3251,8 @@ function boot() {
         if (Array.isArray(f)) favourites = f;
       } catch (e) {}
     }
-    applyBoot();
-  }).catch(applyBoot);
+    applyBootOnce();
+  }).catch(applyBootOnce);
 }
 document.addEventListener("DOMContentLoaded", boot);
 </script>
