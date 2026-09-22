@@ -72,6 +72,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .dial-recent-row{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid #1c1c1c;cursor:pointer}
 .dial-recent-row:active{background:#161616}
 .dial-recent-row .ic{font-size:15px;flex-shrink:0}
+.dir-ic{display:inline-block;flex-shrink:0;line-height:1;text-align:center}
+.dir-ic.out{color:#3b82f6}
+.dir-ic.in{color:#22c55e}
+.dir-ic.missed{color:#ef4444}
+.dial-recent-row .dir-ic{font-size:13px;width:15px}
 .dial-recent-row .who{flex:1;min-width:0;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dial-recent-row .meta{font-size:11px;color:#999;flex-shrink:0}
 #view-dial .call-panel{flex:1;flex-shrink:1;overflow-y:auto;min-height:0}
@@ -81,6 +86,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .hist-row{padding:10px 4px;border-bottom:1px solid #222;cursor:pointer}
 .hist-main{display:flex;align-items:center;gap:12px}
 .hist-row .ic{font-size:18px}
+.hist-row .dir-ic{font-size:16px;width:18px}
 .hist-row .who,.contact-row .cname{font-size:15px;font-weight:600}
 .hist-row .sub,.contact-row .sub{font-size:12px;color:#999}
 .hist-row .meta{margin-left:auto;font-size:12px;color:#999;text-align:right}
@@ -173,6 +179,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .ptable tr.changed .p-name{color:#ffd479}
 .p-note{font-size:11px;color:#888;margin-top:2px;line-height:1.3;font-weight:400}
 .p-val{width:32%}
+.p-select{width:100%;box-sizing:border-box;min-width:64px;padding:7px 4px;border:none;border-radius:8px;background:#1a1a1a;color:#fff;font-size:13px;outline:none}
 .p-val input{width:100%;box-sizing:border-box;min-width:64px;padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;color:#fff;font-size:14px;outline:none}
 .p-val input.bad{outline:1px solid #ef4444}
 .p-unit{display:block;font-size:10px;color:#888;margin-top:1px}
@@ -460,6 +467,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 </div>
 
 <div class="menu-drawer hidden" id="menu-drawer">
+  <button class="hidden" id="menu-install-btn" onclick="menuInstallApp()">⬇ Install App</button>
   <button onclick="openSettings()">⚙️ Settings</button>
   <button onclick="openParams()">📋 Parameters</button>
 </div>
@@ -545,8 +553,8 @@ var API = "https://voip-bridge.wandering-mode-c597.workers.dev";
 var PARAMS = [], PV = {};
 function defParam(group, id, label, def, o, set) {
   o = o || {};
-  PARAMS.push({ group: group, id: id, label: label, def: def, type: typeof def === "string" ? "text" : "number",
-    unit: o.unit || "", min: o.min, max: o.max, step: o.step || 1, note: o.note || "", set: set || null });
+  PARAMS.push({ group: group, id: id, label: label, def: def, type: o.choices ? "choice" : (typeof def === "string" ? "text" : "number"),
+    choices: o.choices || null, unit: o.unit || "", min: o.min, max: o.max, step: o.step || 1, note: o.note || "", set: set || null });
   PV[id] = def;
 }
 var G_CALL = "Calls & audio", G_LIST = "Lists & search", G_TIME = "Timing (typing & taps)";
@@ -584,6 +592,7 @@ defParam(J_INK, "jotStrokeSize", "Stroke width", 5, { unit: "px", min: 0.5, max:
 defParam(J_INK, "jotStrokeThinning", "Stroke thinning", 0.6, { min: -1, max: 1, step: 0.05, note: "How much speed thins the line" }, function(v) { JOT_STROKE_OPTS.thinning = v; });
 defParam(J_INK, "jotStrokeSmoothing", "Stroke smoothing", 0.5, { min: 0, max: 1, step: 0.05 }, function(v) { JOT_STROKE_OPTS.smoothing = v; });
 defParam(J_INK, "jotStrokeStreamline", "Stroke streamline", 0.5, { min: 0, max: 1, step: 0.05 }, function(v) { JOT_STROKE_OPTS.streamline = v; });
+defParam(J_INK, "jotDefaultPressure", "Default pen pressure", 0.5, { min: 0.05, max: 1, step: 0.05, note: "For mouse / pens that report no pressure" });
 
 defParam(J_WORD, "jotWordA", "Word end: A (pause)", 500, { min: -100000, max: 100000, step: 10, note: "A*t + B*t*g + C*g + D > 0 starts a new word; t = pause in seconds, g = gap in mm" }, function(v) { JOT_WORD_A = v; });
 defParam(J_WORD, "jotWordB", "Word end: B (pause x gap)", 2, { min: -1000, max: 1000, step: 0.5 }, function(v) { JOT_WORD_B = v; });
@@ -591,6 +600,8 @@ defParam(J_WORD, "jotWordC", "Word end: C (gap)", 2, { min: -1000, max: 1000, st
 defParam(J_WORD, "jotWordD", "Word end: D (offset)", -800, { min: -100000, max: 100000, step: 10, note: "Negative = leaning towards continuing the word; -D/A is the settle timeout" }, function(v) { JOT_WORD_D = v; });
 defParam(J_WORD, "jotFirstLetterEase", "First-letter leniency", 0.5, { min: 0.05, max: 2, step: 0.05, note: "Below 1 = more forgiving after the first stroke of a word" }, function(v) { JOT_FIRST_LETTER_EASE = v; });
 defParam(J_WORD, "jotPxPerMm", "Screen px per mm", 96 / 25.4, { unit: "px/mm", min: 1, max: 20, step: 0.01, note: "Nominal CSS pixels per millimetre" }, function(v) { JOT_PX_PER_MM = v; });
+defParam(J_WORD, "jotSettleMinMs", "Word settle: shortest wait", 50, { unit: "ms", min: 0, max: 5000, step: 10, note: "Floor for the -D/A settle timeout" });
+defParam(J_WORD, "jotSettleFallbackMs", "Word settle: fallback wait", 700, { unit: "ms", min: 100, max: 10000, step: 50, note: "Used when A is 0 or negative" });
 
 defParam(J_LAY, "jotSplitGapFactor", "Split gap (fraction of height)", 0.7, { min: 0.05, max: 3, step: 0.05, note: "Gap between strokes that separates words in a run" }, function(v) { JOT_SPLIT_GAP_FACTOR = v; });
 defParam(J_LAY, "jotSplitGapMin", "Split gap minimum", 18, { unit: "px", min: 0, max: 200, step: 1 }, function(v) { JOT_SPLIT_GAP_MIN = v; });
@@ -601,6 +612,10 @@ defParam(J_LAY, "jotWordGap", "Word gap", 10, { unit: "px", min: 0, max: 100, st
 defParam(J_LAY, "jotParaMargin", "Paragraph margin", 14, { unit: "px", min: 0, max: 100, step: 1 }, function(v) { JOT_PARA_MARGIN = v; });
 defParam(J_LAY, "jotParaTop", "Top padding", 32, { unit: "px", min: 0, max: 200, step: 1 }, function(v) { JOT_PARA_TOP = v; });
 defParam(J_LAY, "jotRunScaleMax", "Max handwriting enlargement", 4, { min: 1, max: 20, step: 0.5, note: "Upper limit when scaling small writing up to word height" });
+defParam(J_LAY, "jotUntiltedSpread", "Upright threshold", 0.15, { min: 0, max: 1, step: 0.05, note: "Sideways spread below this fraction of height = upright, no tilt (an I with serifs needs ~0.35)" });
+defParam(J_LAY, "jotMinRunHeight", "Minimum writing height", 10, { unit: "px", min: 1, max: 100, step: 1, note: "Floor when scaling handwriting to word height" });
+defParam(J_LAY, "jotMinWordWidth", "Minimum word width", 10, { unit: "px", min: 1, max: 100, step: 1 });
+defParam(J_LAY, "jotBoxBottomPad", "Space below last line", 10, { unit: "px", min: 0, max: 100, step: 1 });
 
 defParam(J_DOT, "jotDotMaxRaw", "Tap size counted as a period", 6, { unit: "px", min: 0, max: 50, step: 1 }, function(v) { JOT_DOT_MAX_RAW = v; });
 defParam(J_DOT, "jotDotScale", "Period render scale", 0.5, { min: 0.1, max: 3, step: 0.05 }, function(v) { JOT_DOT_SCALE = v; });
@@ -609,6 +624,9 @@ defParam(J_DOT, "jotDotWidth", "Period layout width", 8, { unit: "px", min: 0, m
 defParam(J_GEST, "jotGestureMinLen", "Gesture leg minimum length", 22, { unit: "px", min: 5, max: 200, step: 1, note: "Backspace / Return strokes; screen px, zoom-independent" }, function(v) { JOT_GESTURE_MIN_LEN = v; });
 defParam(J_GEST, "jotGestureStraightness", "Gesture straightness", 0.7, { min: 0.3, max: 1, step: 0.05, note: "Net travel / path length, per leg" }, function(v) { JOT_GESTURE_STRAIGHTNESS = v; });
 defParam(J_GEST, "jotGestureAxisDominance", "Gesture axis dominance", 1.6, { min: 1, max: 6, step: 0.1, note: "One axis must beat the other by this ratio" }, function(v) { JOT_GESTURE_AXIS_DOMINANCE = v; });
+var GESTURE_PATHS = ["left-down", "down-left", "right-down", "down-right", "left-up", "up-left", "right-up", "up-right"];
+defParam(J_GEST, "jotGestureBackspace", "Backspace gesture", "left-down", { choices: GESTURE_PATHS, note: "Pen path: first leg, then second leg. Must differ from Return" });
+defParam(J_GEST, "jotGestureReturn", "Return gesture", "down-left", { choices: GESTURE_PATHS, note: "Starts a new line, left-aligned" });
 
 defParam(J_BOX, "jotBoxMinWidth", "Box minimum width", 80, { unit: "px", min: 20, max: 600, step: 5 }, function(v) { JOT_BOX_MIN_WIDTH = v; });
 defParam(J_BOX, "jotNewBoxRows", "New box height", 1, { unit: "lines", min: 1, max: 20, step: 1, note: "For boxes made with the + button" }, function(v) { JOT_NEW_BOX_ROWS = v; });
@@ -619,6 +637,11 @@ defParam(J_BOX, "jotNewBoxWFrac", "Default new-box width: screen share", 0.55, {
 defParam(J_BOX, "jotZoomMin", "Zoom minimum", 0.25, { min: 0.05, max: 1, step: 0.05 });
 defParam(J_BOX, "jotZoomMax", "Zoom maximum", 4, { min: 1, max: 20, step: 0.5 });
 defParam(J_BOX, "jotZoomStep", "Zoom button step", 1.25, { min: 1.05, max: 3, step: 0.05 });
+defParam(J_BOX, "jotHitPad", "Touch tolerance (erase / select)", 10, { unit: "px", min: 0, max: 60, step: 1 });
+defParam(J_BOX, "jotHandleHitMin", "Resize handle touch area: min", 10, { unit: "px", min: 2, max: 60, step: 1 });
+defParam(J_BOX, "jotHandleHitFactor", "Resize handle touch area: scale", 0.9, { min: 0.3, max: 3, step: 0.05 });
+defParam(J_BOX, "jotViewportMinW", "Canvas minimum width", 280, { unit: "px", min: 100, max: 2000, step: 10 });
+defParam(J_BOX, "jotViewportMinH", "Canvas minimum height", 200, { unit: "px", min: 100, max: 2000, step: 10 });
 
 function paramOverrides() {
   try { var o = JSON.parse(localStorage.getItem("vb_params") || "{}"); return (o && typeof o === "object") ? o : {}; } catch (e) { return {}; }
@@ -627,7 +650,17 @@ function saveParamOverrides(o) { try { localStorage.setItem("vb_params", JSON.st
 function hasOverride(o, id) { return Object.prototype.hasOwnProperty.call(o, id); }
 function paramFind(id) { for (var i = 0; i < PARAMS.length; i++) if (PARAMS[i].id === id) return PARAMS[i]; return null; }
 function paramFmt(v) { return typeof v === "number" ? String(parseFloat(v.toPrecision(6))) : String(v); }
+function paramChoiceLabel(c) { return String(c).split("-").join(", then "); }
+function paramField(p, attrs) {
+  if (p.type === "choice") {
+    var h = '<select class="p-select" data-id="' + p.id + '">';
+    for (var i = 0; i < p.choices.length; i++) h += '<option value="' + esc(p.choices[i]) + '"' + (p.choices[i] === PV[p.id] ? " selected" : "") + '>' + esc(paramChoiceLabel(p.choices[i])) + '</option>';
+    return h + '</select>';
+  }
+  return '<input data-id="' + p.id + '"' + attrs + ' value="' + esc(paramFmt(PV[p.id])) + '" autocomplete="off">';
+}
 function paramValid(p, v) {
+  if (p.type === "choice") return p.choices.indexOf(v) !== -1;
   if (p.type === "text") return typeof v === "string" && v.trim() !== "";
   if (typeof v !== "number" || !isFinite(v)) return false;
   if (p.min !== undefined && v < p.min) return false;
@@ -680,8 +713,8 @@ function renderParams() {
       : ' type="number" step="' + p.step + '"' + (p.min !== undefined ? ' min="' + p.min + '"' : "") + (p.max !== undefined ? ' max="' + p.max + '"' : "");
     html += '<tr class="p-row' + (changed ? " changed" : "") + '" data-id="' + p.id + '" data-search="' + esc((p.group + " " + p.label + " " + p.id).toLowerCase()) + '">'
       + '<td class="p-name">' + esc(p.label) + (p.note ? '<div class="p-note">' + esc(p.note) + '</div>' : "") + '</td>'
-      + '<td class="p-val"><input data-id="' + p.id + '"' + attrs + ' value="' + esc(paramFmt(PV[p.id])) + '" autocomplete="off">' + (p.unit ? '<span class="p-unit">' + esc(p.unit) + '</span>' : "") + '</td>'
-      + '<td class="p-def">' + esc(paramFmt(p.def)) + '<button class="p-reset" data-id="' + p.id + '" title="Reset to default"' + (changed ? "" : ' style="visibility:hidden"') + '>↺</button></td></tr>';
+      + '<td class="p-val">' + paramField(p, attrs) + (p.unit ? '<span class="p-unit">' + esc(p.unit) + '</span>' : "") + '</td>'
+      + '<td class="p-def">' + esc(p.type === "choice" ? paramChoiceLabel(p.def) : paramFmt(p.def)) + '<button class="p-reset" data-id="' + p.id + '" title="Reset to default"' + (changed ? "" : ' style="visibility:hidden"') + '>↺</button></td></tr>';
   }
   document.getElementById("params-table").innerHTML = html;
   filterParams();
@@ -708,7 +741,7 @@ function commitParam(id, inp) {
   if (!p) return;
   clearTimeout(paramTimers[id]);
   var raw = inp.value.trim();
-  var v = p.type === "text" ? raw : (raw === "" ? NaN : Number(raw));
+  var v = p.type === "number" ? (raw === "" ? NaN : Number(raw)) : raw;
   if (!paramValid(p, v)) {
     inp.classList.add("bad");
     paramStatus("⚠ " + p.label + ": " + (p.type === "number" ? "enter a number" + (p.min !== undefined ? " from " + p.min : "") + (p.max !== undefined ? " to " + p.max : "") : "can't be empty"), true);
@@ -716,7 +749,7 @@ function commitParam(id, inp) {
   }
   inp.classList.remove("bad");
   var o = paramOverrides();
-  var same = p.type === "text" ? v === p.def : Math.abs(v - p.def) < 0.0001;
+  var same = p.type === "number" ? Math.abs(v - p.def) < 0.0001 : v === p.def;
   if (same) { delete o[id]; paramApply(p, p.def); } else { o[id] = v; paramApply(p, v); }
   saveParamOverrides(o);
   var row = inp.closest(".p-row");
@@ -750,14 +783,14 @@ function resetAllParams() {
 }
 document.getElementById("params-filter").addEventListener("input", filterParams);
 document.getElementById("params-table").addEventListener("input", function(e) {
-  var inp = e.target.closest("input");
+  var inp = e.target.closest("input,select");
   if (!inp) return;
   var id = inp.getAttribute("data-id");
   clearTimeout(paramTimers[id]);
   paramTimers[id] = setTimeout(function() { commitParam(id, inp); }, 700);
 });
 document.getElementById("params-table").addEventListener("change", function(e) {
-  var inp = e.target.closest("input");
+  var inp = e.target.closest("input,select");
   if (inp) commitParam(inp.getAttribute("data-id"), inp);
 });
 document.getElementById("params-table").addEventListener("click", function(e) {
@@ -1249,7 +1282,7 @@ function jtWordEnds(tSec, gMm) {
 // Pause (ms) after which a word settles with no further stroke: solves the
 // formula at g = 0 for t.
 function jtWordTimeoutMs() {
-  return JOT_WORD_A > 0 ? Math.max(50, -JOT_WORD_D / JOT_WORD_A * 1000) : 700;
+  return JOT_WORD_A > 0 ? Math.max(PV.jotSettleMinMs, -JOT_WORD_D / JOT_WORD_A * 1000) : PV.jotSettleFallbackMs;
 }
 // Shortest distance between two bboxes (0 if they overlap), logical px.
 function jtBBoxGap(a, b) {
@@ -1278,18 +1311,16 @@ var JOT_PARA_TOP = 32;
 var JOT_DOT_MAX_RAW = 6;   // raw local px — a lone stroke this small or smaller is a tap
 var JOT_DOT_SCALE = 0.5;   // fixed small render scale for a period
 var JOT_DOT_WIDTH = 8;     // layout width reserved for a period
-// Jot-mode commands: a single continuous stroke shaped like a capital "L"
-// turned onto its side, drawn in either order (either leg first). The shape is
-// what counts, named by where the two legs point away from the corner:
-//   ┌  legs go right + down  (an L rotated 90 degrees clockwise)  = Return,
-//      inserting a line break: the next word starts on the next line, left-aligned.
-//   ┐  legs go left + down   (an L rotated 180 degrees)           = Backspace
-//      (undoes the in-progress word, or the last committed action if nothing's
-//      in progress).
-// An ordinary "L" (legs up + right) is deliberately neither. Each leg must be
-// reasonably long and straight, and the two legs roughly perpendicular, so
-// ordinary letters (which curve, or aren't these two shapes) are never mistaken
-// for a command. See jtClassifyGesture.
+// Jot-mode commands: a single continuous stroke with one corner — two straight,
+// roughly perpendicular legs (see jtClassifyGesture). The pen's path decides it,
+// in order: e.g. "left-down" is draw leftward, turn, draw downward. Two paths
+// are commands, chosen in Parameters (Jot: gestures):
+//   Backspace  (default left-down)  undoes the in-progress word, or the last
+//              committed action if nothing's in progress.
+//   Return     (default down-left)  inserts a line break: the next word starts
+//              on the next line, left-aligned.
+// Each leg must be reasonably long and straight, so ordinary letters (which
+// curve) are never mistaken for a command.
 var JOT_GESTURE_MIN_LEN = 22;         // screen px — minimum net travel per leg (zoom-independent)
 var JOT_GESTURE_STRAIGHTNESS = 0.7;   // net displacement / actual path length, per leg
 var JOT_GESTURE_AXIS_DOMINANCE = 1.6; // one axis must outrun the other by this ratio, per leg
@@ -1371,19 +1402,17 @@ function jtClassifyGesture(pts, scale) {
   var leg1 = jtLegDir(pts.slice(0, corner + 1), scale);
   var leg2 = jtLegDir(pts.slice(corner), scale);
   if (!leg1 || !leg2 || leg1.axis === leg2.axis) return null;
-  // The commands are shapes, named by where each leg points AWAY FROM THE
-  // CORNER — not by which way the pen travelled. leg1 runs start -> corner, so
-  // measure it the other way round (corner -> start); leg2 already runs away.
-  // That makes the shape independent of which leg is drawn first, and keeps a
-  // plain "L" (legs up + right from its corner) and the return-key arrow (up +
-  // left) from ever matching a command.
-  var d1 = { axis: leg1.axis, sign: -leg1.sign };
-  var h = (d1.axis === "x") ? d1 : leg2;
-  var v = (d1.axis === "y") ? d1 : leg2;
-  if (h.sign < 0 && v.sign > 0) return "backspace"; // ┐  an L rotated 180 degrees: legs go left + down
-  if (h.sign > 0 && v.sign > 0) return "return";    // ┌  an L rotated 90 degrees clockwise: legs go right + down
+  // The command is the pen's path: the first leg's direction, then the
+  // second's ("left-down" = draw leftward, turn, draw downward). Order matters,
+  // so the same two legs drawn the other way round can be a different command.
+  // Which path is Backspace and which is Return is set in Parameters
+  // (Jot: gestures); anything else, including a plain "L", is just ink.
+  var code = jtDirName(leg1) + "-" + jtDirName(leg2);
+  if (code === PV.jotGestureBackspace) return "backspace";
+  if (code === PV.jotGestureReturn) return "return";
   return null;
 }
+function jtDirName(l) { return l.axis === "x" ? (l.sign < 0 ? "left" : "right") : (l.sign < 0 ? "up" : "down"); }
 // Best-fit line through a whole written run's combined points -> rotation
 // to level it, and the run's own centroid (mx,my) to rotate around.
 function jtPCAFrame(pts) {
@@ -1398,7 +1427,7 @@ function jtPCAFrame(pts) {
   // noise there, and atan2 turns that noise into an essentially random
   // +/-90 degree result. Rather than clamp that noise to +/-JOT_MAX_TILT
   // (still visibly wrong, and unstable in sign), treat it as untilted.
-  if (Math.sqrt(sxx / n) < Math.sqrt(syy / n) * 0.15) {
+  if (Math.sqrt(sxx / n) < Math.sqrt(syy / n) * PV.jotUntiltedSpread) {
     angle = 0;
   } else {
     angle = 0.5 * Math.atan2(2 * sxy, sxx - syy);
@@ -1437,7 +1466,7 @@ function jtSplitWords(strokes, prevRotate, prevScale) {
     overallMinY = Math.min(overallMinY, minY); overallMaxY = Math.max(overallMaxY, maxY);
     return { minX: minX, maxX: maxX, minY: minY, maxY: maxY };
   });
-  var overallH = Math.max(overallMaxY - overallMinY, 10);
+  var overallH = Math.max(overallMaxY - overallMinY, PV.jotMinRunHeight);
   var gap = Math.max(overallH * JOT_SPLIT_GAP_FACTOR, JOT_SPLIT_GAP_MIN);
   var order = local.map(function(_, idx) { return idx; });
   order.sort(function(a, b) { return local[a].minX - local[b].minX; });
@@ -1493,7 +1522,7 @@ function jtSplitWords(strokes, prevRotate, prevScale) {
       anchor: [ax, ay],
       rotate: useRotate,
       scale: isDot ? JOT_DOT_SCALE : useScale,
-      width: isDot ? JOT_DOT_WIDTH : Math.max(maxX - minX, 10) * useScale,
+      width: isDot ? JOT_DOT_WIDTH : Math.max(maxX - minX, PV.jotMinWordWidth) * useScale,
       height: JOT_WORD_HEIGHT
     });
     if (!isDot) { rot = useRotate; lastScale = useScale; } // a period carries no orientation/size info to hand on
@@ -1537,8 +1566,8 @@ function createJot(hostEl, onChange) {
   // window onto it. This keeps the canvas backing store viewport-sized
   // (cheap, no browser canvas-size limits) instead of trying to size a DOM
   // element to hold everything ever written.
-  var viewportW = Math.max(280, canvasWrap.getBoundingClientRect().width || hostEl.getBoundingClientRect().width || 320);
-  var viewportH = Math.max(200, canvasWrap.getBoundingClientRect().height || 420);
+  var viewportW = Math.max(PV.jotViewportMinW, canvasWrap.getBoundingClientRect().width || hostEl.getBoundingClientRect().width || 320);
+  var viewportH = Math.max(PV.jotViewportMinH, canvasWrap.getBoundingClientRect().height || 420);
   canvas.width = viewportW * dpr;
   canvas.height = viewportH * dpr;
   canvas.style.width = viewportW + "px";
@@ -1605,7 +1634,7 @@ function createJot(hostEl, onChange) {
   function jtBoxContentHeight(b) {
     var maxY = JOT_PARA_TOP;
     for (var i = 0; i < b.words.length; i++) if (b.words[i].y > maxY) maxY = b.words[i].y;
-    return Math.max(Math.ceil(maxY + JOT_PARA_MARGIN + 10), b.minH || JOT_BOX_MIN_HEIGHT);
+    return Math.max(Math.ceil(maxY + JOT_PARA_MARGIN + PV.jotBoxBottomPad), b.minH || JOT_BOX_MIN_HEIGHT);
   }
 
   function relayoutBox(b) {
@@ -1670,7 +1699,7 @@ function createJot(hostEl, onChange) {
     return null;
   }
   function hitTestBoxHandle(p) {
-    var pad = Math.max(JOT_BOX_HANDLE_SIZE / camera.scale, 10) * 0.9;
+    var pad = Math.max(JOT_BOX_HANDLE_SIZE / camera.scale, PV.jotHandleHitMin) * PV.jotHandleHitFactor;
     for (var i = boxes.length - 1; i >= 0; i--) {
       var b = boxes[i];
       var hx = b.x + b.w, hy = b.y + b.h;
@@ -1803,7 +1832,7 @@ function createJot(hostEl, onChange) {
     notifyChange();
   }
 
-  // Shared by the toolbar Undo button and the back+down backspace gesture.
+  // Takes back the last committed action. Callers deal with an in-progress word first (see jtGestureBackspace).
   function doUndo() {
     actions.pop();
     rebuildFromActions();
@@ -1815,7 +1844,7 @@ function createJot(hostEl, onChange) {
   // A single-stroke "L" gesture (see jtClassifyGesture) is recognized and
   // consumed entirely on its own completed stroke — it never touches
   // writingWord, so there's nothing to undo there first.
-  // Backspace (left, corner, down): if there's an in-progress (not yet
+  // Backspace (path set in Parameters): if there's an in-progress (not yet
   // paused/finalized) word, that's what gets discarded — same as
   // backspacing while mid-word in a text editor. Otherwise it's a real Undo
   // of the last committed action (word, stroke, erase, or even a previous
@@ -1825,7 +1854,7 @@ function createJot(hostEl, onChange) {
     if (writingWord) { writingWord = null; redraw(); notifyChange(); return; }
     doUndo();
   }
-  // Return (┌: legs go right + down): commits whatever preceded the gesture
+  // Return (path set in Parameters): commits whatever preceded the gesture
   // normally, then inserts a hidden line-break marker (see jtBreakWord)
   // immediately — not a flag deferred onto the next word — so it survives a
   // save even if nothing else is written afterward.
@@ -1841,7 +1870,7 @@ function createJot(hostEl, onChange) {
   }
 
   function hitTest(lx, ly) {
-    var pad = 10;
+    var pad = PV.jotHitPad;
     var id;
     for (id in drawStrokes) {
       var bx = drawStrokes[id].bbox;
@@ -1935,7 +1964,7 @@ function createJot(hostEl, onChange) {
     }
     canvas.setPointerCapture(e.pointerId);
     var p = toLogical(e.clientX, e.clientY);
-    var pressure = e.pointerType === "mouse" ? 0.5 : (e.pressure || 0.5);
+    var pressure = e.pointerType === "mouse" ? PV.jotDefaultPressure : (e.pressure || PV.jotDefaultPressure);
     if (mode === "erase") { erasing = true; eraseAt(p[0], p[1]); return; }
     if (mode === "jot") {
       // Tapping inside an existing box continues writing into it (baking in
@@ -2041,7 +2070,7 @@ function createJot(hostEl, onChange) {
     var p = toLogical(e.clientX, e.clientY);
     if (mode === "erase") { if (erasing) eraseAt(p[0], p[1]); return; }
     if (!current) return; // mid-pinch (this pointer was cancelled when a 2nd finger landed)
-    var pressure = e.pointerType === "mouse" ? 0.5 : (e.pressure || 0.5);
+    var pressure = e.pointerType === "mouse" ? PV.jotDefaultPressure : (e.pressure || PV.jotDefaultPressure);
     current.points.push([p[0], p[1], pressure]);
     redraw();
   }
@@ -2080,7 +2109,12 @@ function createJot(hostEl, onChange) {
         writingWord = { strokes: [stroke.points], bbox: bbox };
       }
       if (wordPauseTimer) clearTimeout(wordPauseTimer);
-      wordPauseTimer = setTimeout(finalizeWord, jtWordTimeoutMs());
+      // After a word's very first stroke, settle as leniently as the next-stroke
+      // test does (JOT_FIRST_LETTER_EASE) — otherwise the lone first letter ("I"
+      // of "It") is cut off before the second stroke has a chance to land.
+      var settleMs = jtWordTimeoutMs();
+      if (writingWord && writingWord.strokes.length === 1) settleMs /= Math.max(JOT_FIRST_LETTER_EASE, 0.05);
+      wordPauseTimer = setTimeout(finalizeWord, settleMs);
       redraw();
       notifyChange();
     } else {
@@ -2150,7 +2184,9 @@ function createJot(hostEl, onChange) {
       redraw();
       return;
     }
-    if (act === "undo") doUndo();
+    // Same rule as the Backspace gesture: a word still being written goes first;
+    // only when there is none does Undo take back the last committed action.
+    if (act === "undo") jtGestureBackspace();
     else if (act === "zoomin") setZoom(camera.scale * PV.jotZoomStep);
     else if (act === "zoomout") setZoom(camera.scale / PV.jotZoomStep);
     else if (act === "zoomreset") setZoom(1);
@@ -2454,6 +2490,13 @@ function pickSuggestion(num, name) {
   document.getElementById("dial-suggestions").innerHTML = "";
 }
 function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/'/g,"&#39;").replace(/"/g,"&quot;"); }
+// Combined color+direction indicator: ▲ outgoing / ▼ incoming, colored green
+// (completed in), blue (completed out), or red (missed/rejected/aborted).
+function dirIcon(dir, missed) {
+  var shape = dir === "out" ? "▲" : "▼";
+  var cls = missed ? "missed" : dir;
+  return '<span class="dir-ic ' + cls + '">' + shape + '</span>';
+}
 
 // ── dial view: recent calls (tap to load into the input for redial) ────
 var dialRecentCache = {};
@@ -2466,15 +2509,13 @@ function loadDialRecent() {
     el.innerHTML = calls.map(function(c) {
       var dir = c.direction === "outgoing" ? "out" : "in";
       var missed = c.state === "missed" || c.state === "rejected" || c.state === "aborted";
-      var icon = missed ? "🔴" : (dir === "out" ? "🟦" : "🟢");
-      var arrow = dir === "out" ? "⬆" : "⬇";
       var name = (c.partner_name || "").trim();
       var num = (c.phone_number && c.phone_number !== "unknown") ? String(c.phone_number) : (c.did || "unknown");
       var who = name || num;
       var when = c.start_date ? fmtTime(c.start_date) : "";
       var key = "r-" + c.id;
       dialRecentCache[key] = num;
-      return '<div class="dial-recent-row" data-key="' + esc(key) + '"><span class="ic">' + icon + '</span><span class="who">' + arrow + ' ' + esc(who) + '</span><span class="meta">' + when + '</span></div>';
+      return '<div class="dial-recent-row" data-key="' + esc(key) + '">' + dirIcon(dir, missed) + '<span class="who">' + esc(who) + '</span><span class="meta">' + when + '</span></div>';
     }).join("");
   }).catch(function(){ el.innerHTML = ""; });
 }
@@ -2679,8 +2720,6 @@ function renderHistory(calls) {
 function renderHistoryRow(c) {
   var dir = c.direction === "outgoing" ? "out" : "in";
   var missed = c.state === "missed" || c.state === "rejected" || c.state === "aborted";
-  var icon = missed ? "🔴" : (dir === "out" ? "🟦" : "🟢");
-  var arrow = dir === "out" ? "⬆" : "⬇";
   var name = (c.partner_name || "").trim();
   var num = (c.phone_number && c.phone_number !== "unknown") ? String(c.phone_number) : (c.did || "unknown");
   var who = name || num;
@@ -2691,7 +2730,7 @@ function renderHistoryRow(c) {
   var key = "h-" + c.id;
   callsCache[key] = c;
   return '<div class="hist-row" data-key="' + esc(key) + '">'
-    + '<div class="hist-main"><span class="ic">' + icon + '</span><div><div class="who">' + arrow + ' ' + esc(who) + notesFlag + '</div>' + (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div><div class="meta">' + when + dur + '</div></div>'
+    + '<div class="hist-main">' + dirIcon(dir, missed) + '<div><div class="who">' + esc(who) + notesFlag + '</div>' + (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div><div class="meta">' + when + dur + '</div></div>'
     + '</div>';
 }
 function fmtDur(sec) {
@@ -3188,13 +3227,21 @@ function isStandalone() {
 window.addEventListener("beforeinstallprompt", function(e) {
   e.preventDefault();
   deferredInstallPrompt = e;
-  if (!isStandalone()) document.getElementById("install-btn").classList.remove("hidden");
+  if (!isStandalone()) showInstallButtons();
 });
 window.addEventListener("appinstalled", function() {
   deferredInstallPrompt = null;
-  document.getElementById("install-btn").classList.add("hidden");
+  hideInstallButtons();
   document.getElementById("install-tip").classList.add("hidden");
 });
+function showInstallButtons() {
+  document.getElementById("install-btn").classList.remove("hidden");
+  document.getElementById("menu-install-btn").classList.remove("hidden");
+}
+function hideInstallButtons() {
+  document.getElementById("install-btn").classList.add("hidden");
+  document.getElementById("menu-install-btn").classList.add("hidden");
+}
 function installApp() {
   if (deferredInstallPrompt) {
     deferredInstallPrompt.prompt();
@@ -3204,12 +3251,16 @@ function installApp() {
   // No beforeinstallprompt support (iOS Safari) — show manual instructions.
   document.getElementById("install-tip").classList.remove("hidden");
 }
+function menuInstallApp() {
+  document.getElementById("menu-drawer").classList.add("hidden");
+  installApp();
+}
 function dismissInstallTip() {
   document.getElementById("install-tip").classList.add("hidden");
 }
 (function() {
   var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  if (isIOS && !isStandalone()) document.getElementById("install-btn").classList.remove("hidden");
+  if (isIOS && !isStandalone()) showInstallButtons();
 })();
 
 // ── menu + settings ────────────────────────────────────────────
