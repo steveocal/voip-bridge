@@ -76,7 +76,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .dir-ic.out{color:#3b82f6}
 .dir-ic.in{color:#22c55e}
 .dir-ic.missed{color:#ef4444}
-.dial-recent-row .dir-ic{font-size:13px;width:15px}
+.dial-recent-row .dir-ic{font-size:18px;width:20px}
 .dial-recent-row .who{flex:1;min-width:0;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dial-recent-row .meta{font-size:11px;color:#999;flex-shrink:0}
 #view-dial .call-panel{flex:1;flex-shrink:1;overflow-y:auto;min-height:0}
@@ -86,7 +86,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .hist-row{padding:10px 4px;border-bottom:1px solid #222;cursor:pointer}
 .hist-main{display:flex;align-items:center;gap:12px}
 .hist-row .ic{font-size:18px}
-.hist-row .dir-ic{font-size:16px;width:18px}
+.hist-row .dir-ic{font-size:24px;width:26px}
 .hist-row .who,.contact-row .cname{font-size:15px;font-weight:600}
 .hist-row .sub,.contact-row .sub{font-size:12px;color:#999}
 .hist-row .meta{margin-left:auto;font-size:12px;color:#999;text-align:right}
