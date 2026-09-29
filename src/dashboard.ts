@@ -1750,9 +1750,17 @@ function createJot(hostEl, onChange) {
 
   function finalizeWord() {
     if (wordPauseTimer) { clearTimeout(wordPauseTimer); wordPauseTimer = null; }
-    if (!writingWord || !writingWord.strokes.length) { writingWord = null; return; }
+    commitWritingWord();
+    writingWord = null;
+    redraw();
+    notifyChange();
+  }
+  // Adds writingWord to the active box as a laid-out word (without clearing
+  // writingWord); returns the box, or null if there was nothing to add.
+  function commitWritingWord() {
+    if (!writingWord || !writingWord.strokes.length) return null;
     var b = activeBox();
-    if (!b) { writingWord = null; return; }
+    if (!b) return null;
     var lastWord = jtLastWordRef();
     var t = jtMakeWord(writingWord.strokes, lastWord ? lastWord.rotate : null, lastWord ? lastWord.scale : null);
     var id = nextId++;
@@ -1761,9 +1769,16 @@ function createJot(hostEl, onChange) {
     actions.push(action);
     b.words.push({ id: id, rawStrokes: action.rawStrokes, anchor: action.anchor, rotate: action.rotate, scale: action.scale, width: action.width, height: action.height, dot: !!action.dot });
     relayoutBox(b);
-    writingWord = null;
-    redraw();
-    notifyChange();
+    return b;
+  }
+  // Runs fn with the in-progress word temporarily laid out, so a save
+  // captures it — then takes it back out. Autosave must never end a word:
+  // it runs ~1s after every stroke, so finalizing here split words at any
+  // pause between strokes (e.g. a T's stem committed before its crossbar).
+  function withPendingWord(fn) {
+    var b = commitWritingWord();
+    try { return fn(); }
+    finally { if (b) { actions.pop(); b.words.pop(); relayoutBox(b); } }
   }
 
   // Takes back the last committed action. Callers deal with an in-progress word first (see jtGestureBackspace).
@@ -2130,8 +2145,7 @@ function createJot(hostEl, onChange) {
   return {
     clear: function() { finalizeWord(); actions = []; drawStrokes = {}; boxes = []; activeBoxId = null; camera.x = 0; camera.y = 0; camera.scale = 1; updateZoomLabel(); updateDocWidth(); redraw(); },
     isEmpty: function() { return actions.length === 0 && !writingWord; },
-    getJSON: function() {
-      finalizeWord();
+    getJSON: function() { return withPendingWord(function() {
       var ds = [], id;
       for (id in drawStrokes) ds.push({ id: id, points: drawStrokes[id].points });
       var bs = boxes.map(function(b) {
@@ -2141,9 +2155,8 @@ function createJot(hostEl, onChange) {
         };
       });
       return { v: 2, canvasWidth: DOC_WIDTH, drawStrokes: ds, boxes: bs };
-    },
-    getSVG: function() {
-      finalizeWord();
+    }); },
+    getSVG: function() { return withPendingWord(function() {
       var maxY = JOT_PARA_TOP, maxX = DOC_WIDTH;
       var id;
       for (id in drawStrokes) { maxY = Math.max(maxY, drawStrokes[id].bbox.maxY); maxX = Math.max(maxX, drawStrokes[id].bbox.maxX); }
@@ -2168,7 +2181,7 @@ function createJot(hostEl, onChange) {
       }
       svg += '</svg>';
       return svg;
-    },
+    }); },
     loadJSON: function(data) {
       // Loaded content becomes seed entries in the action log (not just
       // direct state) so it replays correctly through rebuildFromActions()
