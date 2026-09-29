@@ -597,7 +597,7 @@ defParam(J_INK, "jotStrokeStreamline", "Stroke streamline", 0.5, { min: 0, max: 
 defParam(J_INK, "jotDefaultPressure", "Default pen pressure", 0.5, { min: 0.05, max: 1, step: 0.05, note: "For mouse / pens that report no pressure" });
 
 defParam(J_WORD, "jotNewWordPauseMs", "New word: pause", 900, { unit: "ms", min: 0, max: 10000, step: 50, note: "A new word needs BOTH this pause AND the gap below" });
-defParam(J_WORD, "jotNewWordGapMm", "New word: gap", 2, { unit: "mm", min: 0, max: 100, step: 0.5, note: "Distance from the word so far (on screen)" });
+defParam(J_WORD, "jotNewWordGapMm", "New word: gap", 2, { unit: "mm", min: 0, max: 100, step: 0.5, note: "Sideways distance from the word so far (or distance below it), on screen; ink above the word never counts" });
 defParam(J_WORD, "jotWordSettleMs", "Word settle delay", 2500, { unit: "ms", min: 500, max: 20000, step: 100, note: "With no new stroke for this long, the word is laid out; the next stroke then always starts a new word" });
 // Touch devices lay out at ~160 CSS px per inch (Android dp / iOS points), desktops at 96.
 var JOT_DEFAULT_PX_PER_MM = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 160 : 96) / 25.4;
@@ -1266,11 +1266,15 @@ var JOT_PX_PER_MM = JOT_DEFAULT_PX_PER_MM;  // CSS px per real mm
 function jtStartsNewWord(pauseMs, gapMm) {
   return pauseMs >= PV.jotNewWordPauseMs && gapMm >= PV.jotNewWordGapMm;
 }
-// Shortest distance between two bboxes (0 if they overlap), logical px.
-function jtBBoxGap(a, b) {
-  var dx = Math.max(0, a.minX - b.maxX, b.minX - a.maxX);
-  var dy = Math.max(0, a.minY - b.maxY, b.minY - a.maxY);
-  return Math.sqrt(dx * dx + dy * dy);
+// Gap (logical px) between the word so far and a new stroke, measured along
+// the writing direction: the sideways gap, or how far the stroke sits wholly
+// BELOW the word (the next line). Space above the word doesn't count, so a
+// T's crossbar, an i/j dot or an accent written above the letter stays part
+// of the word however high it floats, as long as it overlaps it sideways.
+function jtWordGap(word, stroke) {
+  var dx = Math.max(0, word.minX - stroke.maxX, stroke.minX - word.maxX);
+  var below = Math.max(0, stroke.minY - word.maxY);
+  return Math.max(dx, below);
 }
 // Cap the leveling rotation: a lone near-vertical stroke (e.g. a single "l")
 // has no horizontal spread, so the best-fit line through it is ~90° and
@@ -2029,7 +2033,7 @@ function createJot(hostEl, onChange) {
       var bbox = jtBBox(stroke.points);
       var pauseMs = lastStrokeUpAt ? Math.max(0, strokeDownAt - lastStrokeUpAt) : Infinity;
       lastStrokeUpAt = performance.now();
-      var gapMm = writingWord ? jtBBoxGap(writingWord.bbox, bbox) * camera.scale / JOT_PX_PER_MM : Infinity;
+      var gapMm = writingWord ? jtWordGap(writingWord.bbox, bbox) * camera.scale / JOT_PX_PER_MM : Infinity;
       var joins = !!writingWord && !jtStartsNewWord(pauseMs, gapMm);
       toolbar.querySelector(".jt-wordinfo").textContent = writingWord
         ? (pauseMs / 1000).toFixed(2) + "s · " + gapMm.toFixed(1) + "mm · " + (joins ? "same word" : "NEW word")
