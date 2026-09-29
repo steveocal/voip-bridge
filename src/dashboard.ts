@@ -108,10 +108,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .menu-btn{flex:1;background:none;border:none;color:#888;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;font-size:10px}
 .menu-btn .ico{font-size:20px}
 .menu-btn.active{color:#4db8ff}
-/* big green handset button in the bottom bar: dials a typed number, otherwise opens the keypad */
+/* big green handset button in the bottom bar: dials a typed number, otherwise opens the keypad; red during a call = hang up */
 .dial-fab{flex:1;background:none;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
-.dial-fab .fab{width:64px;height:64px;margin:-14px 0 -4px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:30px;background:linear-gradient(135deg,#34d399,#10b981);box-shadow:0 4px 18px rgba(16,185,129,.45)}
+.dial-fab .fab{width:64px;height:64px;margin:-26px 0 -4px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:30px;background:linear-gradient(135deg,#34d399,#10b981);box-shadow:0 4px 18px rgba(16,185,129,.45)}
 .dial-fab:active .fab{transform:scale(.95)}
+.dial-fab.in-call .fab{background:linear-gradient(135deg,#f87171,#ef4444);box-shadow:0 4px 18px rgba(239,68,68,.45)}
 .callbar{display:none}
 /* compact settings dialog */
 .modal-card.compact{padding:14px;max-width:380px;max-height:92vh;overflow-y:auto}
@@ -597,14 +598,15 @@ defParam(J_INK, "jotDefaultPressure", "Default pen pressure", 0.5, { min: 0.05, 
 defParam(J_WORD, "jotWordA", "Word end: A (pause)", 500, { min: -100000, max: 100000, step: 10, note: "A*t + B*t*g + C*g + D > 0 starts a new word; t = pause in seconds, g = gap in mm" }, function(v) { JOT_WORD_A = v; });
 defParam(J_WORD, "jotWordB", "Word end: B (pause x gap)", 2, { min: -1000, max: 1000, step: 0.5 }, function(v) { JOT_WORD_B = v; });
 defParam(J_WORD, "jotWordC", "Word end: C (gap)", 2, { min: -1000, max: 1000, step: 0.5 }, function(v) { JOT_WORD_C = v; });
-defParam(J_WORD, "jotWordD", "Word end: D (offset)", -800, { min: -100000, max: 100000, step: 10, note: "Negative = leaning towards continuing the word; -D/A is the settle timeout" }, function(v) { JOT_WORD_D = v; });
+defParam(J_WORD, "jotWordD", "Word end: D (offset)", -1200, { min: -100000, max: 100000, step: 10, note: "Negative = leaning towards continuing the word; -D/A is the settle timeout" }, function(v) { JOT_WORD_D = v; });
 defParam(J_WORD, "jotFirstLetterEase", "First-letter leniency", 0.5, { min: 0.05, max: 2, step: 0.05, note: "Below 1 = more forgiving after the first stroke of a word" }, function(v) { JOT_FIRST_LETTER_EASE = v; });
 defParam(J_WORD, "jotPxPerMm", "Screen px per mm", 96 / 25.4, { unit: "px/mm", min: 1, max: 20, step: 0.01, note: "Nominal CSS pixels per millimetre" }, function(v) { JOT_PX_PER_MM = v; });
+defParam(J_WORD, "jotLetterPauseMs", "Letter pause allowance", 1000, { unit: "ms", min: 0, max: 10000, step: 50, note: "A pause shorter than this never starts a new word, and a word never settles sooner" });
 defParam(J_WORD, "jotSettleMinMs", "Word settle: shortest wait", 50, { unit: "ms", min: 0, max: 5000, step: 10, note: "Floor for the -D/A settle timeout" });
 defParam(J_WORD, "jotSettleFallbackMs", "Word settle: fallback wait", 700, { unit: "ms", min: 100, max: 10000, step: 50, note: "Used when A is 0 or negative" });
 
 defParam(J_LAY, "jotSplitGapFactor", "Split gap (fraction of height)", 0.7, { min: 0.05, max: 3, step: 0.05, note: "Gap between strokes that separates words in a run" }, function(v) { JOT_SPLIT_GAP_FACTOR = v; });
-defParam(J_LAY, "jotSplitGapMin", "Split gap minimum", 18, { unit: "px", min: 0, max: 200, step: 1 }, function(v) { JOT_SPLIT_GAP_MIN = v; });
+defParam(J_LAY, "jotSplitGapMin", "Split gap minimum", 28, { unit: "px", min: 0, max: 200, step: 1 }, function(v) { JOT_SPLIT_GAP_MIN = v; });
 defParam(J_LAY, "jotMaxTilt", "Max levelling tilt", 30, { unit: "deg", min: 0, max: 90, step: 1, note: "Cap on how far a run is rotated flat" }, function(v) { JOT_MAX_TILT = v * Math.PI / 180; });
 defParam(J_LAY, "jotLineHeight", "Line height", 42, { unit: "px", min: 10, max: 200, step: 1 }, function(v) { JOT_LINE_HEIGHT = v; });
 defParam(J_LAY, "jotWordHeight", "Word height", 26, { unit: "px", min: 5, max: 150, step: 1, note: "Handwriting is scaled to this" }, function(v) { JOT_WORD_HEIGHT = v; });
@@ -1048,8 +1050,8 @@ function stopRingback() {
 var dialKeypadOpen = false;
 function onDialView() { return !document.getElementById("view-dial").classList.contains("hidden"); }
 function navDialAction() {
+  if (currentCall) { hangup(); return; }
   if (!onDialView()) { switchView("dial"); dialKeypadOpen = true; updateDialBottomVisibility(); return; }
-  if (currentCall) { toggleInCallKeypad(); return; }
   if (document.getElementById("dial-input").value.trim()) { dialAction(); return; }
   dialKeypadOpen = !dialKeypadOpen;
   updateDialBottomVisibility();
@@ -1268,7 +1270,7 @@ var JOT_STROKE_OPTS = { size: 5, thinning: 0.6, smoothing: 0.5, streamline: 0.5 
 var JOT_WORD_A = 500;
 var JOT_WORD_B = 2;
 var JOT_WORD_C = 2;
-var JOT_WORD_D = -800;
+var JOT_WORD_D = -1200;
 var JOT_PX_PER_MM = 96 / 25.4;  // CSS px per mm (nominal)
 // The first letter of a word gets extra benefit of the doubt: it's the letter
 // most often followed by a long hesitation and a wide gap (capitals, a lone
@@ -1295,7 +1297,7 @@ function jtBBoxGap(a, b) {
 // baseline — a fraction of the run's own (leveled) height, since that scales
 // naturally with how big the handwriting is.
 var JOT_SPLIT_GAP_FACTOR = 0.7;
-var JOT_SPLIT_GAP_MIN = 18;
+var JOT_SPLIT_GAP_MIN = 28;
 // Cap the leveling rotation: a lone near-vertical stroke (e.g. a single "l")
 // has no horizontal spread, so the best-fit line through it is ~90° and
 // would otherwise get "leveled" straight into a horizontal line.
@@ -2100,8 +2102,9 @@ function createJot(hostEl, onChange) {
       var pauseSec = lastStrokeUpAt ? Math.max(0, strokeDownAt - lastStrokeUpAt) / 1000 : 0;
       var gapMm = writingWord ? jtBBoxGap(writingWord.bbox, bbox) * camera.scale / JOT_PX_PER_MM : 0;
       lastStrokeUpAt = performance.now();
+      var withinLetterPause = pauseSec * 1000 < PV.jotLetterPauseMs;
       if (writingWord && writingWord.strokes.length === 1) { pauseSec *= JOT_FIRST_LETTER_EASE; gapMm *= JOT_FIRST_LETTER_EASE; }
-      if (writingWord && !jtWordEnds(pauseSec, gapMm)) {
+      if (writingWord && (withinLetterPause || !jtWordEnds(pauseSec, gapMm))) {
         writingWord.strokes.push(stroke.points);
         writingWord.bbox = jtBBoxUnion(writingWord.bbox, bbox);
       } else {
@@ -2114,6 +2117,7 @@ function createJot(hostEl, onChange) {
       // of "It") is cut off before the second stroke has a chance to land.
       var settleMs = jtWordTimeoutMs();
       if (writingWord && writingWord.strokes.length === 1) settleMs /= Math.max(JOT_FIRST_LETTER_EASE, 0.05);
+      settleMs = Math.max(settleMs, PV.jotLetterPauseMs);
       wordPauseTimer = setTimeout(finalizeWord, settleMs);
       redraw();
       notifyChange();
@@ -2651,6 +2655,8 @@ function updateDialBottomVisibility() {
   // meaningful, and only offered, once the call is actually connected.
   var inAnyCall = !!currentCall;
   var connected = !!(currentCall && currentCall.state === "active");
+  document.getElementById("nav-dial").classList.toggle("in-call", inAnyCall);
+  document.getElementById("nav-dial").setAttribute("aria-label", inAnyCall ? "Hang up" : "Dial");
   document.getElementById("dialpad").classList.toggle("hidden", inAnyCall ? !keypadOverlayOpen : !dialKeypadOpen);
   document.getElementById("dial-callbar").classList.toggle("hidden", inAnyCall);
   document.getElementById("dial-recent-list").classList.toggle("hidden", inAnyCall);
