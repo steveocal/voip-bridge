@@ -595,8 +595,9 @@ defParam(J_INK, "jotStrokeSmoothing", "Stroke smoothing", 0.5, { min: 0, max: 1,
 defParam(J_INK, "jotStrokeStreamline", "Stroke streamline", 0.5, { min: 0, max: 1, step: 0.05 }, function(v) { JOT_STROKE_OPTS.streamline = v; });
 defParam(J_INK, "jotDefaultPressure", "Default pen pressure", 0.5, { min: 0.05, max: 1, step: 0.05, note: "For mouse / pens that report no pressure" });
 
-defParam(J_WORD, "jotNewWordPauseMs", "New word: pause", 900, { unit: "ms", min: 0, max: 10000, step: 50, note: "A new word needs BOTH this pause AND the gap below; the word also settles after this pause" });
+defParam(J_WORD, "jotNewWordPauseMs", "New word: pause", 900, { unit: "ms", min: 0, max: 10000, step: 50, note: "A new word needs BOTH this pause AND the gap below" });
 defParam(J_WORD, "jotNewWordGapMm", "New word: gap", 2, { unit: "mm", min: 0, max: 100, step: 0.5, note: "Distance from the word so far (on screen)" });
+defParam(J_WORD, "jotWordSettleMs", "Word settle delay", 2500, { unit: "ms", min: 500, max: 20000, step: 100, note: "With no new stroke for this long, the word is laid out; the next stroke then always starts a new word" });
 defParam(J_WORD, "jotPxPerMm", "Screen px per mm", 96 / 25.4, { unit: "px/mm", min: 1, max: 20, step: 0.01, note: "Nominal CSS pixels per millimetre" }, function(v) { JOT_PX_PER_MM = v; });
 
 defParam(J_LAY, "jotMaxTilt", "Max levelling tilt", 30, { unit: "deg", min: 0, max: 90, step: 1, note: "Cap on how far a run is rotated flat" }, function(v) { JOT_MAX_TILT = v * Math.PI / 180; });
@@ -1254,9 +1255,10 @@ var JOT_STROKE_OPTS = { size: 5, thinning: 0.6, smoothing: 0.5, streamline: 0.5 
 // End-of-word detection: a new stroke starts a new word only when BOTH
 //   pause since the previous stroke lifted >= PV.jotNewWordPauseMs
 //   AND gap (on screen, mm) between the new stroke and the word so far >= PV.jotNewWordGapMm.
-// Anything else joins the current word. A word also settles (is laid out)
-// once PV.jotNewWordPauseMs passes with no new stroke, but it stays
-// reopenable: a stroke landing within the gap reopens it (see createJot).
+// Anything else joins the current word. Separately, a word settles (is laid
+// out into its box) after PV.jotWordSettleMs with no new stroke; that is
+// final — the raw ink moves into the text flow, so there is nothing left to
+// measure a gap against.
 var JOT_PX_PER_MM = 96 / 25.4;  // CSS px per mm (nominal)
 function jtStartsNewWord(pauseMs, gapMm) {
   return pauseMs >= PV.jotNewWordPauseMs && gapMm >= PV.jotNewWordGapMm;
@@ -1524,10 +1526,6 @@ function createJot(hostEl, onChange) {
   var current = null;      // in-progress stroke while pointer is down
   var writingWord = null;  // { strokes:[...], bbox } — belongs to activeBoxId
   var wordPauseTimer = null;
-  // The word most recently committed by finalizeWord, kept so a stroke that
-  // lands within the new-word gap can reopen it (only while it's still the
-  // last action — anything done since makes it permanent).
-  var lastSettled = null;  // { action, strokes, bbox }
   var lastStrokeUpAt = 0;  // performance.now() when the last Jot stroke lifted
   var strokeDownAt = 0;    // performance.now() when the in-progress Jot stroke landed
   var erasing = false;
@@ -1755,7 +1753,6 @@ function createJot(hostEl, onChange) {
     actions.push(action);
     b.words.push({ id: id, rawStrokes: action.rawStrokes, anchor: action.anchor, rotate: action.rotate, scale: action.scale, width: action.width, height: action.height, dot: !!action.dot });
     relayoutBox(b);
-    lastSettled = { action: action, strokes: writingWord.strokes, bbox: writingWord.bbox };
     writingWord = null;
     redraw();
     notifyChange();
@@ -2028,22 +2025,16 @@ function createJot(hostEl, onChange) {
       var bbox = jtBBox(stroke.points);
       var pauseMs = lastStrokeUpAt ? Math.max(0, strokeDownAt - lastStrokeUpAt) : Infinity;
       lastStrokeUpAt = performance.now();
-      // The word this stroke might belong to: the one being written, or —
-      // if it already settled on the pause timer — the one just committed.
-      var reopen = !writingWord && lastSettled && actions[actions.length - 1] === lastSettled.action && lastSettled.action.boxId === activeBoxId ? lastSettled : null;
-      var prevWord = writingWord || reopen;
-      var gapMm = prevWord ? jtBBoxGap(prevWord.bbox, bbox) * camera.scale / JOT_PX_PER_MM : Infinity;
-      if (prevWord && !jtStartsNewWord(pauseMs, gapMm)) {
-        if (reopen) { actions.pop(); rebuildFromActions(); writingWord = { strokes: reopen.strokes.slice(), bbox: reopen.bbox }; }
+      var gapMm = writingWord ? jtBBoxGap(writingWord.bbox, bbox) * camera.scale / JOT_PX_PER_MM : Infinity;
+      if (writingWord && !jtStartsNewWord(pauseMs, gapMm)) {
         writingWord.strokes.push(stroke.points);
         writingWord.bbox = jtBBoxUnion(writingWord.bbox, bbox);
       } else {
         finalizeWord();
         writingWord = { strokes: [stroke.points], bbox: bbox };
       }
-      lastSettled = null;
       if (wordPauseTimer) clearTimeout(wordPauseTimer);
-      wordPauseTimer = setTimeout(finalizeWord, PV.jotNewWordPauseMs);
+      wordPauseTimer = setTimeout(finalizeWord, PV.jotWordSettleMs);
       redraw();
       notifyChange();
     } else {
