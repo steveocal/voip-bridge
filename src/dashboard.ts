@@ -261,6 +261,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .jt-btn.armed{background:#2563eb;color:#fff}
 .jt-btn svg{width:20px;height:20px;display:block}
 .jt-btn.jt-zoom-label{width:auto;padding:0 8px;font-size:12px}
+.jt-wordinfo{margin-left:auto;font-size:11px;color:#888;white-space:nowrap;font-variant-numeric:tabular-nums}
 .jt-sep{width:1px;align-self:stretch;background:#2c2c2c;margin:2px 4px}
 .jt-canvas-wrap{width:100%;border-radius:10px;background:#1e1e1e;border:1px solid #2c2c2c;overflow:hidden}
 .jt-canvas-wrap canvas{display:block;cursor:none}
@@ -598,7 +599,9 @@ defParam(J_INK, "jotDefaultPressure", "Default pen pressure", 0.5, { min: 0.05, 
 defParam(J_WORD, "jotNewWordPauseMs", "New word: pause", 900, { unit: "ms", min: 0, max: 10000, step: 50, note: "A new word needs BOTH this pause AND the gap below" });
 defParam(J_WORD, "jotNewWordGapMm", "New word: gap", 2, { unit: "mm", min: 0, max: 100, step: 0.5, note: "Distance from the word so far (on screen)" });
 defParam(J_WORD, "jotWordSettleMs", "Word settle delay", 2500, { unit: "ms", min: 500, max: 20000, step: 100, note: "With no new stroke for this long, the word is laid out; the next stroke then always starts a new word" });
-defParam(J_WORD, "jotPxPerMm", "Screen px per mm", 96 / 25.4, { unit: "px/mm", min: 1, max: 20, step: 0.01, note: "Nominal CSS pixels per millimetre" }, function(v) { JOT_PX_PER_MM = v; });
+// Touch devices lay out at ~160 CSS px per inch (Android dp / iOS points), desktops at 96.
+var JOT_DEFAULT_PX_PER_MM = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 160 : 96) / 25.4;
+defParam(J_WORD, "jotPxPerMm", "Screen px per mm", JOT_DEFAULT_PX_PER_MM, { unit: "px/mm", min: 1, max: 20, step: 0.01, note: "CSS pixels per real millimetre (~6.3 on phones, ~3.8 on desktops)" }, function(v) { JOT_PX_PER_MM = v; });
 
 defParam(J_LAY, "jotMaxTilt", "Max levelling tilt", 30, { unit: "deg", min: 0, max: 90, step: 1, note: "Cap on how far a run is rotated flat" }, function(v) { JOT_MAX_TILT = v * Math.PI / 180; });
 defParam(J_LAY, "jotLineHeight", "Line height", 42, { unit: "px", min: 10, max: 200, step: 1 }, function(v) { JOT_LINE_HEIGHT = v; });
@@ -1259,7 +1262,7 @@ var JOT_STROKE_OPTS = { size: 5, thinning: 0.6, smoothing: 0.5, streamline: 0.5 
 // out into its box) after PV.jotWordSettleMs with no new stroke; that is
 // final — the raw ink moves into the text flow, so there is nothing left to
 // measure a gap against.
-var JOT_PX_PER_MM = 96 / 25.4;  // CSS px per mm (nominal)
+var JOT_PX_PER_MM = JOT_DEFAULT_PX_PER_MM;  // CSS px per real mm
 function jtStartsNewWord(pauseMs, gapMm) {
   return pauseMs >= PV.jotNewWordPauseMs && gapMm >= PV.jotNewWordGapMm;
 }
@@ -1478,7 +1481,8 @@ function createJot(hostEl, onChange) {
     '<button class="jt-btn jt-zoom-label" data-act="zoomreset" title="Reset zoom">100%</button>' +
     '<button class="jt-btn" data-act="zoomin" title="Zoom in">+</button>' +
     '<span class="jt-sep"></span>' +
-    '<button class="jt-btn ghost" data-act="clear" title="Clear all">🗑</button>';
+    '<button class="jt-btn ghost" data-act="clear" title="Clear all">🗑</button>' +
+    '<span class="jt-wordinfo" title="Last stroke: pause, gap from the word, and the decision"></span>';
   hostEl.appendChild(toolbar);
 
   var canvasWrap = document.createElement("div");
@@ -2026,7 +2030,11 @@ function createJot(hostEl, onChange) {
       var pauseMs = lastStrokeUpAt ? Math.max(0, strokeDownAt - lastStrokeUpAt) : Infinity;
       lastStrokeUpAt = performance.now();
       var gapMm = writingWord ? jtBBoxGap(writingWord.bbox, bbox) * camera.scale / JOT_PX_PER_MM : Infinity;
-      if (writingWord && !jtStartsNewWord(pauseMs, gapMm)) {
+      var joins = !!writingWord && !jtStartsNewWord(pauseMs, gapMm);
+      toolbar.querySelector(".jt-wordinfo").textContent = writingWord
+        ? (pauseMs / 1000).toFixed(2) + "s · " + gapMm.toFixed(1) + "mm · " + (joins ? "same word" : "NEW word")
+        : "new word";
+      if (joins) {
         writingWord.strokes.push(stroke.points);
         writingWord.bbox = jtBBoxUnion(writingWord.bbox, bbox);
       } else {
