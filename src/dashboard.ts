@@ -595,18 +595,10 @@ defParam(J_INK, "jotStrokeSmoothing", "Stroke smoothing", 0.5, { min: 0, max: 1,
 defParam(J_INK, "jotStrokeStreamline", "Stroke streamline", 0.5, { min: 0, max: 1, step: 0.05 }, function(v) { JOT_STROKE_OPTS.streamline = v; });
 defParam(J_INK, "jotDefaultPressure", "Default pen pressure", 0.5, { min: 0.05, max: 1, step: 0.05, note: "For mouse / pens that report no pressure" });
 
-defParam(J_WORD, "jotWordA", "Word end: A (pause)", 500, { min: -100000, max: 100000, step: 10, note: "A*t + B*t*g + C*g + D > 0 starts a new word; t = pause in seconds, g = gap in mm" }, function(v) { JOT_WORD_A = v; });
-defParam(J_WORD, "jotWordB", "Word end: B (pause x gap)", 2, { min: -1000, max: 1000, step: 0.5 }, function(v) { JOT_WORD_B = v; });
-defParam(J_WORD, "jotWordC", "Word end: C (gap)", 2, { min: -1000, max: 1000, step: 0.5 }, function(v) { JOT_WORD_C = v; });
-defParam(J_WORD, "jotWordD", "Word end: D (offset)", -1200, { min: -100000, max: 100000, step: 10, note: "Negative = leaning towards continuing the word; -D/A is the settle timeout" }, function(v) { JOT_WORD_D = v; });
-defParam(J_WORD, "jotFirstLetterEase", "First-letter leniency", 0.5, { min: 0.05, max: 2, step: 0.05, note: "Below 1 = more forgiving after the first stroke of a word" }, function(v) { JOT_FIRST_LETTER_EASE = v; });
+defParam(J_WORD, "jotNewWordPauseMs", "New word: pause", 900, { unit: "ms", min: 0, max: 10000, step: 50, note: "A new word needs BOTH this pause AND the gap below; the word also settles after this pause" });
+defParam(J_WORD, "jotNewWordGapMm", "New word: gap", 2, { unit: "mm", min: 0, max: 100, step: 0.5, note: "Distance from the word so far (on screen)" });
 defParam(J_WORD, "jotPxPerMm", "Screen px per mm", 96 / 25.4, { unit: "px/mm", min: 1, max: 20, step: 0.01, note: "Nominal CSS pixels per millimetre" }, function(v) { JOT_PX_PER_MM = v; });
-defParam(J_WORD, "jotLetterPauseMs", "Letter pause allowance", 1000, { unit: "ms", min: 0, max: 10000, step: 50, note: "A pause shorter than this never starts a new word, and a word never settles sooner" });
-defParam(J_WORD, "jotSettleMinMs", "Word settle: shortest wait", 50, { unit: "ms", min: 0, max: 5000, step: 10, note: "Floor for the -D/A settle timeout" });
-defParam(J_WORD, "jotSettleFallbackMs", "Word settle: fallback wait", 700, { unit: "ms", min: 100, max: 10000, step: 50, note: "Used when A is 0 or negative" });
 
-defParam(J_LAY, "jotSplitGapFactor", "Split gap (fraction of height)", 0.7, { min: 0.05, max: 3, step: 0.05, note: "Gap between strokes that separates words in a run" }, function(v) { JOT_SPLIT_GAP_FACTOR = v; });
-defParam(J_LAY, "jotSplitGapMin", "Split gap minimum", 28, { unit: "px", min: 0, max: 200, step: 1 }, function(v) { JOT_SPLIT_GAP_MIN = v; });
 defParam(J_LAY, "jotMaxTilt", "Max levelling tilt", 30, { unit: "deg", min: 0, max: 90, step: 1, note: "Cap on how far a run is rotated flat" }, function(v) { JOT_MAX_TILT = v * Math.PI / 180; });
 defParam(J_LAY, "jotLineHeight", "Line height", 42, { unit: "px", min: 10, max: 200, step: 1 }, function(v) { JOT_LINE_HEIGHT = v; });
 defParam(J_LAY, "jotWordHeight", "Word height", 26, { unit: "px", min: 5, max: 150, step: 1, note: "Handwriting is scaled to this" }, function(v) { JOT_WORD_HEIGHT = v; });
@@ -1259,32 +1251,15 @@ var PerfectFreehand=(()=>{var Q=Object.defineProperty;var zn=Object.getOwnProper
 // recognized) / Draw (freehand pencil ink) / Erase, undo, zoom, save/load ──
 var JOT_INK = "#e9ecef";
 var JOT_STROKE_OPTS = { size: 5, thinning: 0.6, smoothing: 0.5, streamline: 0.5 };
-// End-of-word detection: a new stroke starts a new word when
-//   A*t + B*t*g + C*g + D > 0
-// with t = pause since the previous stroke lifted (SECONDS) and g = gap in mm
-// (on screen, so zoom-independent) between the new stroke and the word so
-// far. B*t*g makes a gap count for more the longer the pause; C*g is the gap
-// alone; D sets how much has to build up before it trips. The same formula at
-// g = 0 gives the timer that settles a word once nothing more is written
-// (the gap is unknown until the next stroke lands).
-var JOT_WORD_A = 500;
-var JOT_WORD_B = 2;
-var JOT_WORD_C = 2;
-var JOT_WORD_D = -1200;
+// End-of-word detection: a new stroke starts a new word only when BOTH
+//   pause since the previous stroke lifted >= PV.jotNewWordPauseMs
+//   AND gap (on screen, mm) between the new stroke and the word so far >= PV.jotNewWordGapMm.
+// Anything else joins the current word. A word also settles (is laid out)
+// once PV.jotNewWordPauseMs passes with no new stroke, but it stays
+// reopenable: a stroke landing within the gap reopens it (see createJot).
 var JOT_PX_PER_MM = 96 / 25.4;  // CSS px per mm (nominal)
-// The first letter of a word gets extra benefit of the doubt: it's the letter
-// most often followed by a long hesitation and a wide gap (capitals, a lone
-// "I"/"a", or a pause to think of the next letter), which would otherwise
-// split "Hello" into "H" + "ello". While a word is still just its first
-// stroke, t and g are scaled by this (<1 = more lenient).
-var JOT_FIRST_LETTER_EASE = 0.5;
-function jtWordEnds(tSec, gMm) {
-  return JOT_WORD_A * tSec + JOT_WORD_B * tSec * gMm + JOT_WORD_C * gMm + JOT_WORD_D > 0;
-}
-// Pause (ms) after which a word settles with no further stroke: solves the
-// formula at g = 0 for t.
-function jtWordTimeoutMs() {
-  return JOT_WORD_A > 0 ? Math.max(PV.jotSettleMinMs, -JOT_WORD_D / JOT_WORD_A * 1000) : PV.jotSettleFallbackMs;
+function jtStartsNewWord(pauseMs, gapMm) {
+  return pauseMs >= PV.jotNewWordPauseMs && gapMm >= PV.jotNewWordGapMm;
 }
 // Shortest distance between two bboxes (0 if they overlap), logical px.
 function jtBBoxGap(a, b) {
@@ -1292,12 +1267,6 @@ function jtBBoxGap(a, b) {
   var dy = Math.max(0, a.minY - b.maxY, b.minY - a.maxY);
   return Math.sqrt(dx * dx + dy * dy);
 }
-// Once a run of writing settles (pause/mode-change), it's split into
-// individual words by the actual gaps between strokes along the run's own
-// baseline — a fraction of the run's own (leveled) height, since that scales
-// naturally with how big the handwriting is.
-var JOT_SPLIT_GAP_FACTOR = 0.7;
-var JOT_SPLIT_GAP_MIN = 28;
 // Cap the leveling rotation: a lone near-vertical stroke (e.g. a single "l")
 // has no horizontal spread, so the best-fit line through it is ~90° and
 // would otherwise get "leveled" straight into a horizontal line.
@@ -1446,90 +1415,45 @@ function jtToLocal(pt, frame) {
   var dx = pt[0] - frame.mx, dy = pt[1] - frame.my;
   return [dx * cos - dy * sin, dx * sin + dy * cos];
 }
-// Split one continuous written run into words. The run's full extent decides
-// the rotation and the scale (so a short word inside a longer run doesn't
-// get leveled/sized off its own sparse points) — only the split points
-// (baseline-left anchor + width) are computed per word, from the actual
-// gaps between strokes. "prevRotate" is the previously-committed word's
-// rotation (or null), inherited by any 1-2 stroke cluster here since that's
-// too little ink for its own leveling estimate to be reliable.
-function jtSplitWords(strokes, prevRotate, prevScale) {
+// Lay out one word from its raw strokes — the strokes are never split again
+// here; word boundaries are decided only by jtStartsNewWord (pause AND gap).
+// The word's own extent decides its rotation and scale. "prevRotate"/
+// "prevScale" are the previously-committed word's (or null), borrowed by a
+// word of 1-2 strokes since that's too little ink for its own leveling/sizing
+// estimate to be reliable.
+function jtMakeWord(strokes, prevRotate, prevScale) {
   var allPts = [];
   for (var i = 0; i < strokes.length; i++) for (var j = 0; j < strokes[i].length; j++) allPts.push(strokes[i][j]);
   var frame = jtPCAFrame(allPts);
-  var overallMinY = Infinity, overallMaxY = -Infinity;
-  var local = strokes.map(function(s) {
-    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (var k = 0; k < s.length; k++) {
-      var lp = jtToLocal(s[k], frame);
-      if (lp[0] < minX) minX = lp[0]; if (lp[0] > maxX) maxX = lp[0];
-      if (lp[1] < minY) minY = lp[1]; if (lp[1] > maxY) maxY = lp[1];
+  function extent(angle) {
+    var f = { mx: frame.mx, my: frame.my, angle: angle };
+    var e = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
+    for (var k = 0; k < allPts.length; k++) {
+      var lp = jtToLocal(allPts[k], f);
+      if (lp[0] < e.minX) e.minX = lp[0]; if (lp[0] > e.maxX) e.maxX = lp[0];
+      if (lp[1] < e.minY) e.minY = lp[1]; if (lp[1] > e.maxY) e.maxY = lp[1];
     }
-    overallMinY = Math.min(overallMinY, minY); overallMaxY = Math.max(overallMaxY, maxY);
-    return { minX: minX, maxX: maxX, minY: minY, maxY: maxY };
-  });
-  var overallH = Math.max(overallMaxY - overallMinY, PV.jotMinRunHeight);
-  var gap = Math.max(overallH * JOT_SPLIT_GAP_FACTOR, JOT_SPLIT_GAP_MIN);
-  var order = local.map(function(_, idx) { return idx; });
-  order.sort(function(a, b) { return local[a].minX - local[b].minX; });
-  var clusters = [], cur = null;
-  for (var oi = 0; oi < order.length; oi++) {
-    var idx = order[oi], lb = local[idx];
-    if (cur && lb.minX - cur.maxX <= gap) {
-      cur.indices.push(idx);
-      cur.maxX = Math.max(cur.maxX, lb.maxX);
-      cur.maxY = Math.max(cur.maxY, lb.maxY);
-    } else {
-      cur = { indices: [idx], minX: lb.minX, maxX: lb.maxX, maxY: lb.maxY };
-      clusters.push(cur);
-    }
+    return e;
   }
-  var runScale = Math.min(JOT_WORD_HEIGHT / overallH, PV.jotRunScaleMax);
-  var out = [];
-  var rot = (typeof prevRotate === "number") ? prevRotate : null;
-  var lastScale = (typeof prevScale === "number") ? prevScale : null;
-  for (var ci = 0; ci < clusters.length; ci++) {
-    var c = clusters[ci];
-    var soleLocal = c.indices.length === 1 ? local[c.indices[0]] : null;
-    var isDot = !!soleLocal && (soleLocal.maxX - soleLocal.minX) <= JOT_DOT_MAX_RAW && (soleLocal.maxY - soleLocal.minY) <= JOT_DOT_MAX_RAW;
-    // A run of 2 or fewer strokes standing alone (its own overallH is just
-    // that little ink) also can't size itself reliably — the same word-
-    // height floor that keeps a dot's height from being ~0 instead blows a
-    // short word up, since its own extent is much less than a full letter
-    // height. Borrow the previous word's scale too, same as its rotation.
-    var isShort = c.indices.length <= 2;
-    var useRotate = (isShort && rot != null) ? rot : frame.angle;
-    var useScale = (isShort && lastScale != null) ? lastScale : runScale;
-    var minX = c.minX, maxX = c.maxX, maxY = c.maxY;
-    if (useRotate !== frame.angle) {
-      // Borrowing a different angle than this run was leveled at — recompute
-      // this cluster's local extent against that angle so the anchor stays
-      // self-consistent with the rotation it'll actually be rendered at.
-      var f2 = { mx: frame.mx, my: frame.my, angle: useRotate };
-      minX = Infinity; maxX = -Infinity; maxY = -Infinity;
-      for (var ii = 0; ii < c.indices.length; ii++) {
-        var s = strokes[c.indices[ii]];
-        for (var k = 0; k < s.length; k++) {
-          var lp = jtToLocal(s[k], f2);
-          if (lp[0] < minX) minX = lp[0]; if (lp[0] > maxX) maxX = lp[0];
-          if (lp[1] > maxY) maxY = lp[1];
-        }
-      }
-    }
-    var cos2 = Math.cos(useRotate), sin2 = Math.sin(useRotate);
-    var ax = minX * cos2 - maxY * sin2 + frame.mx;
-    var ay = minX * sin2 + maxY * cos2 + frame.my;
-    out.push({
-      rawStrokes: c.indices.map(function(i) { return strokes[i]; }),
-      anchor: [ax, ay],
-      rotate: useRotate,
-      scale: isDot ? JOT_DOT_SCALE : useScale,
-      width: isDot ? JOT_DOT_WIDTH : Math.max(maxX - minX, PV.jotMinWordWidth) * useScale,
-      height: JOT_WORD_HEIGHT
-    });
-    if (!isDot) { rot = useRotate; lastScale = useScale; } // a period carries no orientation/size info to hand on
-  }
-  return out;
+  var own = extent(frame.angle);
+  var ownH = Math.max(own.maxY - own.minY, PV.jotMinRunHeight);
+  var isDot = strokes.length === 1 && (own.maxX - own.minX) <= JOT_DOT_MAX_RAW && (own.maxY - own.minY) <= JOT_DOT_MAX_RAW;
+  var isShort = strokes.length <= 2;
+  var useRotate = (isShort && typeof prevRotate === "number") ? prevRotate : frame.angle;
+  var useScale = (isShort && typeof prevScale === "number") ? prevScale : Math.min(JOT_WORD_HEIGHT / ownH, PV.jotRunScaleMax);
+  // Borrowing a different angle than the word was leveled at: recompute its
+  // extent against that angle so the anchor matches the rendered rotation.
+  var e = useRotate === frame.angle ? own : extent(useRotate);
+  var cos2 = Math.cos(useRotate), sin2 = Math.sin(useRotate);
+  return {
+    rawStrokes: strokes,
+    anchor: [e.minX * cos2 - e.maxY * sin2 + frame.mx, e.minX * sin2 + e.maxY * cos2 + frame.my],
+    rotate: useRotate,
+    scale: isDot ? JOT_DOT_SCALE : useScale,
+    width: isDot ? JOT_DOT_WIDTH : Math.max(e.maxX - e.minX, PV.jotMinWordWidth) * useScale,
+    height: JOT_WORD_HEIGHT,
+    dot: isDot
+  };
 }
 
 function createJot(hostEl, onChange) {
@@ -1600,6 +1524,10 @@ function createJot(hostEl, onChange) {
   var current = null;      // in-progress stroke while pointer is down
   var writingWord = null;  // { strokes:[...], bbox } — belongs to activeBoxId
   var wordPauseTimer = null;
+  // The word most recently committed by finalizeWord, kept so a stroke that
+  // lands within the new-word gap can reopen it (only while it's still the
+  // last action — anything done since makes it permanent).
+  var lastSettled = null;  // { action, strokes, bbox }
   var lastStrokeUpAt = 0;  // performance.now() when the last Jot stroke lifted
   var strokeDownAt = 0;    // performance.now() when the in-progress Jot stroke landed
   var erasing = false;
@@ -1784,7 +1712,7 @@ function createJot(hostEl, onChange) {
       if (a.type === "add-stroke") drawStrokes[a.id] = { points: a.points, bbox: jtBBox(a.points) };
       else if (a.type === "erase-stroke") delete drawStrokes[a.targetId];
       else if (a.type === "add-box") boxes.push({ id: a.id, x: a.x, y: a.y, wrapWidth: a.wrapWidth, minH: a.minH || 0, contentHeight: a.minH || JOT_BOX_MIN_HEIGHT, w: a.wrapWidth, h: a.minH || JOT_BOX_MIN_HEIGHT, stretched: false, words: [] });
-      else if (a.type === "add-word") { var b1 = findBox(a.boxId); if (b1) b1.words.push({ id: a.id, rawStrokes: a.rawStrokes, anchor: a.anchor, rotate: a.rotate, scale: a.scale, width: a.width, height: a.height }); }
+      else if (a.type === "add-word") { var b1 = findBox(a.boxId); if (b1) b1.words.push({ id: a.id, rawStrokes: a.rawStrokes, anchor: a.anchor, rotate: a.rotate, scale: a.scale, width: a.width, height: a.height, dot: !!a.dot }); }
       else if (a.type === "add-break") { var b2 = findBox(a.boxId); if (b2) b2.words.push(jtBreakWord(a.id)); }
       else if (a.type === "erase-word") { var b3 = findBox(a.boxId); if (b3) for (var j = 0; j < b3.words.length; j++) if (b3.words[j].id === a.targetId) { b3.words.splice(j, 1); break; } }
     }
@@ -1802,15 +1730,15 @@ function createJot(hostEl, onChange) {
     return [sx / camera.scale + camera.x, sy / camera.scale + camera.y];
   }
 
-  // The rotation/scale to hand a short (1-2 stroke) cluster that's about to
-  // be finalized — the last real (non-break) committed word's own (within
+  // The rotation/scale to hand a short (1-2 stroke) word that's about to
+  // be finalized — the last real (non-break, non-period) committed word's own (within
   // the active box), so a single letter follows the size and slant of the
   // line it's sitting on instead of leveling/sizing itself off too little
   // ink to do that reliably.
   function jtLastWordRef() {
     var b = activeBox();
     if (!b) return null;
-    for (var i = b.words.length - 1; i >= 0; i--) if (!b.words[i].isBreak) return b.words[i];
+    for (var i = b.words.length - 1; i >= 0; i--) if (!b.words[i].isBreak && !b.words[i].dot) return b.words[i];
     return null;
   }
 
@@ -1820,15 +1748,14 @@ function createJot(hostEl, onChange) {
     var b = activeBox();
     if (!b) { writingWord = null; return; }
     var lastWord = jtLastWordRef();
-    var split = jtSplitWords(writingWord.strokes, lastWord ? lastWord.rotate : null, lastWord ? lastWord.scale : null);
-    for (var i = 0; i < split.length; i++) {
-      var t = split[i];
-      var id = nextId++;
-      var action = { type: "add-word", id: id, boxId: b.id, rawStrokes: t.rawStrokes, anchor: t.anchor, rotate: t.rotate, scale: t.scale, width: t.width, height: t.height };
-      actions.push(action);
-      b.words.push({ id: id, rawStrokes: action.rawStrokes, anchor: action.anchor, rotate: action.rotate, scale: action.scale, width: action.width, height: action.height });
-    }
+    var t = jtMakeWord(writingWord.strokes, lastWord ? lastWord.rotate : null, lastWord ? lastWord.scale : null);
+    var id = nextId++;
+    var action = { type: "add-word", id: id, boxId: b.id, rawStrokes: t.rawStrokes, anchor: t.anchor, rotate: t.rotate, scale: t.scale, width: t.width, height: t.height };
+    if (t.dot) action.dot = true;
+    actions.push(action);
+    b.words.push({ id: id, rawStrokes: action.rawStrokes, anchor: action.anchor, rotate: action.rotate, scale: action.scale, width: action.width, height: action.height, dot: !!action.dot });
     relayoutBox(b);
+    lastSettled = { action: action, strokes: writingWord.strokes, bbox: writingWord.bbox };
     writingWord = null;
     redraw();
     notifyChange();
@@ -2099,26 +2026,24 @@ function createJot(hostEl, onChange) {
       if (gestureCmd === "return") { jtGestureReturn(); redraw(); return; }
 
       var bbox = jtBBox(stroke.points);
-      var pauseSec = lastStrokeUpAt ? Math.max(0, strokeDownAt - lastStrokeUpAt) / 1000 : 0;
-      var gapMm = writingWord ? jtBBoxGap(writingWord.bbox, bbox) * camera.scale / JOT_PX_PER_MM : 0;
+      var pauseMs = lastStrokeUpAt ? Math.max(0, strokeDownAt - lastStrokeUpAt) : Infinity;
       lastStrokeUpAt = performance.now();
-      var withinLetterPause = pauseSec * 1000 < PV.jotLetterPauseMs;
-      if (writingWord && writingWord.strokes.length === 1) { pauseSec *= JOT_FIRST_LETTER_EASE; gapMm *= JOT_FIRST_LETTER_EASE; }
-      if (writingWord && (withinLetterPause || !jtWordEnds(pauseSec, gapMm))) {
+      // The word this stroke might belong to: the one being written, or —
+      // if it already settled on the pause timer — the one just committed.
+      var reopen = !writingWord && lastSettled && actions[actions.length - 1] === lastSettled.action && lastSettled.action.boxId === activeBoxId ? lastSettled : null;
+      var prevWord = writingWord || reopen;
+      var gapMm = prevWord ? jtBBoxGap(prevWord.bbox, bbox) * camera.scale / JOT_PX_PER_MM : Infinity;
+      if (prevWord && !jtStartsNewWord(pauseMs, gapMm)) {
+        if (reopen) { actions.pop(); rebuildFromActions(); writingWord = { strokes: reopen.strokes.slice(), bbox: reopen.bbox }; }
         writingWord.strokes.push(stroke.points);
         writingWord.bbox = jtBBoxUnion(writingWord.bbox, bbox);
       } else {
         finalizeWord();
         writingWord = { strokes: [stroke.points], bbox: bbox };
       }
+      lastSettled = null;
       if (wordPauseTimer) clearTimeout(wordPauseTimer);
-      // After a word's very first stroke, settle as leniently as the next-stroke
-      // test does (JOT_FIRST_LETTER_EASE) — otherwise the lone first letter ("I"
-      // of "It") is cut off before the second stroke has a chance to land.
-      var settleMs = jtWordTimeoutMs();
-      if (writingWord && writingWord.strokes.length === 1) settleMs /= Math.max(JOT_FIRST_LETTER_EASE, 0.05);
-      settleMs = Math.max(settleMs, PV.jotLetterPauseMs);
-      wordPauseTimer = setTimeout(finalizeWord, settleMs);
+      wordPauseTimer = setTimeout(finalizeWord, PV.jotNewWordPauseMs);
       redraw();
       notifyChange();
     } else {
@@ -2209,7 +2134,7 @@ function createJot(hostEl, onChange) {
       var bs = boxes.map(function(b) {
         return {
           id: b.id, x: b.x, y: b.y, wrapWidth: b.wrapWidth, minH: b.minH || 0, w: b.w, h: b.h, stretched: b.stretched,
-          words: b.words.map(function(w) { return w.isBreak ? { id: w.id, isBreak: true } : { id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height }; })
+          words: b.words.map(function(w) { return w.isBreak ? { id: w.id, isBreak: true } : { id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height, dot: !!w.dot }; })
         };
       });
       return { v: 2, canvasWidth: DOC_WIDTH, drawStrokes: ds, boxes: bs };
@@ -2267,8 +2192,8 @@ function createJot(hostEl, onChange) {
               actions.push({ type: "add-break", id: w.id, boxId: b.id });
               b.words.push(jtBreakWord(w.id));
             } else {
-              actions.push({ type: "add-word", id: w.id, boxId: b.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height });
-              b.words.push({ id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height });
+              actions.push({ type: "add-word", id: w.id, boxId: b.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height, dot: !!w.dot });
+              b.words.push({ id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height, dot: !!w.dot });
             }
             if (nextId <= Number(w.id)) nextId = Number(w.id) + 1;
           }
