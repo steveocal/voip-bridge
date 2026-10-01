@@ -226,28 +226,72 @@ function parseValue(xml: string): unknown {
 
 // ── Caller lookup via Odoo ────────────────────────────────────
 
+/** Comparable key for a phone number: its last 9 digits. Same key whether
+ *  it arrives as "441283246490" (Asterisk), "+44 1283 246490" or
+ *  "01283 246490" (how Odoo contacts are usually typed). "" for anything
+ *  too short to be a real outside number (extensions, "unknown"). */
+export function phoneKey(number: string): string {
+  const digits = (number || "").replace(/\D/g, "");
+  return digits.length >= 7 ? digits.slice(-9) : "";
+}
+
+/** How a new contact's number is stored: UK numbers in the domestic "0..."
+ *  form the existing contacts use, anything else international "+...". */
+export function displayNumber(number: string): string {
+  const digits = (number || "").replace(/\D/g, "");
+  if (digits.startsWith("44") && digits.length > 10) return "0" + digits.slice(2);
+  if (digits.startsWith("0")) return digits;
+  return digits.length >= 10 ? "+" + digits : digits;
+}
+
 export async function lookupCaller(env: Env, number: string) {
-  if (!number || number === "unknown") return null;
-  // Asterisk hands caller IDs over as plain digits with no "+" (e.g.
-  // "441283246490"), not E.164 — so a "+44" check here never fired, and a
-  // 12-digit "44..." number was searched for verbatim against Odoo
-  // contacts stored the normal UK domestic way ("01283246490"), which
-  // never matches as a substring. Strip all non-digits first, then convert
-  // either form of the country code prefix to the domestic "0..." form.
-  const digits = number.replace(/\D/g, "");
-  const clean = digits.startsWith("44") && digits.length > 10 ? "0" + digits.slice(2) : digits;
+  const key = phoneKey(number);
+  if (!key) return null;
+  // Odoo numbers are free text ("01283 246490", "+44 (0)1283-246490"), so a
+  // plain substring search on the digits misses most of them. Put a
+  // wildcard between every digit of the key so any spacing/punctuation
+  // matches, then confirm the hit by comparing keys here.
+  const pattern = "%" + key.split("").join("%") + "%";
   try {
     const uid = await odooAuth(env);
     if (!uid) return null;
     const result = await odooCall(env, uid, "res.partner", "search_read",
-      [["|", ["phone", "=ilike", `%${clean}%`], ["mobile", "=ilike", `%${clean}%`]]],
-      { fields: ["id", "name", "phone", "mobile", "email"], limit: 5 });
-    const partners = (result.parsed ?? []) as Array<Record<string, unknown>>;
-    return partners.length > 0 ? partners[0] : null;
+      [["|", ["phone", "=ilike", pattern], ["mobile", "=ilike", pattern]]],
+      { fields: ["id", "name", "company_type", "is_company", "phone", "mobile", "email", "website", "vat", "function", "city", "active"], limit: 10 });
+    const partners = ((result.parsed ?? []) as unknown as Contact[]).map(normalizeContact);
+    const hit = partners.find(p => phoneKey(p.phone ?? "") === key || phoneKey(p.mobile ?? "") === key) ?? null;
+    // Cache it so the call-history join (contacts table) can show the name.
+    if (hit) { try { await upsertContacts(env, [hit]); } catch (e) { console.error("Contact cache write failed:", e); } }
+    return hit;
   } catch (e) {
     console.error("Odoo lookup failed:", e);
     return null;
   }
+}
+
+/** New res.partner for a number nobody's saved yet, named "dd/mm/yy number"
+ *  so it's easy to find and rename later. Written to Odoo and the D1 cache. */
+export async function createContactForNumber(env: Env, number: string, when = Date.now()): Promise<Contact | null> {
+  const phone = displayNumber(number);
+  const date = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "2-digit", year: "2-digit", timeZone: "Europe/London" }).format(new Date(when));
+  const name = `${date} ${phone}`;
+  const uid = await odooAuth(env);
+  if (!uid) return null;
+  const r = await odooCall(env, uid, "res.partner", "create", [{ name, phone }]);
+  if (r.fault || typeof r.parsed !== "number") { console.error("Odoo contact create failed:", r.fault ?? r._xml); return null; }
+  const contact = normalizeContact({ id: r.parsed, name, phone, active: true });
+  await upsertContacts(env, [contact]);
+  return contact;
+}
+
+/** Rename a contact in Odoo, then mirror it into the D1 cache. */
+export async function renameContact(env: Env, id: number, name: string): Promise<boolean> {
+  const uid = await odooAuth(env);
+  if (!uid) return false;
+  const r = await odooCall(env, uid, "res.partner", "write", [[id], { name }]);
+  if (r.fault || r.parsed !== true) { console.error("Odoo contact rename failed:", r.fault ?? r._xml); return false; }
+  await env.DB.prepare("UPDATE contacts SET name=?1, updated_at=?2 WHERE id=?3").bind(name, Date.now(), id).run();
+  return true;
 }
 
 // ── Contact search + D1 cache (Phase 1) ───────────────────────
@@ -335,7 +379,7 @@ function normalizeContact(c: Contact): Contact {
 
 /** Upsert a batch of contacts into D1. D1 caps bound params at 100/query, so
  * each statement carries ≤7 rows (91 params) and statements run via batch(). */
-async function upsertContacts(env: Env, contacts: Contact[]): Promise<void> {
+export async function upsertContacts(env: Env, contacts: Contact[]): Promise<void> {
   if (!contacts.length) return;
   const cols = ["id", "name", "company_type", "is_company", "phone", "mobile", "email", "website", "vat", "function", "city", "active", "updated_at"];
   const now = Date.now();

@@ -1,5 +1,5 @@
 import type { Env, ExecutionContext, D1PreparedStatement } from "./types";
-import { lookupCaller, logCompletedCall, trackCall, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages, searchQuotations } from "./odoo";
+import { lookupCaller, logCompletedCall, trackCall, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages, searchQuotations, phoneKey, createContactForNumber, renameContact } from "./odoo";
 import { searchGmailMessages, searchRecentGmailMessages, getGmailBody, sendGmailMessage } from "./gmail";
 import { ariRequest } from "./asterisk";
 import { serveDashboard } from "./dashboard";
@@ -60,8 +60,12 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
     }));
     await env.DB.prepare("UPDATE call_log SET state=?1, end_date=?2 WHERE call_id=?3")
       .bind(state, Date.now(), callId).run();
+    // Awaited (not waitUntil) so the dashboard can refresh its lists as soon
+    // as this responds and see the new/linked contact's name.
+    let partner: Contact | null = null;
+    try { partner = await ensureCallContact(env, callId, caller); } catch (e) { console.error("ensureCallContact failed:", e); }
     ctx.waitUntil(logCompletedCall(env, callId, caller, did, duration));
-    return Response.json({ action: "hangup", duration });
+    return Response.json({ action: "hangup", duration, partner: partner?.name ?? null });
   }
 
   return Response.json({ action: "unknown", event });
@@ -165,6 +169,104 @@ async function handleCallHistory(request: Request, env: Env): Promise<Response> 
     ).bind(limit).all<Record<string, unknown>>();
   }
   return Response.json({ calls: rows.results || [] });
+}
+
+// ── Naming calls: link call_log rows to contacts by phone number ──
+// Numbers are compared on their last 9 digits (phoneKey) after stripping
+// the punctuation people type into Odoo ("01283 246490", "+44 (0)1283-…").
+function sqlPhoneKey(col: string): string {
+  let e = col;
+  for (const ch of [" ", "-", "+", "(", ")", ".", "/"]) e = `REPLACE(${e}, '${ch}', '')`;
+  return `substr(${e}, -9)`;
+}
+
+async function findCachedContact(env: Env, key: string): Promise<Contact | null> {
+  return await env.DB.prepare(
+    `SELECT id, name, phone, mobile, email FROM contacts
+     WHERE active = 1 AND (${sqlPhoneKey("phone")} = ?1 OR ${sqlPhoneKey("mobile")} = ?1)
+     ORDER BY id LIMIT 1`
+  ).bind(key).first<Contact>();
+}
+
+/** Point every unnamed call from this number at the contact. */
+async function linkCallsToContact(env: Env, key: string, contactId: number): Promise<number> {
+  const r = await env.DB.prepare(
+    `UPDATE call_log SET partner_id = ?1
+     WHERE ${sqlPhoneKey("phone_number")} = ?2
+       AND (partner_id IS NULL OR partner_id NOT IN (SELECT id FROM contacts))`
+  ).bind(contactId, key).run();
+  return Number(r.meta.changes) || 0;
+}
+
+/** Claim a phone_lookup slot unless someone claimed it within `ttlMs`. */
+async function claimLookup(env: Env, slot: string, ttlMs: number): Promise<boolean> {
+  const now = Date.now();
+  const r = await env.DB.prepare(
+    `INSERT INTO phone_lookup (key, at) VALUES (?1, ?2)
+     ON CONFLICT(key) DO UPDATE SET at = excluded.at WHERE phone_lookup.at < ?3`
+  ).bind(slot, now, now - ttlMs).run();
+  return Number(r.meta.changes) > 0;
+}
+
+/** End of call: make sure the number has a contact (creating "dd/mm/yy
+ *  number" in Odoo if nobody has it) and the call row points at it. */
+async function ensureCallContact(env: Env, callId: string, caller: string): Promise<Contact | null> {
+  const key = phoneKey(caller);
+  if (!key) return null;
+  const row = await env.DB.prepare(
+    "SELECT p.id, p.name FROM call_log c JOIN contacts p ON p.id = c.partner_id WHERE c.call_id = ?1"
+  ).bind(callId).first<Contact>();
+  if (row) return row;
+  let contact: Contact | null = await findCachedContact(env, key) ?? await lookupCaller(env, caller);
+  if (!contact) {
+    if (!(await claimLookup(env, "create:" + key, 60_000))) return null;
+    contact = await createContactForNumber(env, caller);
+  }
+  if (contact) await linkCallsToContact(env, key, contact.id);
+  return contact;
+}
+
+/** Dashboard load: fill in names for recent history rows that have none —
+ *  from the D1 contacts cache first, then Odoo (capped per run, and a number
+ *  Odoo didn't know isn't asked about again for a day). */
+async function handleResolveHistoryNames(env: Env): Promise<Response> {
+  const rows = await env.DB.prepare(
+    `SELECT c.phone_number FROM call_log c LEFT JOIN contacts p ON p.id = c.partner_id
+     WHERE p.id IS NULL AND c.phone_number IS NOT NULL AND c.phone_number != ''
+     GROUP BY c.phone_number ORDER BY MAX(COALESCE(c.start_date, c.create_date)) DESC LIMIT 200`
+  ).all<{ phone_number: string }>();
+  const numbers = new Map<string, string>();
+  for (const r of rows.results || []) {
+    const k = phoneKey(r.phone_number);
+    if (k && !numbers.has(k)) numbers.set(k, r.phone_number);
+  }
+  let linked = 0, odooAsked = 0;
+  const askOdoo: Array<[string, string]> = [];
+  for (const [key, number] of numbers) {
+    const cached = await findCachedContact(env, key);
+    if (cached) { linked += await linkCallsToContact(env, key, cached.id); continue; }
+    if (askOdoo.length < 8) askOdoo.push([key, number]);
+  }
+  // Each Odoo lookup is two subrequests (auth + search) — keep it bounded.
+  for (const [key, number] of askOdoo) {
+    if (!(await claimLookup(env, "miss:" + key, 24 * 3600_000))) continue;
+    odooAsked++;
+    const hit = await lookupCaller(env, number);
+    if (hit) {
+      linked += await linkCallsToContact(env, key, hit.id);
+      await env.DB.prepare("DELETE FROM phone_lookup WHERE key = ?1").bind("miss:" + key).run();
+    }
+  }
+  return Response.json({ ok: true, linked, odooAsked });
+}
+
+async function handleRenameContact(request: Request, env: Env, id: number): Promise<Response> {
+  let body: { name?: string };
+  try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
+  const name = (body.name ?? "").trim();
+  if (!name) return Response.json({ error: "name required" }, { status: 400 });
+  const ok = await renameContact(env, id, name);
+  return ok ? Response.json({ ok: true, id, name }) : Response.json({ error: "Odoo update failed" }, { status: 502 });
 }
 
 // Combined call-notes editor + jot sketch (HTML / SVG / Excalidraw JSON),
@@ -457,6 +559,7 @@ export default {
     else if (request.method === "GET" && url.pathname === "/caller-lookup") response = await handleCallerLookup(request, env);
     else if (request.method === "GET" && url.pathname === "/active-calls") response = await handleActiveCalls(request, env);
     else if (request.method === "GET" && url.pathname === "/call-history") response = await handleCallHistory(request, env);
+    else if (request.method === "POST" && url.pathname === "/call-history/resolve-names") response = await handleResolveHistoryNames(env);
     else if (request.method === "GET" && url.pathname === "/call-notes") response = await handleGetCallNotes(request, env);
     else if (request.method === "POST" && url.pathname === "/call-notes") response = await handleSaveCallNotes(request, env);
     else if (request.method === "GET" && url.pathname === "/quotations") response = await handleQuotations(request, env);
@@ -467,6 +570,7 @@ export default {
     else if (request.method === "GET" && url.pathname === "/contacts") response = await handleContacts(request, env);
     else if (request.method === "GET" && url.pathname === "/contacts/cache") response = await handleContactsCache(request, env);
     else if (request.method === "GET" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleContactDetail(env, parseInt(url.pathname.split("/")[2]));
+    else if (request.method === "POST" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleRenameContact(request, env, parseInt(url.pathname.split("/")[2]));
     else if (url.pathname === "/") response = Response.json({ service: "voip-bridge", routes: ["/call-event", "/click2call", "/caller-lookup", "/active-calls", "/answer", "/hangup-call", "/call-history", "/call-notes", "/quotations", "/contacts", "/contacts/:id"] });
     else if (url.pathname === "/dashboard") response = serveDashboard();
     else response = new Response("Not found", { status: 404 });

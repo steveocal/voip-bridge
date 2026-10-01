@@ -89,6 +89,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .hist-row .dir-ic{font-size:24px;width:26px}
 .hist-row .who,.contact-row .cname{font-size:15px;font-weight:600}
 .hist-row .sub,.contact-row .sub{font-size:12px;color:#999}
+.contact-row .cname-text{cursor:text;border-bottom:1px dashed transparent}
+.contact-row .cname-text:hover{border-bottom-color:#555}
+.contact-row .cname-edit{font:inherit;font-size:15px;font-weight:600;color:#fff;background:#111;border:1px solid #2563eb;border-radius:6px;padding:3px 6px;width:100%;max-width:320px;outline:none}
+.contact-row .cname-status{font-size:11px;font-weight:400;color:#34d399;margin-left:6px}
+.contact-row .cname-status.err{color:#f87171}
 .hist-row .meta{margin-left:auto;font-size:12px;color:#999;text-align:right}
 .hist-actions{display:flex;gap:6px;margin:8px 0 2px 30px}
 .hist-action{background:#1a1a1a;border:none;color:#ccc;width:30px;height:30px;border-radius:8px;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
@@ -236,8 +241,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .call-panel{margin:8px 16px 0;background:#1a1a1a;border:1px solid #2c2c2c;border-radius:14px;overflow:hidden}
 .cp-head{padding:12px 14px 2px;display:flex;align-items:center;gap:8px}
 .cp-caller{font-size:16px;font-weight:700;color:#ececec;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
-.cp-tabs{display:flex;border-bottom:1px solid #2c2c2c;padding:0 4px;margin-top:8px}
-.cp-tab{flex:1;background:none;border:none;color:#999;font-size:11.5px;font-weight:600;padding:10px 2px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+.cp-tabs{display:flex;border-bottom:1px solid #2c2c2c;padding:0 4px;margin-top:8px;overflow-x:auto;scrollbar-width:none}
+.cp-tab{flex:1 0 auto;background:none;border:none;color:#999;font-size:11.5px;font-weight:600;padding:10px 6px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
 .cp-tab.active{color:#4db8ff;border-bottom-color:#4db8ff}
 .cp-body{padding:12px 14px;max-height:500px;overflow-y:auto}
 .cp-pane textarea{width:100%;min-height:120px;background:#111;border:1px solid #2c2c2c;border-radius:10px;color:#fff;font-size:14px;padding:12px 14px;outline:none;resize:none;font-family:inherit;line-height:1.5}
@@ -248,6 +253,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .cp-quote-row .items{color:#ccc;font-size:12.5px;font-family:ui-monospace,Menlo,Consolas,monospace;margin-top:2px}
 .cp-quote-row .st{color:#999;font-size:12px}
 .cp-quote-row .amt{color:#34d399;font-weight:700;flex-shrink:0}
+.dtmf-sent{min-height:34px;text-align:center;font-size:24px;letter-spacing:3px;color:#ececec;font-variant-numeric:tabular-nums;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;direction:rtl}
+.dtmf-sent:empty::before{content:"Tap keys to send tones";direction:ltr;font-size:13px;letter-spacing:0;color:#666}
+#dtmf-pad{padding:8px 4px 4px;max-width:340px;margin:0 auto}
 .cp-hist-row{display:flex;justify-content:space-between;padding:9px 4px;border-bottom:1px solid #222;font-size:13px;color:#ccc}
 .jot-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .jot-status{font-size:12px;color:#34d399;margin-left:auto;white-space:nowrap}
@@ -338,6 +346,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
           <button class="cp-tab" data-tab="emails" onclick="switchCallTab('emails')">Emails</button>
           <button class="cp-tab active" data-tab="notes" onclick="switchCallTab('notes')">Notes</button>
           <button class="cp-tab" data-tab="jot" onclick="switchCallTab('jot')">Jot</button>
+          <button class="cp-tab hidden" data-tab="keypad" id="cp-tab-keypad" onclick="switchCallTab('keypad')">Keypad</button>
         </div>
         <div class="cp-body">
           <div class="cp-pane hidden" id="cp-pane-sales"><div class="empty">—</div></div>
@@ -353,6 +362,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
           <div class="cp-pane hidden" id="cp-pane-jot">
             <div class="jot-toolbar"><span class="jot-status" id="jot-status"></span></div>
             <div id="jot-canvas"></div>
+          </div>
+          <div class="cp-pane hidden" id="cp-pane-keypad">
+            <div class="dtmf-sent" id="dtmf-sent"></div>
+            <div class="dialpad" id="dtmf-pad">
+              <button class="key" data-d="1"><span class="digit">1</span><span class="letters"></span></button>
+              <button class="key" data-d="2"><span class="digit">2</span><span class="letters">ABC</span></button>
+              <button class="key" data-d="3"><span class="digit">3</span><span class="letters">DEF</span></button>
+              <button class="key" data-d="4"><span class="digit">4</span><span class="letters">GHI</span></button>
+              <button class="key" data-d="5"><span class="digit">5</span><span class="letters">JKL</span></button>
+              <button class="key" data-d="6"><span class="digit">6</span><span class="letters">MNO</span></button>
+              <button class="key" data-d="7"><span class="digit">7</span><span class="letters">PQRS</span></button>
+              <button class="key" data-d="8"><span class="digit">8</span><span class="letters">TUV</span></button>
+              <button class="key" data-d="9"><span class="digit">9</span><span class="letters">WXYZ</span></button>
+              <button class="key" data-d="*"><span class="digit">*</span><span class="letters"></span></button>
+              <button class="key" data-d="0"><span class="digit">0</span><span class="letters"></span></button>
+              <button class="key" data-d="#"><span class="digit">#</span><span class="letters"></span></button>
+            </div>
           </div>
         </div>
       </div>
@@ -586,6 +612,7 @@ defParam(G_TIME, "suggestDebounceMs", "Dial suggestions delay", 220, { unit: "ms
 defParam(G_TIME, "historyDebounceMs", "History search delay", 250, { unit: "ms", min: 0, max: 2000, step: 10 });
 defParam(G_TIME, "contactsDebounceMs", "Contacts search delay", 250, { unit: "ms", min: 0, max: 2000, step: 10 });
 defParam(G_TIME, "doubleTapMs", "Double-tap window", 300, { unit: "ms", min: 100, max: 1000, step: 10, note: "Contacts / messages rows" });
+defParam(G_TIME, "contactRenameAutosaveMs", "Contact rename autosave delay", 900, { unit: "ms", min: 200, max: 10000, step: 100, note: "Wait after the last keystroke before saving the name to Odoo" });
 defParam(G_TIME, "notesAutosaveMs", "Notes autosave delay", 900, { unit: "ms", min: 200, max: 10000, step: 100, note: "Wait after the last edit before saving" });
 defParam(G_TIME, "quickTextTimeoutMs", "Quick-text panel timeout", 4000, { unit: "ms", min: 500, max: 30000, step: 500 });
 
@@ -1127,6 +1154,20 @@ function sendDtmf(tone) {
   try { if (sipSession.sendDTMF) sipSession.sendDTMF(tone); } catch (e) {}
 }
 
+// Keypad tab: unlike the dial keypad, # here is a real tone (IVRs need it),
+// not the quick-text shortcut.
+function sendDtmfFromPad(d) {
+  if (!inCall()) return;
+  sendDtmf(d);
+  var el = document.getElementById("dtmf-sent");
+  el.textContent = (el.textContent + d).slice(-40);
+}
+document.getElementById("dtmf-pad").addEventListener("pointerdown", function(e) {
+  var k = e.target.closest(".key"); if (!k) return;
+  e.preventDefault();
+  sendDtmfFromPad(k.getAttribute("data-d"));
+});
+
 function quickTexts() {
   var out = [];
   var lines = String(settings.quickText || "").split(String.fromCharCode(10));
@@ -1212,7 +1253,8 @@ var currentCallPartner = null;
 
 function showCallPanel(show) {
   document.getElementById("call-panel").classList.toggle("hidden", !show);
-  if (!show) { closeQuickText(); currentCallPartner = null; return; }
+  if (!show) { closeQuickText(); currentCallPartner = null; document.getElementById("dtmf-sent").textContent = ""; return; }
+  if (activeCpTab === "keypad" && !inCall()) activeCpTab = "notes";
   updateCallPanelCaller();
   switchCallTab(activeCpTab || "notes");
 }
@@ -1244,6 +1286,7 @@ function switchCallTab(tab) {
   if (tab === "sales") loadQuotationsTab();
   if (tab === "emails") loadEmailsTab();
   if (tab === "jot") initJotEditor();
+  document.getElementById("banner-keypad").classList.toggle("active", tab === "keypad");
 }
 
 // ── Jot: handwriting canvas (perfect-freehand, vendored inline — ~5KB, no
@@ -2394,9 +2437,12 @@ function fmtMoney(n) { try { return "£" + Number(n).toFixed(2); } catch (e) { r
 // Keyboard: digits/* send DTMF during a call; # opens quick text.
 document.addEventListener("keydown", function(e) {
   if (!inCall()) return;
+  if (e.target && e.target.tagName === "INPUT") return;
   var k = e.key;
-  if (k === "#") { e.preventDefault(); padTone("#"); return; }
-  if (k === "*") { e.preventDefault(); sendDtmf("*"); return; }
+  var onKeypadTab = activeCpTab === "keypad";
+  if (k === "#") { e.preventDefault(); if (onKeypadTab) sendDtmfFromPad("#"); else padTone("#"); return; }
+  if (k === "*") { e.preventDefault(); if (onKeypadTab) sendDtmfFromPad("*"); else sendDtmf("*"); return; }
+  if (onKeypadTab && /^[0-9]$/.test(k)) { e.preventDefault(); sendDtmfFromPad(k); return; }
   if (/^[0-9]$/.test(k)) {
     e.preventDefault();
     var panel = document.getElementById("qt-panel");
@@ -2487,12 +2533,19 @@ function logCallEvent(event, extra) {
   body.set("did", "");
   body.set("direction", currentCall.dir === "out" ? "outgoing" : "incoming");
   if (extra) { for (var k in extra) body.set(k, String(extra[k])); }
-  fetch(API + "/call-event", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() }).catch(function() {});
+  return fetch(API + "/call-event", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() }).catch(function() {});
 }
 function logHangup() {
   if (!currentCall) return;
   var dur = currentCall.answeredAt ? Math.round((Date.now() - currentCall.answeredAt) / 1000) : 0;
-  logCallEvent("hangup", { duration: dur });
+  // The hangup reply comes back once the number has a contact (an existing
+  // one, or a new "dd/mm/yy number" one) — refresh so the name shows.
+  var p = logCallEvent("hangup", { duration: dur });
+  if (p) p.then(refreshCallLists);
+}
+function refreshCallLists() {
+  loadDialRecent();
+  if (!document.getElementById("view-history").classList.contains("hidden")) loadHistory();
 }
 
 function dialAction() {
@@ -2578,31 +2631,31 @@ function resetCall() {
   renderCallUI();
   loadDialRecent();
 }
-// The dialpad is only useful before a call connects (dialing) or as an
-// explicit DTMF overlay during one (see toggleInCallKeypad) — once
-// connected it defaults to hidden so the in-call tabs (call-panel) get the
-// screen space instead.
-var keypadOverlayOpen = false;
+// The dialpad is only useful before a call connects — during one, DTMF
+// lives in the in-call panel's Keypad tab. The banner ⌨️ button jumps to
+// that tab and back to whichever tab was open before.
+var tabBeforeKeypad = "notes";
 function toggleInCallKeypad() {
   if (!inCall()) return;
-  keypadOverlayOpen = !keypadOverlayOpen;
-  updateDialBottomVisibility();
+  if (activeCpTab === "keypad") switchCallTab(tabBeforeKeypad || "notes");
+  else { tabBeforeKeypad = activeCpTab; switchCallTab("keypad"); }
 }
 function updateDialBottomVisibility() {
   // Keypad (+ recent calls, + the plain call button) hides for the whole
   // life of a call — ringing/dialling included, not just once connected —
   // so the in-call tabs showing who it is take over the screen right away.
-  // The DTMF overlay (banner-keypad) is the one exception: it's only
-  // meaningful, and only offered, once the call is actually connected.
+  // The Keypad tab (and banner-keypad shortcut) only appear once the call
+  // is actually connected — DTMF is meaningless before that.
   var inAnyCall = !!currentCall;
   var connected = !!(currentCall && currentCall.state === "active");
   document.getElementById("nav-dial").classList.toggle("in-call", inAnyCall);
   document.getElementById("nav-dial").setAttribute("aria-label", inAnyCall ? "Hang up" : "Dial");
-  document.getElementById("dialpad").classList.toggle("hidden", inAnyCall ? !keypadOverlayOpen : !dialKeypadOpen);
+  document.getElementById("dialpad").classList.toggle("hidden", inAnyCall || !dialKeypadOpen);
   document.getElementById("dial-callbar").classList.toggle("hidden", inAnyCall);
   document.getElementById("dial-recent-list").classList.toggle("hidden", inAnyCall);
   document.getElementById("banner-keypad").classList.toggle("hidden", !connected);
-  document.getElementById("banner-keypad").classList.toggle("active", connected && keypadOverlayOpen);
+  document.getElementById("banner-keypad").classList.toggle("active", connected && activeCpTab === "keypad");
+  document.getElementById("cp-tab-keypad").classList.toggle("hidden", !connected);
 }
 function renderCallUI() {
   var banner = document.getElementById("call-banner");
@@ -2612,7 +2665,6 @@ function renderCallUI() {
     banner.classList.add("hidden");
     btnCall.classList.remove("hidden"); btnCall.classList.remove("hangup");
     btnEnd.classList.add("hidden");
-    keypadOverlayOpen = false;
     showCallPanel(false);
     updateDialBottomVisibility();
     return;
@@ -2774,7 +2826,7 @@ function loadContacts(q) {
       var num = c.mobile || c.phone || "";
       var sel = (activeContact && activeContact.id === c.id) ? " selected" : "";
       var star = '<button class="fav-star' + (isFav(c.id) ? ' on' : '') + '" data-id="' + esc(c.id) + '">★</button>';
-      return '<div class="contact-row' + sel + '" data-id="' + esc(c.id) + '" data-key="c-' + esc(c.id) + '"><div><div class="cname">' + esc(c.name) + (c.is_company ? " 🏢" : "") + '</div>' + (num ? '<div class="sub">' + esc(num) + '</div>' : '') + (c.email ? '<div class="sub">' + esc(c.email) + '</div>' : '') + '</div>' + star + (num ? '<button class="mini-call" data-num="' + esc(num) + '">📞</button>' : '') + '</div>';
+      return '<div class="contact-row' + sel + '" data-id="' + esc(c.id) + '" data-key="c-' + esc(c.id) + '"><div style="flex:1;min-width:0"><div class="cname"><span class="cname-text" title="Click to rename">' + esc(c.name) + '</span>' + (c.is_company ? " 🏢" : "") + '<span class="cname-status"></span></div>' + (num ? '<div class="sub">' + esc(num) + '</div>' : '') + (c.email ? '<div class="sub">' + esc(c.email) + '</div>' : '') + '</div>' + star + (num ? '<button class="mini-call" data-num="' + esc(num) + '">📞</button>' : '') + '</div>';
     }).join("");
   }).catch(function(){ el.innerHTML = '<div class="empty">Error</div>'; });
 }
@@ -2796,12 +2848,68 @@ document.getElementById("contacts-list").addEventListener("click", function(e) {
   }
   var mini = e.target.closest(".mini-call");
   if (mini) { prepareDial(mini.getAttribute("data-num")); return; }
+  if (e.target.closest(".cname-edit")) return;
+  var nameEl = e.target.closest(".cname-text");
+  if (nameEl) { startContactRename(nameEl); return; }
   var row = e.target.closest(".contact-row");
   if (!row) return;
   var c = contactsCache[row.getAttribute("data-id")];
   if (!c) return;
   rowClick(row.getAttribute("data-key"), "contact", c, function() { openContactFull(c); });
 });
+
+// ── contact rename (click the name; autosaves to Odoo) ─────────
+function startContactRename(nameEl) {
+  var row = nameEl.closest(".contact-row");
+  var c = contactsCache[row.getAttribute("data-id")];
+  if (!c) return;
+  var status = row.querySelector(".cname-status");
+  var inp = document.createElement("input");
+  inp.className = "cname-edit";
+  inp.value = c.name;
+  nameEl.replaceWith(inp);
+  inp.focus();
+  inp.select();
+  var saved = c.name, timer = null, done = false;
+  function setStatus(t, err) { status.textContent = t; status.classList.toggle("err", !!err); }
+  function save() {
+    clearTimeout(timer); timer = null;
+    var name = inp.value.trim();
+    if (!name || name === saved) return;
+    setStatus("Saving…");
+    fetch(API + "/contacts/" + c.id, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name }) })
+      .then(function(r) { return r.json().then(function(d) { if (!r.ok) throw new Error(d.error || "failed"); return d; }); })
+      .then(function() {
+        saved = name;
+        c.name = name;
+        for (var i = 0; i < favourites.length; i++) if (String(favourites[i].id) === String(c.id)) { favourites[i].name = name; persistFavourites(); }
+        if (activeContact && activeContact.id === c.id) activeContact.name = name;
+        setStatus("Saved");
+        setTimeout(function() { if (status.textContent === "Saved") setStatus(""); }, 2000);
+      })
+      .catch(function() { setStatus("Not saved", true); });
+  }
+  function finish(revert) {
+    if (done) return;
+    done = true;
+    if (revert) { clearTimeout(timer); inp.value = saved; } else save();
+    var span = document.createElement("span");
+    span.className = "cname-text";
+    span.title = "Click to rename";
+    span.textContent = inp.value.trim() || saved;
+    inp.replaceWith(span);
+  }
+  inp.addEventListener("input", function() {
+    setStatus("");
+    clearTimeout(timer);
+    timer = setTimeout(save, PV.contactRenameAutosaveMs);
+  });
+  inp.addEventListener("keydown", function(e) {
+    if (e.key === "Enter") { e.preventDefault(); finish(false); }
+    else if (e.key === "Escape") { e.preventDefault(); finish(true); }
+  });
+  inp.addEventListener("blur", function() { finish(false); });
+}
 
 // ── contact selection + messages ───────────────────────────────
 var activeContact = null;
@@ -3545,6 +3653,11 @@ function boot() {
     }
     applyBootOnce();
   }).catch(applyBootOnce);
+  // Calls from numbers that only became contacts later have no name yet —
+  // link them up, then redraw the lists if anything changed.
+  fetch(API + "/call-history/resolve-names", { method: "POST" }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d && d.linked > 0) refreshCallLists();
+  }).catch(function() {});
 }
 document.addEventListener("DOMContentLoaded", boot);
 </script>

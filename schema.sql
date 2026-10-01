@@ -64,6 +64,12 @@ CREATE TABLE IF NOT EXISTS settings (
   updated_at INTEGER
 );
 
+-- ── Phone lookup bookkeeping (see migrations/0005_phone_lookup.sql) ──
+CREATE TABLE IF NOT EXISTS phone_lookup (
+  key TEXT PRIMARY KEY,
+  at INTEGER NOT NULL
+);
+
 -- ── Messages (↔ Odoo mail.message + Gmail) ──────────────────
 -- Mirrors Odoo mail.message fields; also stores Gmail-thread messages.
 --   source = 'odoo' | 'gmail'; odoo_id / gmail_id are the external keys.
