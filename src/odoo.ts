@@ -241,7 +241,9 @@ export function displayNumber(number: string): string {
   const digits = (number || "").replace(/\D/g, "");
   if (digits.startsWith("44") && digits.length > 10) return "0" + digits.slice(2);
   if (digits.startsWith("0")) return digits;
-  return digits.length >= 10 ? "+" + digits : digits;
+  // voip.ms hands North American callers over as bare 10-digit NANP numbers.
+  if (digits.length === 10) return "+1" + digits;
+  return digits.length > 10 ? "+" + digits : digits;
 }
 
 export async function lookupCaller(env: Env, number: string) {

@@ -260,6 +260,40 @@ async function handleResolveHistoryNames(env: Env): Promise<Response> {
   return Response.json({ ok: true, linked, odooAsked });
 }
 
+/** One-off/bulk: every unnamed number in call history gets a contact —
+ *  an existing one if the cache or Odoo has it, otherwise a new "dd/mm/yy
+ *  number" one dated from that number's first call. Does at most 8 numbers
+ *  per request (Odoo subrequest budget); call again while `remaining` > 0. */
+async function handleCreateMissingContacts(env: Env): Promise<Response> {
+  const rows = await env.DB.prepare(
+    `SELECT c.phone_number, MIN(COALESCE(c.start_date, c.create_date)) AS first FROM call_log c
+     LEFT JOIN contacts p ON p.id = c.partner_id
+     WHERE p.id IS NULL AND c.phone_number IS NOT NULL AND c.phone_number != ''
+     GROUP BY c.phone_number ORDER BY first`
+  ).all<{ phone_number: string; first: number }>();
+  const todo = new Map<string, { number: string; first: number }>();
+  for (const r of rows.results || []) {
+    const key = phoneKey(r.phone_number);
+    // Skip extensions/withheld, and Ofcom's fictional 07700 900xxx range (test calls).
+    if (!key || /7700900\d{3}$/.test(r.phone_number.replace(/\D/g, ""))) continue;
+    if (!todo.has(key)) todo.set(key, { number: r.phone_number, first: r.first });
+  }
+  let created = 0, linked = 0, processed = 0;
+  const failed: string[] = [];
+  for (const [key, { number, first }] of todo) {
+    if (processed >= 8) break;
+    processed++;
+    let contact: Contact | null = await findCachedContact(env, key) ?? await lookupCaller(env, number);
+    if (!contact && await claimLookup(env, "create:" + key, 60_000)) {
+      contact = await createContactForNumber(env, number, first || Date.now());
+      if (contact) created++;
+    }
+    if (contact) linked += await linkCallsToContact(env, key, contact.id);
+    else failed.push(number);
+  }
+  return Response.json({ ok: true, created, linked, failed, remaining: Math.max(0, todo.size - processed) });
+}
+
 async function handleRenameContact(request: Request, env: Env, id: number): Promise<Response> {
   let body: { name?: string };
   try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
@@ -560,6 +594,7 @@ export default {
     else if (request.method === "GET" && url.pathname === "/active-calls") response = await handleActiveCalls(request, env);
     else if (request.method === "GET" && url.pathname === "/call-history") response = await handleCallHistory(request, env);
     else if (request.method === "POST" && url.pathname === "/call-history/resolve-names") response = await handleResolveHistoryNames(env);
+    else if (request.method === "POST" && url.pathname === "/call-history/create-missing-contacts") response = await handleCreateMissingContacts(env);
     else if (request.method === "GET" && url.pathname === "/call-notes") response = await handleGetCallNotes(request, env);
     else if (request.method === "POST" && url.pathname === "/call-notes") response = await handleSaveCallNotes(request, env);
     else if (request.method === "GET" && url.pathname === "/quotations") response = await handleQuotations(request, env);
