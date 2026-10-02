@@ -29,6 +29,10 @@ binding = "DB"
 database_name = "voip-bridge-d1"
 database_id = "c00b456b-d58b-4e45-8335-b790392a2869"
 
+# Workers AI (Whisper transcription of call recordings).
+[ai]
+binding = "AI"
+
 # Static assets (self-hosted sip.js so the softphone doesn't depend on a CDN).
 [assets]
 directory = "./public"

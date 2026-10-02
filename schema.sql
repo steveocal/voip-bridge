@@ -49,7 +49,8 @@ CREATE TABLE IF NOT EXISTS call_log (
   notes_html TEXT,                       -- local-only: combined call-notes editor + jot sketch (HTML)
   jot_svg TEXT,                          -- local-only: jot sketch, rendered SVG (display)
   jot_json TEXT,                         -- local-only: jot sketch, Excalidraw scene (elements+appState, re-editable)
-  recording TEXT                         -- local-only: Asterisk stored-recording name (see migrations/0006_call_recording.sql)
+  recording TEXT,                        -- local-only: Asterisk stored-recording name (see migrations/0006_call_recording.sql)
+  transcript TEXT                        -- local-only: Whisper transcript, one "[m:ss] text" line per segment (NULL = not transcribed)
 );
 CREATE INDEX IF NOT EXISTS idx_call_log_phone ON call_log(phone_number);
 CREATE INDEX IF NOT EXISTS idx_call_log_start ON call_log(start_date);

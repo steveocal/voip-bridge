@@ -102,6 +102,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .hist-play:active{background:#262626}
 .hist-player{margin:8px 0 2px 38px;font-size:12px;color:#999}
 .hist-player audio{width:100%;height:36px}
+.hist-transcript{margin-top:6px;max-height:40vh;overflow-y:auto;font-size:13px;line-height:1.45;color:#ccc}
+.hist-transcript .tl{padding:2px 0;cursor:pointer}
+.hist-transcript .tl .ts{color:#4db8ff;margin-right:6px;font-variant-numeric:tabular-nums}
+.hist-transcript button{background:#2c2c2c;border:none;color:#ececec;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer}
 .contact-row .mini-call{width:38px;height:38px;border-radius:50%;border:none;background:#10b981;color:#fff;font-size:16px;cursor:pointer;flex-shrink:0}
 .empty{color:#666;text-align:center;padding:28px 0;font-size:14px}
 .day-head{font-size:11px;font-weight:700;letter-spacing:.5px;color:#888;text-transform:uppercase;padding:14px 4px 6px;position:sticky;top:0;background:transparent}
@@ -2729,7 +2733,7 @@ function renderHistoryRow(c) {
   var sub = name ? num : (c.did && c.did !== num ? "→ " + c.did : "");
   var dur = (c.duration > 0) ? " · " + fmtDur(c.duration) : "";
   var when = c.start_date ? fmtTime(c.start_date) : "";
-  var notesFlag = c.has_notes ? ' <span title="Has notes">📝</span>' : "";
+  var notesFlag = (c.has_notes ? ' <span title="Has notes">📝</span>' : "") + (c.has_transcript ? ' <span title="Transcribed">💬</span>' : "");
   var key = "h-" + c.id;
   callsCache[key] = c;
   return '<div class="hist-row" data-key="' + esc(key) + '">'
@@ -2774,9 +2778,10 @@ function toggleRecording(row, c) {
   for (var i = 0; i < prev.length; i++) closeRecording(prev[i]);
   var box = document.createElement("div");
   box.className = "hist-player";
-  box.textContent = "Loading recording…";
+  box.innerHTML = '<div class="hist-audio">Loading recording…</div><div class="hist-transcript"></div>';
   row.appendChild(box);
   row.querySelector(".hist-play").textContent = "■";
+  var audioBox = box.querySelector(".hist-audio"), tBox = box.querySelector(".hist-transcript");
   fetch(API + "/recording?call_id=" + encodeURIComponent(c.call_id)).then(function(r) {
     if (!r.ok) throw new Error("HTTP " + r.status);
     return r.blob();
@@ -2785,12 +2790,47 @@ function toggleRecording(row, c) {
     var a = document.createElement("audio");
     a.controls = true;
     a.src = URL.createObjectURL(blob);
-    box.textContent = "";
-    box.appendChild(a);
+    audioBox.textContent = "";
+    audioBox.appendChild(a);
     a.play().catch(function() {});
   }).catch(function(err) {
-    box.textContent = "Couldn't load recording (" + err.message + ")";
+    audioBox.textContent = "Couldn't load recording (" + err.message + ")";
   });
+  tBox.textContent = "Loading transcript…";
+  fetch(API + "/transcript?call_id=" + encodeURIComponent(c.call_id)).then(function(r) { return r.json(); }).then(function(d) {
+    renderTranscript(tBox, c, d.transcript);
+  }).catch(function() { tBox.textContent = "Couldn't load transcript"; });
+}
+// transcript: null = never transcribed (offer the button), "" = nothing said.
+function renderTranscript(tBox, c, transcript) {
+  if (transcript === null || transcript === undefined) {
+    tBox.innerHTML = '<button>Transcribe</button>';
+    tBox.querySelector("button").onclick = function() {
+      tBox.textContent = "Transcribing… (about 10s per minute of call)";
+      fetch(API + "/transcribe?call_id=" + encodeURIComponent(c.call_id), { method: "POST" }).then(function(r) { return r.json(); }).then(function(d) {
+        if (d.error) { tBox.textContent = "Transcription failed: " + d.error; return; }
+        c.has_transcript = 1;
+        renderTranscript(tBox, c, d.transcript);
+      }).catch(function(err) { tBox.textContent = "Transcription failed: " + err.message; });
+    };
+    return;
+  }
+  if (!transcript) { tBox.textContent = "(no speech detected)"; return; }
+  var lines = transcript.split(String.fromCharCode(10)), html = "";
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i], close = line.indexOf("] ");
+    var ts = (line.charAt(0) === "[" && close > 0) ? line.slice(1, close) : "";
+    var parts = ts.split(":");
+    var sec = parts.length === 2 ? parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10) : 0;
+    html += '<div class="tl" data-t="' + sec + '">' + (ts ? '<span class="ts">' + esc(ts) + '</span>' + esc(line.slice(close + 2)) : esc(line)) + '</div>';
+  }
+  tBox.innerHTML = html;
+  tBox.onclick = function(e) {
+    var tl = e.target.closest(".tl"), a = tBox.parentNode.querySelector("audio");
+    if (!tl || !a) return;
+    a.currentTime = parseInt(tl.getAttribute("data-t"), 10) || 0;
+    a.play().catch(function() {});
+  };
 }
 function closeRecording(box) {
   var a = box.querySelector("audio");

@@ -2,6 +2,7 @@ import type { Env, ExecutionContext, D1PreparedStatement } from "./types";
 import { lookupCaller, logCompletedCall, trackCall, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages, searchQuotations, phoneKey, createContactForNumber, renameContact } from "./odoo";
 import { searchGmailMessages, searchRecentGmailMessages, getGmailBody, sendGmailMessage } from "./gmail";
 import { ariRequest, ariRecordingFile } from "./asterisk";
+import { transcribeCall } from "./transcribe";
 import { serveDashboard } from "./dashboard";
 import { handlePushRegister, handlePushWake } from "./push";
 import type { Contact, Message } from "./odoo";
@@ -57,7 +58,11 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
     const file = params.get("file") ?? "";
     if (!/^[A-Za-z0-9_-]+$/.test(file)) return Response.json({ error: "bad file" }, { status: 400 });
     await env.DB.prepare("UPDATE call_log SET recording=?1 WHERE call_id=?2").bind(file, callId).run();
-    return Response.json({ action: "recording", file });
+    // Awaited rather than waitUntil: a long call takes longer to transcribe
+    // than waitUntil's 30s grace, and Asterisk's curl is happy to wait.
+    let transcribed = false;
+    try { await transcribeCall(env, callId); transcribed = true; } catch (e) { console.error("transcribeCall failed:", e); }
+    return Response.json({ action: "recording", file, transcribed });
   }
 
   if (event === "hangup") {
@@ -162,7 +167,8 @@ async function handleCallHistory(request: Request, env: Env): Promise<Response> 
        COALESCE(p.name, '') AS partner_name,
        COALESCE(p.email, '') AS partner_email,
        CASE WHEN COALESCE(c.notes_html, '') != '' THEN 1 ELSE 0 END AS has_notes,
-       CASE WHEN COALESCE(c.recording, '') != '' THEN 1 ELSE 0 END AS has_recording
+       CASE WHEN COALESCE(c.recording, '') != '' THEN 1 ELSE 0 END AS has_recording,
+       CASE WHEN c.transcript IS NOT NULL THEN 1 ELSE 0 END AS has_transcript
      FROM call_log c
      LEFT JOIN contacts p ON p.id = c.partner_id`;
   let rows;
@@ -352,6 +358,25 @@ async function handleGetRecording(request: Request, env: Env): Promise<Response>
   const len = res.headers.get("Content-Length");
   if (len) headers.set("Content-Length", len);
   return new Response(res.body, { headers });
+}
+
+async function handleGetTranscript(request: Request, env: Env): Promise<Response> {
+  const callId = new URL(request.url).searchParams.get("call_id") ?? "";
+  const row = await env.DB.prepare("SELECT transcript FROM call_log WHERE call_id = ?1")
+    .bind(callId).first<{ transcript: string | null }>();
+  if (!row) return Response.json({ error: "call not found" }, { status: 404 });
+  return Response.json({ transcript: row.transcript });
+}
+
+// (Re)run Whisper on a call's recording, e.g. one recorded before
+// transcription existed or whose automatic run failed.
+async function handleTranscribe(request: Request, env: Env): Promise<Response> {
+  const callId = new URL(request.url).searchParams.get("call_id") ?? "";
+  try {
+    return Response.json({ transcript: await transcribeCall(env, callId) });
+  } catch (e) {
+    return Response.json({ error: String((e as Error).message || e) }, { status: 502 });
+  }
 }
 
 // ── Contact messages (Odoo mail.message + Gmail) ──────────────
@@ -622,6 +647,8 @@ export default {
     else if (request.method === "GET" && url.pathname === "/call-notes") response = await handleGetCallNotes(request, env);
     else if (request.method === "POST" && url.pathname === "/call-notes") response = await handleSaveCallNotes(request, env);
     else if (request.method === "GET" && url.pathname === "/recording") response = await handleGetRecording(request, env);
+    else if (request.method === "GET" && url.pathname === "/transcript") response = await handleGetTranscript(request, env);
+    else if (request.method === "POST" && url.pathname === "/transcribe") response = await handleTranscribe(request, env);
     else if (request.method === "GET" && url.pathname === "/quotations") response = await handleQuotations(request, env);
     else if (request.method === "GET" && url.pathname === "/messages") response = await handleMessages(request, env);
     else if (request.method === "GET" && url.pathname === "/messages/recent") response = await handleRecentMessages(request, env);
