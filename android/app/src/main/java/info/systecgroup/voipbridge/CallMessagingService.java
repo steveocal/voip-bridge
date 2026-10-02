@@ -49,11 +49,21 @@ public class CallMessagingService extends FirebaseMessagingService {
         if (nm == null) return;
         ensureChannel(nm);
 
-        Intent open = new Intent(this, MainActivity.class)
+        // Tapping the notification means "answer": MainActivity turns the
+        // extra into the dashboard's auto-answer cookie.
+        Intent tap = new Intent(this, MainActivity.class)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .putExtra("incoming_call_at", System.currentTimeMillis());
-        PendingIntent pi = PendingIntent.getActivity(
-            this, 0, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        PendingIntent tapPi = PendingIntent.getActivity(
+            this, 0, tap, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        // The full-screen intent only opens the app to its ringing screen. Android
+        // fires it by itself when the phone is locked, so it must not carry the
+        // answer extra, or every call to a locked phone answers itself.
+        // (Separate request code: extras don't distinguish PendingIntents.)
+        Intent show = new Intent(this, MainActivity.class)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent showPi = PendingIntent.getActivity(
+            this, 1, show, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
         Notification n = new NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.sym_call_incoming)
@@ -61,8 +71,8 @@ public class CallMessagingService extends FirebaseMessagingService {
             .setContentText(caller == null || caller.isEmpty() ? "Unknown caller" : caller)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setContentIntent(pi)
-            .setFullScreenIntent(pi, true)
+            .setContentIntent(tapPi)
+            .setFullScreenIntent(showPi, true)
             .setOngoing(true)
             .setAutoCancel(true)
             .setTimeoutAfter(RING_TIMEOUT_MS)

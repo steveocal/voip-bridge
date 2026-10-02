@@ -598,6 +598,10 @@ function defParam(group, id, label, def, o, set) {
 var G_CALL = "Calls & audio", G_LIST = "Lists & search", G_TIME = "Timing (typing & taps)";
 var J_INK = "Jot: ink", J_WORD = "Jot: word detection", J_LAY = "Jot: layout & splitting", J_DOT = "Jot: periods", J_GEST = "Jot: gestures", J_BOX = "Jot: boxes & zoom";
 
+defParam(G_CALL, "wsKeepAliveSec", "WebSocket keep-alive", 25, { unit: "s", min: 0, max: 300, step: 5, note: "Ping the SIP server this often (0 = off); applies on next connect" });
+defParam(G_CALL, "reconnectMinMs", "Reconnect first retry", 2000, { unit: "ms", min: 500, max: 60000, step: 500, note: "Wait before the first reconnect after the connection drops; doubles on each failure" });
+defParam(G_CALL, "reconnectMaxMs", "Reconnect max retry", 60000, { unit: "ms", min: 5000, max: 600000, step: 1000, note: "Longest wait between reconnect attempts" });
+defParam(G_CALL, "reconnectCheckMs", "Connection check interval", 30000, { unit: "ms", min: 5000, max: 600000, step: 1000, note: "How often to check the softphone is still registered (change applies after reload)" });
 defParam(G_CALL, "regTimeoutMs", "SIP registration timeout", 8000, { unit: "ms", min: 1000, max: 120000, step: 500, note: "Give up if the server never answers REGISTER" }, function(v) { REG_TIMEOUT_MS = v; });
 defParam(G_CALL, "sipLoadTimeoutMs", "SIP.js load timeout", 15000, { unit: "ms", min: 1000, max: 120000, step: 1000 });
 defParam(G_CALL, "defaultWs", "Default SIP WebSocket", "wss://64.176.181.195.nip.io/ws", { note: "Used for new accounts and a blank Proxy field" }, function(v) { DEFAULT_WS = v; });
@@ -3654,21 +3658,35 @@ function initSoftphone() {
   try {
     sipUA = new SIP.UserAgent({
       uri: SIP.UserAgent.makeURI("sip:" + acc.username + "@" + (acc.domain || PV.defaultDomain)),
-      transportOptions: { server: acc.server || DEFAULT_WS },
+      // CRLF pings keep NAT/proxies from idling the socket out, and make a
+      // dead one fail (→ onDisconnect → reconnect) instead of hanging silently.
+      transportOptions: { server: acc.server || DEFAULT_WS, keepAliveInterval: PV.wsKeepAliveSec },
       authorizationUsername: acc.username,
       authorizationPassword: acc.password,
       sessionDescriptionHandlerFactoryOptions: { constraints: { audio: true, video: false } }
     });
   } catch(e) { setStatus("❌ Init: " + e.message, true); return; }
 
+  // Events from a UA that has since been torn down (stop() fires its own
+  // disconnect/unregister) must not touch the current one.
+  var ua = sipUA;
+  sipRegistered = false;
+  sipStartedAt = Date.now();
   var registerer = new SIP.Registerer(sipUA, { expires: 3600 });
   registerer.stateChange.on(function(state) {
-    if (state === SIP.RegistererState.Registered) { clearTimeout(regTimer); setStatus("✅ Registered", false); registerPush(); }
-    else if (state === SIP.RegistererState.Unregistered) { clearTimeout(regTimer); setStatus("❌ Unregistered", true); }
+    if (ua !== sipUA) return;
+    if (state === SIP.RegistererState.Registered) { clearTimeout(regTimer); sipRegistered = true; reconnectDelay = 0; setStatus("✅ Registered", false); registerPush(); }
+    else if (state === SIP.RegistererState.Unregistered) { clearTimeout(regTimer); sipRegistered = false; setStatus("❌ Unregistered", true); scheduleReconnect(); }
     else setStatus("⏳ " + state, false);
   });
 
   sipUA.delegate = {
+    onDisconnect: function(err) {
+      if (ua !== sipUA) return;
+      sipRegistered = false;
+      setStatus("❌ Connection lost" + (err && err.message ? " (" + err.message + ")" : ""), true);
+      scheduleReconnect();
+    },
     onInvite: function(inv) {
       // Already ringing or on a call — send the same 486 (Busy Here) a
       // hardware desk phone's firmware would send automatically. The
@@ -3703,11 +3721,39 @@ function initSoftphone() {
   // If the server never answers, stop hanging and surface a clear error.
   clearTimeout(regTimer);
   regTimer = setTimeout(function() {
+    if (ua !== sipUA) return;
     setStatus("❌ Server unreachable (timeout)", true);
     try { sipUA.stop(); } catch (e) {}
     sipUA = null;
+    scheduleReconnect();
   }, REG_TIMEOUT_MS);
 }
+
+// ── keep the softphone registered ─────────────────────────────
+// The WebSocket drops on network blips, PC sleep, or a server restart, and
+// sip.js doesn't reconnect by itself, so rebuild the connection (what Save
+// does by hand) with backoff. Never while a call is up: it would end it.
+var sipRegistered = false, sipStartedAt = 0, reconnectTimer = null, reconnectDelay = 0;
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  reconnectDelay = Math.min(Math.max(reconnectDelay * 2, PV.reconnectMinMs), PV.reconnectMaxMs);
+  setStatus("⏳ Reconnecting in " + Math.round(reconnectDelay / 1000) + "s…", true);
+  reconnectTimer = setTimeout(function() { reconnectTimer = null; ensureRegistered(true); }, reconnectDelay);
+}
+function ensureRegistered(now) {
+  if (settings.devMode || !bootStarted || currentCall) return;
+  if (sipUA && sipRegistered && sipUA.isConnected()) return;
+  // Still connecting, or a backed-off retry is already queued: leave it,
+  // unless asked to retry right now (network just came back).
+  if (!now && (reconnectTimer || (sipUA && Date.now() - sipStartedAt < REG_TIMEOUT_MS))) return;
+  clearTimeout(reconnectTimer); reconnectTimer = null;
+  teardownSoftphone();
+  initSoftphone();
+}
+// Check right away when the network or the PC comes back, and periodically.
+window.addEventListener("online", function() { reconnectDelay = 0; ensureRegistered(true); });
+document.addEventListener("visibilitychange", function() { if (document.visibilityState === "visible") ensureRegistered(); });
+setInterval(ensureRegistered, PV.reconnectCheckMs);
 
 // ── boot ───────────────────────────────────────────────────────
 function applyBoot() {
