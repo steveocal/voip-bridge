@@ -1,9 +1,9 @@
 import type { Env } from "./types";
-import { fetchRecording, channelSlice, monoWav } from "./recording";
+import { fetchRecording, monoWav, type Audio } from "./recording";
 
 // ── Call transcription (Workers AI Whisper) ───────────────────
-// Stereo recordings keep each party on its own channel (see recording.ts),
-// so each side is transcribed separately, labelled "Us" / "Them", and the
+// Each party is recorded to its own file (see recording.ts), so each side
+// is transcribed separately, labelled "Us" / "Them", and the
 // two are merged by time. Whisper takes the audio as one base64 string, so
 // each side is fed to it in CHUNK_SECONDS pieces, with the piece's offset
 // added to each segment's timestamp.
@@ -24,26 +24,33 @@ export async function transcribeCall(env: Env, callId: string): Promise<string> 
   const row = await env.DB.prepare("SELECT recording, direction FROM call_log WHERE call_id = ?1")
     .bind(callId).first<{ recording: string | null; direction: string | null }>();
   if (!row?.recording) throw new Error("no recording");
-  const rec = await fetchRecording(env, row.recording);
-  // Channel 0 is what the recorded channel received: the caller on inbound
-  // calls (recorded on the trunk), our own voice on outbound ones.
-  const labels = rec.channels < 2 ? [""]
-    : row.direction === "outgoing" ? ["Us", "Them"] : ["Them", "Us"];
+  // rx is what the recorded channel received: the caller on inbound calls
+  // (recorded on the trunk), our own voice on outbound ones.
+  const [rx, tx] = await Promise.all([fetchRecording(env, `${row.recording}-rx`), fetchRecording(env, `${row.recording}-tx`)]);
+  let sides: { label: string; audio: Audio }[];
+  if (rx && tx) {
+    sides = row.direction === "outgoing"
+      ? [{ label: "Us", audio: rx }, { label: "Them", audio: tx }]
+      : [{ label: "Them", audio: rx }, { label: "Us", audio: tx }];
+  } else {
+    const mixed = await fetchRecording(env, row.recording);
+    if (!mixed) throw new Error("recording file not found");
+    sides = [{ label: "", audio: mixed }];
+  }
 
-  const frames = Math.floor(rec.pcm.length / rec.channels);
-  const step = rec.rate * CHUNK_SECONDS;
   const lines: Line[] = [];
-  for (let ch = 0; ch < labels.length; ch++) {
-    for (let from = 0; from < frames; from += step) {
-      const samples = channelSlice(rec, ch, from, Math.min(from + step, frames));
+  for (const { label, audio } of sides) {
+    const step = audio.rate * CHUNK_SECONDS;
+    for (let from = 0; from < audio.samples.length; from += step) {
+      const samples = audio.samples.subarray(from, from + step);
       if (meanLevel(samples, 0, samples.length) < SILENCE_LEVEL / 10) continue; // a side that said nothing at all
-      const out = await env.AI.run(MODEL, { audio: toBase64(monoWav(samples, rec.rate)) }) as { text?: string; segments?: WhisperSegment[] };
+      const out = await env.AI.run(MODEL, { audio: toBase64(monoWav(samples, audio.rate)) }) as { text?: string; segments?: WhisperSegment[] };
       const segments = out.segments?.length ? out.segments : (out.text ? [{ start: 0, end: 0, text: out.text }] : []);
       for (const s of segments) {
         const text = s.text.trim();
         if (!text) continue;
-        if (s.end > s.start && meanLevel(samples, Math.floor(s.start * rec.rate), Math.ceil(s.end * rec.rate)) < SILENCE_LEVEL) continue;
-        lines.push({ t: from / rec.rate + s.start, label: labels[ch], text });
+        if (s.end > s.start && meanLevel(samples, Math.floor(s.start * audio.rate), Math.ceil(s.end * audio.rate)) < SILENCE_LEVEL) continue;
+        lines.push({ t: from / audio.rate + s.start, label, text });
       }
     }
   }
