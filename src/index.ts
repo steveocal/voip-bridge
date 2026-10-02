@@ -1,7 +1,7 @@
 import type { Env, ExecutionContext, D1PreparedStatement } from "./types";
 import { lookupCaller, logCompletedCall, trackCall, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages, searchQuotations, phoneKey, createContactForNumber, renameContact } from "./odoo";
 import { searchGmailMessages, searchRecentGmailMessages, getGmailBody, sendGmailMessage } from "./gmail";
-import { ariRequest } from "./asterisk";
+import { ariRequest, ariRecordingFile } from "./asterisk";
 import { serveDashboard } from "./dashboard";
 import { handlePushRegister, handlePushWake } from "./push";
 import type { Contact, Message } from "./odoo";
@@ -49,6 +49,15 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
     }));
     await env.DB.prepare("UPDATE call_log SET state='ongoing' WHERE call_id=?1").bind(callId).run();
     return Response.json({ action: "answered" });
+  }
+
+  // Posted by Asterisk's MixMonitor once a recording file is closed
+  // (see [record-call] in extensions.conf on the VPS).
+  if (event === "recording") {
+    const file = params.get("file") ?? "";
+    if (!/^[A-Za-z0-9_-]+$/.test(file)) return Response.json({ error: "bad file" }, { status: 400 });
+    await env.DB.prepare("UPDATE call_log SET recording=?1 WHERE call_id=?2").bind(file, callId).run();
+    return Response.json({ action: "recording", file });
   }
 
   if (event === "hangup") {
@@ -152,7 +161,8 @@ async function handleCallHistory(request: Request, env: Env): Promise<Response> 
        c.partner_id AS partner_id,
        COALESCE(p.name, '') AS partner_name,
        COALESCE(p.email, '') AS partner_email,
-       CASE WHEN COALESCE(c.notes_html, '') != '' THEN 1 ELSE 0 END AS has_notes
+       CASE WHEN COALESCE(c.notes_html, '') != '' THEN 1 ELSE 0 END AS has_notes,
+       CASE WHEN COALESCE(c.recording, '') != '' THEN 1 ELSE 0 END AS has_recording
      FROM call_log c
      LEFT JOIN contacts p ON p.id = c.partner_id`;
   let rows;
@@ -328,6 +338,20 @@ async function handleSaveCallNotes(request: Request, env: Env): Promise<Response
   ).bind(body.notes_html ?? "", body.jot_svg ?? "", body.jot_json ?? "", Date.now(), callId).run();
   if (!result.meta.changes) return Response.json({ error: "call not found" }, { status: 404 });
   return Response.json({ ok: true });
+}
+
+// Call recording audio, streamed from Asterisk's stored recordings via ARI.
+async function handleGetRecording(request: Request, env: Env): Promise<Response> {
+  const callId = new URL(request.url).searchParams.get("call_id") ?? "";
+  const row = await env.DB.prepare("SELECT recording FROM call_log WHERE call_id = ?1")
+    .bind(callId).first<{ recording: string | null }>();
+  if (!row?.recording) return Response.json({ error: "no recording" }, { status: 404 });
+  const res = await ariRecordingFile(env, row.recording);
+  if (!res.ok) return Response.json({ error: `Asterisk returned ${res.status}` }, { status: res.status === 404 ? 404 : 502 });
+  const headers = new Headers({ "Content-Type": res.headers.get("Content-Type") || "audio/wav", "Cache-Control": "private, max-age=86400" });
+  const len = res.headers.get("Content-Length");
+  if (len) headers.set("Content-Length", len);
+  return new Response(res.body, { headers });
 }
 
 // ── Contact messages (Odoo mail.message + Gmail) ──────────────
@@ -597,6 +621,7 @@ export default {
     else if (request.method === "POST" && url.pathname === "/call-history/create-missing-contacts") response = await handleCreateMissingContacts(env);
     else if (request.method === "GET" && url.pathname === "/call-notes") response = await handleGetCallNotes(request, env);
     else if (request.method === "POST" && url.pathname === "/call-notes") response = await handleSaveCallNotes(request, env);
+    else if (request.method === "GET" && url.pathname === "/recording") response = await handleGetRecording(request, env);
     else if (request.method === "GET" && url.pathname === "/quotations") response = await handleQuotations(request, env);
     else if (request.method === "GET" && url.pathname === "/messages") response = await handleMessages(request, env);
     else if (request.method === "GET" && url.pathname === "/messages/recent") response = await handleRecentMessages(request, env);

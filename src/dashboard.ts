@@ -98,6 +98,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .hist-actions{display:flex;gap:6px;margin:8px 0 2px 30px}
 .hist-action{background:#1a1a1a;border:none;color:#ccc;width:30px;height:30px;border-radius:8px;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .hist-action:active{background:#262626}
+.hist-play{background:#1a1a1a;border:none;color:#34d399;width:30px;height:30px;border-radius:50%;font-size:13px;cursor:pointer;margin-left:8px;flex-shrink:0}
+.hist-play:active{background:#262626}
+.hist-player{margin:8px 0 2px 38px;font-size:12px;color:#999}
+.hist-player audio{width:100%;height:36px}
 .contact-row .mini-call{width:38px;height:38px;border-radius:50%;border:none;background:#10b981;color:#fff;font-size:16px;cursor:pointer;flex-shrink:0}
 .empty{color:#666;text-align:center;padding:28px 0;font-size:14px}
 .day-head{font-size:11px;font-weight:700;letter-spacing:.5px;color:#888;text-transform:uppercase;padding:14px 4px 6px;position:sticky;top:0;background:transparent}
@@ -2729,7 +2733,8 @@ function renderHistoryRow(c) {
   var key = "h-" + c.id;
   callsCache[key] = c;
   return '<div class="hist-row" data-key="' + esc(key) + '">'
-    + '<div class="hist-main">' + dirIcon(dir, missed) + '<div><div class="who">' + esc(who) + notesFlag + '</div>' + (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div><div class="meta">' + when + dur + '</div></div>'
+    + '<div class="hist-main">' + dirIcon(dir, missed) + '<div><div class="who">' + esc(who) + notesFlag + '</div>' + (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div><div class="meta">' + when + dur + '</div>'
+    + (c.has_recording ? '<button class="hist-play" title="Play recording">▶</button>' : '') + '</div>'
     + '</div>';
 }
 function fmtDur(sec) {
@@ -2755,9 +2760,45 @@ document.getElementById("history-list").addEventListener("click", function(e) {
   var key = row.getAttribute("data-key");
   var c = callsCache[key];
   if (!c) return;
+  if (e.target.closest(".hist-player")) return;
+  if (e.target.closest(".hist-play")) { toggleRecording(row, c); return; }
   // Selecting is all a tap does; the toolbar above the list acts on the selection.
   if (row.classList.contains("selected")) deselect(); else selectItem("call", c, key);
 });
+// Recording player, opened under the row. The audio is fetched as a blob so
+// seeking works even though Asterisk serves it without range support.
+function toggleRecording(row, c) {
+  var open = row.querySelector(".hist-player");
+  if (open) { closeRecording(open); return; }
+  var prev = document.querySelectorAll(".hist-player");
+  for (var i = 0; i < prev.length; i++) closeRecording(prev[i]);
+  var box = document.createElement("div");
+  box.className = "hist-player";
+  box.textContent = "Loading recording…";
+  row.appendChild(box);
+  row.querySelector(".hist-play").textContent = "■";
+  fetch(API + "/recording?call_id=" + encodeURIComponent(c.call_id)).then(function(r) {
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return r.blob();
+  }).then(function(blob) {
+    if (!box.parentNode) return;
+    var a = document.createElement("audio");
+    a.controls = true;
+    a.src = URL.createObjectURL(blob);
+    box.textContent = "";
+    box.appendChild(a);
+    a.play().catch(function() {});
+  }).catch(function(err) {
+    box.textContent = "Couldn't load recording (" + err.message + ")";
+  });
+}
+function closeRecording(box) {
+  var a = box.querySelector("audio");
+  if (a) { a.pause(); URL.revokeObjectURL(a.src); }
+  var btn = box.parentNode.querySelector(".hist-play");
+  if (btn) btn.textContent = "▶";
+  box.parentNode.removeChild(box);
+}
 function histSelectedCall() { return (selected && selected.type === "call") ? selected.data : null; }
 function histNumber(c) { return (c.phone_number && c.phone_number !== "unknown") ? c.phone_number : (c.did || ""); }
 function updateHistToolbar() {
