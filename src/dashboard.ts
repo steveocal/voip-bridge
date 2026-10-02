@@ -105,6 +105,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .hist-transcript{margin-top:6px;max-height:40vh;overflow-y:auto;font-size:13px;line-height:1.45;color:#ccc}
 .hist-transcript .tl{padding:2px 0;cursor:pointer}
 .hist-transcript .tl .ts{color:#4db8ff;margin-right:6px;font-variant-numeric:tabular-nums}
+.hist-transcript .tl .who{font-weight:600;margin-right:4px;color:#f5a623}
+.hist-transcript .tl.us .who{color:#34d399}
 .hist-transcript button{background:#2c2c2c;border:none;color:#ececec;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer}
 .contact-row .mini-call{width:38px;height:38px;border-radius:50%;border:none;background:#10b981;color:#fff;font-size:16px;cursor:pointer;flex-shrink:0}
 .empty{color:#666;text-align:center;padding:28px 0;font-size:14px}
@@ -2822,7 +2824,10 @@ function renderTranscript(tBox, c, transcript) {
     var ts = (line.charAt(0) === "[" && close > 0) ? line.slice(1, close) : "";
     var parts = ts.split(":");
     var sec = parts.length === 2 ? parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10) : 0;
-    html += '<div class="tl" data-t="' + sec + '">' + (ts ? '<span class="ts">' + esc(ts) + '</span>' + esc(line.slice(close + 2)) : esc(line)) + '</div>';
+    var text = ts ? line.slice(close + 2) : line, who = "", cls = "tl";
+    if (text.indexOf("Us: ") === 0) { who = "Us"; cls = "tl us"; text = text.slice(4); }
+    else if (text.indexOf("Them: ") === 0) { who = (c.partner_name || "").trim().split(" ")[0] || "Them"; text = text.slice(6); }
+    html += '<div class="' + cls + '" data-t="' + sec + '">' + (ts ? '<span class="ts">' + esc(ts) + '</span>' : '') + (who ? '<span class="who">' + esc(who) + ':</span>' : '') + esc(text) + '</div>';
   }
   tBox.innerHTML = html;
   tBox.onclick = function(e) {

@@ -1,7 +1,8 @@
 import type { Env, ExecutionContext, D1PreparedStatement } from "./types";
 import { lookupCaller, logCompletedCall, trackCall, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages, searchQuotations, phoneKey, createContactForNumber, renameContact } from "./odoo";
 import { searchGmailMessages, searchRecentGmailMessages, getGmailBody, sendGmailMessage } from "./gmail";
-import { ariRequest, ariRecordingFile } from "./asterisk";
+import { ariRequest } from "./asterisk";
+import { playbackResponse } from "./recording";
 import { transcribeCall } from "./transcribe";
 import { serveDashboard } from "./dashboard";
 import { handlePushRegister, handlePushWake } from "./push";
@@ -352,12 +353,7 @@ async function handleGetRecording(request: Request, env: Env): Promise<Response>
   const row = await env.DB.prepare("SELECT recording FROM call_log WHERE call_id = ?1")
     .bind(callId).first<{ recording: string | null }>();
   if (!row?.recording) return Response.json({ error: "no recording" }, { status: 404 });
-  const res = await ariRecordingFile(env, row.recording);
-  if (!res.ok) return Response.json({ error: `Asterisk returned ${res.status}` }, { status: res.status === 404 ? 404 : 502 });
-  const headers = new Headers({ "Content-Type": res.headers.get("Content-Type") || "audio/wav", "Cache-Control": "private, max-age=86400" });
-  const len = res.headers.get("Content-Length");
-  if (len) headers.set("Content-Length", len);
-  return new Response(res.body, { headers });
+  return playbackResponse(env, row.recording);
 }
 
 async function handleGetTranscript(request: Request, env: Env): Promise<Response> {
