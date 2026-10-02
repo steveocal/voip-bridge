@@ -98,6 +98,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .hist-actions{display:flex;gap:6px;margin:8px 0 2px 30px}
 .hist-action{background:#1a1a1a;border:none;color:#ccc;width:30px;height:30px;border-radius:8px;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .hist-action:active{background:#262626}
+#audio-hint{position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:1000;background:#f5a623;color:#1a1100;padding:7px 14px;border-radius:999px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.5);white-space:nowrap}
+#audio-hint.hidden{display:none}
 .hist-play{background:#1a1a1a;border:none;color:#34d399;width:30px;height:30px;border-radius:50%;font-size:13px;cursor:pointer;margin-left:8px;flex-shrink:0}
 .hist-play:active{background:#262626}
 .hist-player{margin:8px 0 2px 38px;font-size:12px;color:#999}
@@ -1003,16 +1005,61 @@ function initComposeEditor() {
 var sipUA, sipSession, currentCall, heldSession, muted = false, onHold = false;
 var regTimer = null, REG_TIMEOUT_MS = 8000;
 
-// ── audio unlock (WebRTC autoplay policy) ──────────────────────
-var audioUnlocked = false;
-document.addEventListener("click", function unlockAudio() {
-  if (audioUnlocked) return;
-  var ctx = new (window.AudioContext || window.webkitAudioContext)();
-  var osc = ctx.createOscillator(); var gain = ctx.createGain(); gain.gain.value = 0.001;
-  osc.connect(gain); gain.connect(ctx.destination);
-  osc.start(0); osc.stop(ctx.currentTime + 0.001);
-  ctx.resume().then(function() { audioUnlocked = true; });
-}, { once: true });
+// ── audio unlock (autoplay policy) ─────────────────────────────
+// Chrome keeps a page silent until it has been clicked, and a call can
+// arrive on a freshly loaded, untouched tab. So one AudioContext is created
+// up front, resumed by the first click/key press, and reused for every ring;
+// while it's still locked a pill asks for that click.
+var sharedAudioCtx = null;
+function sharedAudio() {
+  if (!sharedAudioCtx) {
+    try { sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; }
+    sharedAudioCtx.onstatechange = updateAudioHint;
+  }
+  return sharedAudioCtx;
+}
+function unlockAudio() {
+  var ctx = sharedAudio();
+  if (ctx && ctx.state !== "running") ctx.resume().then(updateAudioHint).catch(function() {});
+  askCallNotifications();
+}
+document.addEventListener("pointerdown", unlockAudio, true);
+document.addEventListener("keydown", unlockAudio, true);
+function updateAudioHint() {
+  var el = document.getElementById("audio-hint");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "audio-hint";
+    el.className = "hidden";
+    el.textContent = "🔇 Click anywhere to enable call ringing";
+    document.body.appendChild(el);
+  }
+  var ctx = sharedAudio();
+  el.classList.toggle("hidden", settings.devMode || !ctx || ctx.state === "running");
+}
+
+// ── desktop notification for incoming calls (web only) ─────────
+// Shown when the tab isn't in front, so a call is visible with the browser
+// minimised or on another tab. The native app has its own (FCM) notification.
+var callNotif = null, notifAsked = false;
+function callNotificationsSupported() { return ("Notification" in window) && !nativePush(); }
+function askCallNotifications() {
+  if (notifAsked || !callNotificationsSupported() || Notification.permission !== "default") return;
+  notifAsked = true;
+  try { Notification.requestPermission(); } catch (e) {}
+}
+function showCallNotification(who) {
+  closeCallNotification();
+  if (!callNotificationsSupported() || Notification.permission !== "granted") return;
+  if (!document.hidden && document.hasFocus()) return;
+  try {
+    callNotif = new Notification("Incoming call", { body: who || "Unknown caller", tag: "vb-incoming-call", requireInteraction: true });
+    callNotif.onclick = function() { window.focus(); closeCallNotification(); };
+  } catch (e) { callNotif = null; }
+}
+function closeCallNotification() {
+  if (callNotif) { try { callNotif.close(); } catch (e) {} callNotif = null; }
+}
 
 // ── incoming-call ringtone (dual-tone, 1s on / 3s off, looped) ─
 // Vibration runs alongside the tone, not instead of it — it's a fallback
@@ -1021,23 +1068,31 @@ document.addEventListener("click", function unlockAudio() {
 // hardware to vibrate), not a guaranteed workaround for it: browsers apply
 // the same "needs a recent user gesture" restriction to vibrate() as they
 // do to audio autoplay, so on a completely untouched tab neither may fire.
-var ringCtx = null, ringTimer = null;
+// Each ring hangs off ringGain, so stopping cuts off a tone mid-beep without
+// closing the shared context.
+var ringGain = null, ringTimer = null;
 function startRingtone() {
   stopRingtone();
-  try { ringCtx = new (window.AudioContext || window.webkitAudioContext)(); ringCtx.resume().catch(function() {}); } catch (e) { ringCtx = null; }
+  var ctx = sharedAudio();
+  if (ctx) {
+    if (ctx.state !== "running") ctx.resume().catch(function() {});
+    ringGain = ctx.createGain();
+    ringGain.connect(ctx.destination);
+  }
   ringCycle();
 }
 function ringCycle() {
-  if (ringCtx) {
-    var t0 = ringCtx.currentTime;
-    var gain = ringCtx.createGain();
+  var ctx = sharedAudioCtx;
+  if (ctx && ringGain) {
+    var t0 = ctx.currentTime;
+    var gain = ctx.createGain();
     gain.gain.setValueAtTime(0.001, t0);
     gain.gain.exponentialRampToValueAtTime(0.2, t0 + 0.02);
     gain.gain.setValueAtTime(0.2, t0 + 0.9);
     gain.gain.exponentialRampToValueAtTime(0.001, t0 + 1);
-    gain.connect(ringCtx.destination);
-    var osc1 = ringCtx.createOscillator(); osc1.type = "sine"; osc1.frequency.value = 440;
-    var osc2 = ringCtx.createOscillator(); osc2.type = "sine"; osc2.frequency.value = 480;
+    gain.connect(ringGain);
+    var osc1 = ctx.createOscillator(); osc1.type = "sine"; osc1.frequency.value = 440;
+    var osc2 = ctx.createOscillator(); osc2.type = "sine"; osc2.frequency.value = 480;
     osc1.connect(gain); osc2.connect(gain);
     osc1.start(t0); osc2.start(t0);
     osc1.stop(t0 + 1); osc2.stop(t0 + 1);
@@ -1047,7 +1102,8 @@ function ringCycle() {
 }
 function stopRingtone() {
   if (ringTimer) { clearTimeout(ringTimer); ringTimer = null; }
-  if (ringCtx) { try { ringCtx.close(); } catch (e) {} ringCtx = null; }
+  if (ringGain) { try { ringGain.disconnect(); } catch (e) {} ringGain = null; }
+  closeCallNotification();
   try { if (navigator.vibrate) navigator.vibrate(0); } catch (e) {}
 }
 
@@ -3703,6 +3759,7 @@ function initSoftphone() {
       renderCallUI();
       logCallEvent("ring");
       startRingtone();
+      showCallNotification(inv.remoteIdentity.displayName || currentCall.remote);
       if (consumeAutoAnswer()) setTimeout(function() { if (currentCall && currentCall.state === "ringing") answerCall(); }, PV.autoAnswerDelayMs);
       inv.stateChange.on(function(state) {
         if (state === SIP.SessionState.Established) { stopRingtone(); ensureRemoteAudio(inv); currentCall.state = "active"; currentCall.answeredAt = Date.now(); renderCallUI(); logCallEvent("answer"); }
@@ -3757,6 +3814,7 @@ setInterval(ensureRegistered, PV.reconnectCheckMs);
 
 // ── boot ───────────────────────────────────────────────────────
 function applyBoot() {
+  updateAudioHint();
   updateAccountHeader();
   loadDialRecent();
   if (settings.devMode) { setStatus("🛠 Dev mode", false); return; }
