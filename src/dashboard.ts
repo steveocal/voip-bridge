@@ -205,6 +205,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .p-reset{background:none;border:none;color:#4db8ff;cursor:pointer;font-size:15px;padding:2px 4px}
 .p-foot{padding:14px 0 8px;text-align:center}
 .p-foot button{width:100%;padding:11px;border:none;border-radius:10px;background:#2c2c2c;color:#ececec;font-size:14px;cursor:pointer;margin-bottom:8px}
+/* voicemail */
+.vm-sync{font-size:12px;color:#34d399;margin:2px 0 10px}
+.vm-sync.pending{color:#f0a33c}
+.vm-head{font-size:11px;font-weight:700;letter-spacing:.5px;color:#f0a33c;text-transform:uppercase;padding:14px 0 6px;border-bottom:1px solid #2c2c2c}
+.vm-row{display:flex;align-items:center;gap:8px;padding:8px 2px;border-bottom:1px solid #1c1c1c}
+.vm-row.active{background:#10241b;border-radius:10px}
+.vm-row input[type=radio]{width:18px;height:18px;flex-shrink:0;accent-color:#34d399;margin:0 2px}
+.vm-name{flex:1;min-width:0;font-size:14px}
+input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;color:#fff;outline:none}
+.vm-stock{color:#ccc;padding:7px 0}
+.vm-dur{font-size:12px;color:#999;flex-shrink:0}
+.vm-row .hist-play{margin-left:0}
+.vm-del{background:none;border:none;font-size:15px;cursor:pointer;padding:4px;flex-shrink:0;opacity:.8}
+.vm-del.armed{background:#3f1d1d;border-radius:8px;opacity:1;font-size:12px;color:#fca5a5}
+.vm-add{display:flex;gap:8px;margin-top:12px}
+.vm-add button{flex:1;padding:11px;border:none;border-radius:10px;background:#2c2c2c;color:#ececec;font-size:14px;cursor:pointer}
+.vm-add button.rec{background:#7f1d1d;color:#fff}
 .hist-toolbar{display:flex;gap:6px;padding:6px 0 8px;position:sticky;top:0;z-index:5;background:#000}
 .hist-toolbar button{flex:1;padding:10px 2px;border:none;border-radius:10px;background:#2c2c2c;color:#ececec;font-size:13px;cursor:pointer;white-space:nowrap}
 .hist-toolbar button:disabled{opacity:.35;cursor:default}
@@ -432,6 +449,27 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
     </div>
 
     <!-- PARAMETERS VIEW (opened from the menu) -->
+    <div class="view hidden" id="view-voicemail">
+      <div class="p-head">
+        <button class="cd-back" onclick="closeVoicemail()" aria-label="Back">←</button>
+        <div class="cd-title"><strong>Voicemail</strong></div>
+        <span class="jot-status" id="vm-status"></span>
+      </div>
+      <div class="vm-sync" id="vm-sync"></div>
+      <div class="switch-row">
+        <span>Straight to voicemail<div class="p-note">Phones don't ring; every caller hears the greeting.</div></span>
+        <label class="switch"><input type="checkbox" id="vm-direct" onchange="setVmDirect(this.checked)"><span class="track"></span></label>
+      </div>
+      <div class="vm-head">Greeting</div>
+      <div id="vm-list"><div class="empty">Loading…</div></div>
+      <div class="vm-add">
+        <button id="vm-rec-btn" onclick="toggleVmRecording()">🎙 Record</button>
+        <button onclick="document.getElementById('vm-file').click()">⬆ Upload audio</button>
+      </div>
+      <input type="file" id="vm-file" accept="audio/*" class="hidden">
+      <div class="p-foot"><div class="p-note">Calls nobody answers within 45s, or that hit busy phones, go to voicemail. Messages appear in History with ▶ and a transcript.</div></div>
+    </div>
+
     <div class="view hidden" id="view-params">
       <div class="p-head">
         <button class="cd-back" onclick="closeParams()" aria-label="Back">←</button>
@@ -509,6 +547,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 <div class="menu-drawer hidden" id="menu-drawer">
   <button class="hidden" id="menu-install-btn" onclick="menuInstallApp()">⬇ Install App</button>
   <button onclick="openSettings()">⚙️ Settings</button>
+  <button onclick="openVoicemail()">📼 Voicemail</button>
   <button onclick="openParams()">📋 Parameters</button>
 </div>
 
@@ -2795,7 +2834,7 @@ function renderHistoryRow(c) {
   var sub = name ? num : (c.did && c.did !== num ? "→ " + c.did : "");
   var dur = (c.duration > 0) ? " · " + fmtDur(c.duration) : "";
   var when = c.start_date ? fmtTime(c.start_date) : "";
-  var notesFlag = (c.has_notes ? ' <span title="Has notes">📝</span>' : "") + (c.has_transcript ? ' <span title="Transcribed">💬</span>' : "");
+  var notesFlag = (c.has_notes ? ' <span title="Has notes">📝</span>' : "") + (c.has_transcript ? ' <span title="Transcribed">💬</span>' : "") + (c.voicemail ? ' <span title="Voicemail">📼</span>' : "");
   var key = "h-" + c.id;
   callsCache[key] = c;
   return '<div class="hist-row" data-key="' + esc(key) + '">'
@@ -3463,6 +3502,244 @@ function dismissInstallTip() {
   var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
   if (isIOS && !isStandalone()) showInstallButtons();
 })();
+
+// ── voicemail ──────────────────────────────────────────────────
+// Greetings are stored on the worker, and Asterisk keeps its own copy of the
+// active one (greetings-sync.sh), so "synced" says whether the phone system
+// has caught up with the latest change. Everything saves as it's changed.
+var vmState = null, vmReturnView = "dial", vmStatusTimer = null, vmPollTimer = null;
+var vmRenameTimers = {}, vmDeleteArmed = {}, vmRec = null, vmPreview = null;
+var VM_MAX_SECONDS = 120; // the worker stores greetings in D1, which caps a row at 2 MB
+function openVoicemail() {
+  document.getElementById("menu-drawer").classList.add("hidden");
+  var views = document.querySelectorAll(".view");
+  for (var i = 0; i < views.length; i++) {
+    if (!views[i].classList.contains("hidden") && views[i].id !== "view-voicemail") vmReturnView = views[i].id.replace("view-", "");
+  }
+  switchView("voicemail");
+  loadVoicemail();
+}
+function closeVoicemail() {
+  stopVmRecording(true);
+  stopVmPreview();
+  clearTimeout(vmPollTimer);
+  switchView(vmReturnView || "dial");
+}
+function vmStatus(msg, bad) {
+  var el = document.getElementById("vm-status");
+  el.textContent = msg;
+  el.style.color = bad ? "#f87171" : "";
+  clearTimeout(vmStatusTimer);
+  if (!bad) vmStatusTimer = setTimeout(function() { el.textContent = ""; }, 2500);
+}
+function vmRequest(method, path, body, contentType) {
+  var opts = { method: method };
+  if (body !== undefined) {
+    opts.body = contentType ? body : JSON.stringify(body);
+    opts.headers = { "Content-Type": contentType || "application/json" };
+  }
+  return fetch(API + path, opts).then(function(r) {
+    return r.json().catch(function() { return {}; }).then(function(d) {
+      if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+      return d;
+    });
+  });
+}
+function loadVoicemail() {
+  vmRequest("GET", "/voicemail").then(setVmState).catch(function(err) { vmStatus("Couldn't load: " + err.message, true); });
+}
+function setVmState(d) {
+  vmState = d;
+  renderVoicemail();
+  // Asterisk applies a change a moment after it's saved; check back until it has.
+  clearTimeout(vmPollTimer);
+  if (!d.synced && !document.getElementById("view-voicemail").classList.contains("hidden")) vmPollTimer = setTimeout(loadVoicemail, 3000);
+}
+function renderVoicemail() {
+  var d = vmState;
+  document.getElementById("vm-direct").checked = !!d.direct;
+  var sync = document.getElementById("vm-sync");
+  sync.textContent = d.synced ? "✓ Phone system is up to date" : "⏳ Updating the phone system…";
+  sync.className = "vm-sync" + (d.synced ? "" : " pending");
+  // Don't rebuild the list under someone typing a name.
+  var list = document.getElementById("vm-list"), focused = document.activeElement;
+  if (focused && list.contains(focused) && focused.classList.contains("vm-name")) return;
+  stopVmPreview();
+  var html = '<label class="vm-row' + (d.greeting == null ? " active" : "") + '"><input type="radio" name="vm-greeting" value=""' + (d.greeting == null ? " checked" : "") + '>'
+    + '<span class="vm-name vm-stock">Standard prompt</span><span class="vm-dur">“Please leave your message after the tone”</span></label>';
+  for (var i = 0; i < d.greetings.length; i++) {
+    var g = d.greetings[i], on = d.greeting === g.id;
+    html += '<div class="vm-row' + (on ? " active" : "") + '" data-id="' + g.id + '">'
+      + '<input type="radio" name="vm-greeting" value="' + g.id + '"' + (on ? " checked" : "") + '>'
+      + '<input class="vm-name" type="text" value="' + esc(g.name) + '" autocomplete="off">'
+      + '<span class="vm-dur">' + fmtDur(g.duration_ms / 1000) + '</span>'
+      + '<button class="hist-play vm-play" title="Play">▶</button>'
+      + '<button class="vm-del" title="Delete">🗑</button></div>';
+  }
+  list.innerHTML = html;
+}
+function setVmDirect(on) {
+  vmRequest("POST", "/voicemail", { direct: on }).then(function(d) {
+    setVmState(d);
+    vmStatus(on ? "Calls go straight to voicemail ✓" : "Phones ring again ✓", false);
+  }).catch(function(err) {
+    document.getElementById("vm-direct").checked = !on;
+    vmStatus("Not saved: " + err.message, true);
+  });
+}
+function setVmGreeting(id) {
+  vmRequest("POST", "/voicemail", { greeting: id }).then(function(d) {
+    setVmState(d);
+    vmStatus("Saved ✓", false);
+  }).catch(function(err) { vmStatus("Not saved: " + err.message, true); if (vmState) renderVoicemail(); });
+}
+function saveVmName(id, inp) {
+  clearTimeout(vmRenameTimers[id]);
+  delete vmRenameTimers[id];
+  var name = inp.value.trim();
+  if (!name) return;
+  vmRequest("POST", "/greetings/" + id, { name: name }).then(function(d) {
+    vmState = d;
+    vmStatus("Saved ✓", false);
+  }).catch(function(err) { vmStatus("Name not saved: " + err.message, true); });
+}
+function deleteVmGreeting(id, btn) {
+  if (!vmDeleteArmed[id]) {
+    btn.textContent = "Delete?";
+    btn.classList.add("armed");
+    vmDeleteArmed[id] = setTimeout(function() { delete vmDeleteArmed[id]; btn.textContent = "🗑"; btn.classList.remove("armed"); }, 3000);
+    return;
+  }
+  clearTimeout(vmDeleteArmed[id]);
+  delete vmDeleteArmed[id];
+  vmRequest("DELETE", "/greetings/" + id).then(function(d) {
+    setVmState(d);
+    vmStatus("Deleted ✓", false);
+  }).catch(function(err) { vmStatus("Not deleted: " + err.message, true); });
+}
+function stopVmPreview() {
+  if (!vmPreview) return;
+  vmPreview.audio.pause();
+  vmPreview.btn.textContent = "▶";
+  vmPreview = null;
+}
+function toggleVmPreview(id, btn) {
+  var same = vmPreview && vmPreview.btn === btn;
+  stopVmPreview();
+  if (same) return;
+  var a = new Audio(API + "/greetings/" + id + "/audio");
+  vmPreview = { audio: a, btn: btn };
+  btn.textContent = "■";
+  a.onended = function() { if (vmPreview && vmPreview.audio === a) stopVmPreview(); };
+  a.play().catch(function(err) { stopVmPreview(); vmStatus("Can't play: " + err.message, true); });
+}
+var vmList = document.getElementById("vm-list");
+vmList.addEventListener("change", function(e) {
+  if (e.target.name !== "vm-greeting") return;
+  setVmGreeting(e.target.value === "" ? null : Number(e.target.value));
+});
+vmList.addEventListener("input", function(e) {
+  if (!e.target.classList.contains("vm-name")) return;
+  var id = e.target.closest(".vm-row").getAttribute("data-id"), inp = e.target;
+  clearTimeout(vmRenameTimers[id]);
+  vmRenameTimers[id] = setTimeout(function() { saveVmName(id, inp); }, 900);
+});
+vmList.addEventListener("focusout", function(e) {
+  if (!e.target.classList.contains("vm-name")) return;
+  var id = e.target.closest(".vm-row").getAttribute("data-id");
+  if (vmRenameTimers[id]) saveVmName(id, e.target);
+});
+vmList.addEventListener("keydown", function(e) {
+  if (e.key === "Enter" && e.target.classList.contains("vm-name")) e.target.blur();
+});
+vmList.addEventListener("click", function(e) {
+  var row = e.target.closest(".vm-row[data-id]");
+  if (!row) return;
+  var id = row.getAttribute("data-id");
+  if (e.target.closest(".vm-play")) toggleVmPreview(id, e.target.closest(".vm-play"));
+  else if (e.target.closest(".vm-del")) deleteVmGreeting(id, e.target.closest(".vm-del"));
+});
+// Any audio the browser can decode becomes the 8 kHz mono 16-bit WAV that
+// Asterisk plays as is. Decoding through an 8 kHz context does the
+// resampling; channels are averaged; the level is raised so a quiet mic
+// recording isn't faint on the phone.
+function vmToWav(buf) {
+  var off = new OfflineAudioContext(1, 1, 8000);
+  return new Promise(function(res, rej) { off.decodeAudioData(buf, res, rej); }).then(function(dec) {
+    if (dec.duration > VM_MAX_SECONDS + 0.5) throw new Error("greetings can be at most 2 minutes");
+    var n = dec.length, mono = new Float32Array(n), ch, c, i;
+    for (c = 0; c < dec.numberOfChannels; c++) {
+      ch = dec.getChannelData(c);
+      for (i = 0; i < n; i++) mono[i] += ch[i] / dec.numberOfChannels;
+    }
+    var peak = 0;
+    for (i = 0; i < n; i++) peak = Math.max(peak, Math.abs(mono[i]));
+    var gain = peak > 0.01 ? Math.min(8, 0.9 / peak) : 1;
+    var out = new ArrayBuffer(44 + n * 2), v = new DataView(out);
+    var str = function(at, t) { for (var k = 0; k < t.length; k++) v.setUint8(at + k, t.charCodeAt(k)); };
+    str(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); str(8, "WAVEfmt ");
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, 8000, true); v.setUint32(28, 16000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    str(36, "data"); v.setUint32(40, n * 2, true);
+    for (i = 0; i < n; i++) {
+      var s = Math.max(-1, Math.min(1, mono[i] * gain));
+      v.setInt16(44 + i * 2, s < 0 ? s * 32768 : s * 32767, true);
+    }
+    return out;
+  });
+}
+function uploadVmGreeting(buf, name) {
+  vmStatus("Saving greeting…", false);
+  return vmToWav(buf).then(function(wav) {
+    return vmRequest("POST", "/greetings?name=" + encodeURIComponent(name), wav, "audio/wav");
+  }).then(function(d) {
+    setVmState(d);
+    vmStatus("Greeting saved ✓", false);
+  }).catch(function(err) { vmStatus("Not saved: " + err.message, true); });
+}
+document.getElementById("vm-file").addEventListener("change", function(e) {
+  var f = e.target.files && e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  var dot = f.name.lastIndexOf(".");
+  f.arrayBuffer().then(function(buf) { uploadVmGreeting(buf, dot > 0 ? f.name.slice(0, dot) : f.name); });
+});
+function toggleVmRecording() { if (vmRec) stopVmRecording(false); else startVmRecording(); }
+function startVmRecording() {
+  if (!navigator.mediaDevices || !window.MediaRecorder) { vmStatus("This browser can't record audio", true); return; }
+  stopVmPreview();
+  navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+    var rec = new MediaRecorder(stream), chunks = [], btn = document.getElementById("vm-rec-btn"), started = Date.now();
+    vmRec = { rec: rec, stream: stream, discard: false, timer: null };
+    rec.ondataavailable = function(e) { if (e.data && e.data.size) chunks.push(e.data); };
+    rec.onstop = function() {
+      var r = vmRec;
+      vmRec = null;
+      clearInterval(r.timer);
+      stream.getTracks().forEach(function(t) { t.stop(); });
+      btn.textContent = "🎙 Record";
+      btn.classList.remove("rec");
+      if (r.discard || !chunks.length) return;
+      new Blob(chunks, { type: rec.mimeType }).arrayBuffer().then(function(buf) {
+        uploadVmGreeting(buf, "Recorded " + new Date().toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }));
+      });
+    };
+    var tick = function() {
+      var secs = Math.floor((Date.now() - started) / 1000);
+      btn.textContent = "■ Stop  " + fmtDur(secs);
+      if (secs >= VM_MAX_SECONDS) stopVmRecording(false);
+    };
+    btn.classList.add("rec");
+    tick();
+    vmRec.timer = setInterval(tick, 500);
+    rec.start();
+  }).catch(function(err) { vmStatus("No microphone: " + err.message, true); });
+}
+function stopVmRecording(discard) {
+  if (!vmRec) return;
+  vmRec.discard = discard;
+  if (vmRec.rec.state !== "inactive") vmRec.rec.stop();
+}
 
 // ── menu + settings ────────────────────────────────────────────
 function toggleMenu() {

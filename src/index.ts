@@ -6,6 +6,7 @@ import { playbackResponse } from "./recording";
 import { transcribeCall } from "./transcribe";
 import { serveDashboard } from "./dashboard";
 import { handlePushRegister, handlePushWake } from "./push";
+import { handleGetVoicemail, handleSetVoicemail, handleCreateGreeting, handleRenameGreeting, handleDeleteGreeting, handleGreetingAudio, handleVoicemailSync, handleVoicemailSynced } from "./voicemail";
 import type { Contact, Message } from "./odoo";
 
 // Durable Object class must be exported from the entrypoint module.
@@ -53,6 +54,13 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
     return Response.json({ action: "answered" });
   }
 
+  // Posted by [voicemail] in extensions.conf as it starts the greeting. The
+  // message itself arrives later as an ordinary event=recording.
+  if (event === "voicemail") {
+    await env.DB.prepare("UPDATE call_log SET voicemail=1 WHERE call_id=?1").bind(callId).run();
+    return Response.json({ action: "voicemail" });
+  }
+
   // Posted by Asterisk's MixMonitor once a recording file is closed
   // (see [record-call] in extensions.conf on the VPS).
   if (event === "recording") {
@@ -73,7 +81,8 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
       method: "POST",
       body: JSON.stringify({ callId, status: "hungup", endTime: Date.now() }),
     }));
-    await env.DB.prepare("UPDATE call_log SET state=?1, end_date=?2 WHERE call_id=?3")
+    // Voicemail answers the call, so it has a duration, but nobody took it.
+    await env.DB.prepare("UPDATE call_log SET state=CASE WHEN voicemail=1 THEN 'missed' ELSE ?1 END, end_date=?2 WHERE call_id=?3")
       .bind(state, Date.now(), callId).run();
     // Awaited (not waitUntil) so the dashboard can refresh its lists as soon
     // as this responds and see the new/linked contact's name.
@@ -169,7 +178,8 @@ async function handleCallHistory(request: Request, env: Env): Promise<Response> 
        COALESCE(p.email, '') AS partner_email,
        CASE WHEN COALESCE(c.notes_html, '') != '' THEN 1 ELSE 0 END AS has_notes,
        CASE WHEN COALESCE(c.recording, '') != '' THEN 1 ELSE 0 END AS has_recording,
-       CASE WHEN c.transcript IS NOT NULL THEN 1 ELSE 0 END AS has_transcript
+       CASE WHEN c.transcript IS NOT NULL THEN 1 ELSE 0 END AS has_transcript,
+       c.voicemail
      FROM call_log c
      LEFT JOIN contacts p ON p.id = c.partner_id`;
   let rows;
@@ -609,7 +619,7 @@ async function handleContactDetail(env: Env, id: number): Promise<Response> {
 function corsHeaders(): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
   };
 }
@@ -645,6 +655,14 @@ export default {
     else if (request.method === "GET" && url.pathname === "/recording") response = await handleGetRecording(request, env);
     else if (request.method === "GET" && url.pathname === "/transcript") response = await handleGetTranscript(request, env);
     else if (request.method === "POST" && url.pathname === "/transcribe") response = await handleTranscribe(request, env);
+    else if (request.method === "GET" && url.pathname === "/voicemail") response = await handleGetVoicemail(env);
+    else if (request.method === "POST" && url.pathname === "/voicemail") response = await handleSetVoicemail(request, env);
+    else if (request.method === "GET" && url.pathname === "/voicemail/sync") response = await handleVoicemailSync(env);
+    else if (request.method === "POST" && url.pathname === "/voicemail/synced") response = await handleVoicemailSynced(request, env);
+    else if (request.method === "POST" && url.pathname === "/greetings") response = await handleCreateGreeting(request, env);
+    else if (request.method === "POST" && /^\/greetings\/\d+$/.test(url.pathname)) response = await handleRenameGreeting(request, env, parseInt(url.pathname.split("/")[2]));
+    else if (request.method === "DELETE" && /^\/greetings\/\d+$/.test(url.pathname)) response = await handleDeleteGreeting(env, parseInt(url.pathname.split("/")[2]));
+    else if (request.method === "GET" && /^\/greetings\/\d+\/audio$/.test(url.pathname)) response = await handleGreetingAudio(env, parseInt(url.pathname.split("/")[2]));
     else if (request.method === "GET" && url.pathname === "/quotations") response = await handleQuotations(request, env);
     else if (request.method === "GET" && url.pathname === "/messages") response = await handleMessages(request, env);
     else if (request.method === "GET" && url.pathname === "/messages/recent") response = await handleRecentMessages(request, env);

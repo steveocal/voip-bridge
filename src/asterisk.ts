@@ -14,6 +14,13 @@ export function ariRecordingFile(env: Env, name: string) {
   return ariFetch(env, `recordings/stored/${encodeURIComponent(name)}/file`);
 }
 
+/** Runs [greetings-sync] on the Asterisk box (greetings-sync.sh), which pulls
+ *  the voicemail settings from /voicemail/sync. The Local channel's other end
+ *  never answers; it only exists to get the dialplan run. */
+export function ariSyncGreetings(env: Env) {
+  return ariFetch(env, "channels?endpoint=Local/s@greetings-sync&context=greetings-sync&extension=noop&priority=1&timeout=30", { method: "POST" });
+}
+
 export async function ariRequest(env: Env, path: string, method = "GET", body?: Record<string, unknown>) {
   const url = `${env.ASTERISK_URL}/ari/${path}`;
   const auth = btoa(`${env.ASTERISK_USER}:${env.ASTERISK_PASS}`);

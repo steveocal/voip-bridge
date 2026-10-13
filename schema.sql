@@ -50,7 +50,8 @@ CREATE TABLE IF NOT EXISTS call_log (
   jot_svg TEXT,                          -- local-only: jot sketch, rendered SVG (display)
   jot_json TEXT,                         -- local-only: jot sketch, Excalidraw scene (elements+appState, re-editable)
   recording TEXT,                        -- local-only: Asterisk stored-recording name (see migrations/0006_call_recording.sql)
-  transcript TEXT                        -- local-only: Whisper transcript, one "[m:ss] text" line per segment (NULL = not transcribed)
+  transcript TEXT,                       -- local-only: Whisper transcript, one "[m:ss] text" line per segment (NULL = not transcribed)
+  voicemail INTEGER NOT NULL DEFAULT 0   -- local-only: 1 = went to voicemail; the message is in recording (see migrations/0008_voicemail.sql)
 );
 CREATE INDEX IF NOT EXISTS idx_call_log_phone ON call_log(phone_number);
 CREATE INDEX IF NOT EXISTS idx_call_log_start ON call_log(start_date);
@@ -64,6 +65,15 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT,
   updated_at INTEGER
+);
+
+-- ── Voicemail greetings (see migrations/0008_voicemail.sql) ──
+CREATE TABLE IF NOT EXISTS greetings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  audio BLOB NOT NULL,                   -- 8 kHz mono 16-bit WAV
+  duration_ms INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
 );
 
 -- ── Phone lookup bookkeeping (see migrations/0005_phone_lookup.sql) ──
