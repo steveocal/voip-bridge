@@ -2927,7 +2927,9 @@ document.getElementById("history-list").addEventListener("click", function(e) {
   if (!c) return;
   if (e.target.closest(".hist-player")) return;
   if (e.target.closest(".hist-play")) { toggleRecording(row, c); return; }
-  // Selecting is all a tap does; the toolbar above the list acts on the selection.
+  // A transcript search hit opens straight into the call's details.
+  if (c.match) { selectItem("call", c, key); openCallDetailView(c); return; }
+  // Otherwise selecting is all a tap does; the toolbar above the list acts on the selection.
   if (row.classList.contains("selected")) deselect(); else selectItem("call", c, key);
 });
 // Recording player, opened under the row. The audio is fetched as a blob so
