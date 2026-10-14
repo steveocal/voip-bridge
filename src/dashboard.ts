@@ -310,7 +310,9 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 .jt-text{width:100%;border-radius:10px;background:#1e1e1e;border:1px solid #2c2c2c;padding:14px 16px;overflow-y:auto;white-space:pre-wrap;font-size:16px;line-height:1.55;color:#e9ecef;box-sizing:border-box}
 .jt-text.hidden,.jt-canvas-wrap.hidden{display:none}
 .jt-text-note{color:#999;font-style:italic}
-.jt-text-saved{margin-top:12px;font-size:12px;color:#34d399}
+.jt-text-saved{margin-top:8px;font-size:12px;color:#34d399;font-style:normal;min-height:15px}
+.jt-text{display:flex;flex-direction:column}
+.jt-text-edit{flex:1;width:100%;min-height:120px;background:transparent;border:none;outline:none;resize:none;color:#e9ecef;font:inherit;font-size:16px;line-height:1.55;padding:0}
 #jot-canvas .jt-text{height:420px}
 #cd-jot-canvas .jt-text{height:58vh}
 .jt-btn.jt-totext{width:auto;padding:0 9px;font-weight:700;font-size:14px}
@@ -718,6 +720,7 @@ defParam(G_TIME, "suggestDebounceMs", "Dial suggestions delay", 220, { unit: "ms
 defParam(G_TIME, "historyDebounceMs", "History search delay", 250, { unit: "ms", min: 0, max: 2000, step: 10 });
 defParam(G_TIME, "contactsDebounceMs", "Contacts search delay", 250, { unit: "ms", min: 0, max: 2000, step: 10 });
 defParam(G_TIME, "doubleTapMs", "Double-tap window", 300, { unit: "ms", min: 100, max: 1000, step: 10, note: "Contacts / messages rows" });
+defParam(G_TIME, "jotTextAutosaveMs", "Jot text edit autosave delay", 800, { unit: "ms", min: 200, max: 10000, step: 100, note: "Wait after the last keystroke before copying edited Aa text into the notes" });
 defParam(G_TIME, "contactRenameAutosaveMs", "Contact rename autosave delay", 900, { unit: "ms", min: 200, max: 10000, step: 100, note: "Wait after the last keystroke before saving the name to Odoo" });
 defParam(G_TIME, "notesAutosaveMs", "Notes autosave delay", 900, { unit: "ms", min: 200, max: 10000, step: 100, note: "Wait after the last edit before saving" });
 defParam(G_TIME, "quickTextTimeoutMs", "Quick-text panel timeout", 4000, { unit: "ms", min: 500, max: 30000, step: 500 });
@@ -1432,12 +1435,34 @@ function upsertJotNotesPlain(value, text) {
   }
   return value ? value + NL + NL + block : block;
 }
+// The From Jot block's text, from the editor, its textarea, or stored html.
+function getJotTextFromNotes(editorId, html) {
+  var ed = (typeof tinymce !== "undefined") ? tinymce.get(editorId) : null;
+  if (ed && !ed.initialized) ed = null;
+  var ta = document.getElementById(editorId);
+  if (!ed && html.indexOf("data-jot-text") < 0 && ta) {
+    var head = JOT_NOTES_HEAD + ":", i = ta.value.indexOf(head);
+    if (i < 0) return "";
+    var end = ta.value.indexOf(NL + NL, i);
+    return ta.value.slice(i + head.length + 1, end >= 0 ? end : undefined);
+  }
+  var box = document.createElement("div");
+  box.innerHTML = ed ? ed.getContent() : html;
+  var block = box.querySelector("[data-jot-text]");
+  if (!block) return "";
+  var ps = block.querySelectorAll("p"), lines = [];
+  for (var k = 1; k < ps.length; k++) lines.push(ps[k].textContent.split(String.fromCharCode(160)).join(" ").trim());
+  return lines.join(NL);
+}
 function putJotTextInNotes(editorId, text, getHtml, setHtml) {
   var ed = (typeof tinymce !== "undefined") ? tinymce.get(editorId) : null;
+  if (ed && !ed.initialized) ed = null;
   var ta = document.getElementById(editorId);
-  if (ed) ed.setContent(upsertJotNotesHtml(ed.getContent(), text));
-  else if (ta) ta.value = upsertJotNotesPlain(ta.value, text);
-  if (setHtml && !ed && !ta) setHtml(upsertJotNotesHtml(getHtml(), text));
+  if (ed) { ed.setContent(upsertJotNotesHtml(ed.getContent(), text)); return; }
+  // No editor yet: keep the stored html current too, so an editor that
+  // finishes loading later starts from it.
+  if (setHtml) setHtml(upsertJotNotesHtml(getHtml(), text));
+  if (ta) ta.value = upsertJotNotesPlain(ta.value, text);
 }
 // ── in-call panel: caller name + tabs ───────────────────────────
 var activeCpTab = "notes";
@@ -1700,10 +1725,11 @@ function jtMakeWord(strokes, prevRotate, prevScale) {
   };
 }
 
-// onText(text), if given, receives each fresh Aa conversion (to put into the notes).
-function createJot(hostEl, onChange, onText) {
-  function notifyChange() { jotTextCache = null; if (onChange) onChange(); }
-  var jotTextCache = null, jotTextMode = false, jotTextSeq = 0;
+// notesText, if given, links the Aa text to the call's notes:
+// save(text) stores a conversion or edit, saved() returns what's there.
+function createJot(hostEl, onChange, notesText) {
+  function notifyChange() { jotTextCache = null; inkChanged = true; if (onChange) onChange(); }
+  var jotTextCache = null, jotTextMode = false, jotTextSeq = 0, inkChanged = false, jotTextSaveTimer = null;
   hostEl.innerHTML = "";
   hostEl.classList.add("jt-wrap");
 
@@ -2349,6 +2375,7 @@ function createJot(hostEl, onChange, onText) {
   // Aa: swap the ink for an AI reading of it (Workers AI), and back again.
   // The reading is cached until the jot changes.
   function setTextMode(on) {
+    if (!on) flushJotTextSave();
     jotTextMode = on;
     jotTextSeq++;
     canvasWrap.classList.toggle("hidden", on);
@@ -2358,7 +2385,13 @@ function createJot(hostEl, onChange, onText) {
   }
   function showJotText() {
     if (api.isEmpty()) { textView.innerHTML = '<span class="jt-text-note">Nothing written yet</span>'; return; }
-    if (jotTextCache !== null) { textView.textContent = jotTextCache || "(no text recognised)"; return; }
+    // Ink untouched since it was loaded: reuse the (possibly hand-edited)
+    // text already in the notes rather than re-reading it.
+    if (jotTextCache === null && !inkChanged && notesText) {
+      var prev = notesText.saved();
+      if (prev) jotTextCache = prev;
+    }
+    if (jotTextCache !== null) { renderJotTextEditor(""); return; }
     var seq = jotTextSeq;
     textView.innerHTML = '<span class="jt-text-note">Converting handwriting…</span>';
     jotToImage(api.getSVG()).then(function(image) {
@@ -2367,17 +2400,35 @@ function createJot(hostEl, onChange, onText) {
       if (seq !== jotTextSeq) return;
       if (d.error) { textView.innerHTML = '<span class="jt-text-note">Conversion failed: ' + esc(d.error) + '</span>'; return; }
       jotTextCache = d.text || "";
-      textView.textContent = jotTextCache || "(no text recognised)";
-      if (jotTextCache && onText) {
-        onText(jotTextCache);
-        var note = document.createElement("div");
-        note.className = "jt-text-note jt-text-saved";
-        note.textContent = "Added to Notes ✓";
-        textView.appendChild(note);
-      }
+      if (jotTextCache && notesText) notesText.save(jotTextCache);
+      renderJotTextEditor(jotTextCache ? "Added to Notes ✓" : "");
     }).catch(function(err) {
       if (seq === jotTextSeq) textView.innerHTML = '<span class="jt-text-note">Conversion failed: ' + esc(err.message) + '</span>';
     });
+  }
+  // Editable text; changes autosave into the notes (debounced).
+  function renderJotTextEditor(status) {
+    textView.innerHTML = '<textarea class="jt-text-edit" placeholder="(no text recognised)"></textarea><div class="jt-text-note jt-text-saved"></div>';
+    var ta = textView.querySelector("textarea"), st = textView.querySelector(".jt-text-saved");
+    ta.value = jotTextCache || "";
+    st.textContent = status;
+    ta.addEventListener("input", function() {
+      jotTextCache = ta.value;
+      if (!notesText) return;
+      st.textContent = "Saving…";
+      clearTimeout(jotTextSaveTimer);
+      jotTextSaveTimer = setTimeout(function() {
+        jotTextSaveTimer = null;
+        notesText.save(jotTextCache);
+        st.textContent = "Saved to Notes ✓";
+      }, PV.jotTextAutosaveMs);
+    });
+  }
+  function flushJotTextSave() {
+    if (!jotTextSaveTimer) return;
+    clearTimeout(jotTextSaveTimer);
+    jotTextSaveTimer = null;
+    if (notesText) notesText.save(jotTextCache || "");
   }
 
   toolbar.addEventListener("click", function(e) {
@@ -2467,6 +2518,7 @@ function createJot(hostEl, onChange, onText) {
       // empty log and wipe the loaded content instead of the last edit.
       actions = [];
       drawStrokes = {}; boxes = []; activeBoxId = null;
+      jotTextCache = null; inkChanged = false;
       if (data && data.drawStrokes) for (var i = 0; i < data.drawStrokes.length; i++) {
         var d = data.drawStrokes[i];
         actions.push({ type: "add-stroke", id: d.id, points: d.points });
@@ -2517,6 +2569,7 @@ function createJot(hostEl, onChange, onText) {
       redraw();
     },
     destroy: function() {
+      flushJotTextSave();
       finalizeWord();
       canvas.removeEventListener("pointerdown", onDown);
       canvas.removeEventListener("pointermove", onMove);
@@ -2561,7 +2614,10 @@ function jtOutlineToPath(outline) {
 function initJotEditor() {
   var host = document.getElementById("jot-canvas");
   if (liveJot) { resetJotIfNewCall(); return; }
-  liveJot = createJot(host, scheduleCallSave, function(text) { putJotTextInNotes("call-notes", text); scheduleCallSave(); });
+  liveJot = createJot(host, scheduleCallSave, {
+    save: function(text) { putJotTextInNotes("call-notes", text); scheduleCallSave(); },
+    saved: function() { return getJotTextFromNotes("call-notes", ""); }
+  });
   jotCallId = currentCall ? currentCall.id : null;
 }
 
@@ -3631,7 +3687,7 @@ function renderCallDetailNotesPane() {
   loadTinyMce().then(function() { initCallDetailNotesEditor(cdLoadedNotes.notes_html || ""); })
     .catch(function() {
       var ta = document.getElementById("cd-notes");
-      if (ta) ta.value = stripHtml(cdLoadedNotes.notes_html || "");
+      if (ta) { ta.value = stripHtml(cdLoadedNotes.notes_html || ""); ta.setAttribute("data-plain", "1"); }
     });
 }
 
@@ -3649,7 +3705,7 @@ function initCallDetailNotesEditor(html) {
     skin: "oxide-dark",
     content_css: "dark",
     setup: function(editor) {
-      editor.on("init", function() { editor.setContent(html || ""); });
+      editor.on("init", function() { editor.setContent(cdLoadedNotes.notes_html || html || ""); });
       editor.on("input change undo redo", scheduleCallDetailSave);
     }
   });
@@ -3658,9 +3714,12 @@ function initCallDetailNotesEditor(html) {
 function initCallDetailJot() {
   var host = document.getElementById("cd-jot-canvas");
   if (!host) return;
-  cdJot = createJot(host, scheduleCallDetailSave, function(text) {
-    putJotTextInNotes("cd-notes", text, function() { return cdLoadedNotes.notes_html || ""; }, function(html) { cdLoadedNotes.notes_html = html; });
-    scheduleCallDetailSave();
+  cdJot = createJot(host, scheduleCallDetailSave, {
+    save: function(text) {
+      putJotTextInNotes("cd-notes", text, function() { return cdLoadedNotes.notes_html || ""; }, function(html) { cdLoadedNotes.notes_html = html; });
+      scheduleCallDetailSave();
+    },
+    saved: function() { return getJotTextFromNotes("cd-notes", cdLoadedNotes.notes_html || ""); }
   });
   if (cdJotData) cdJot.loadJSON(cdJotData);
 }
@@ -3703,7 +3762,9 @@ function saveCallDetailEdits() {
   if (!cdOpenCallId) return;
   var ed = (typeof tinymce !== "undefined" && tinymce.get("cd-notes")) ? tinymce.get("cd-notes") : null;
   var ta = document.getElementById("cd-notes");
-  var notesHtml = ed ? ed.getContent() : (ta ? ta.value : (cdLoadedNotes.notes_html || ""));
+  // Until the editor is up, the stored html is the truth (the bare textarea
+  // only holds notes when TinyMCE failed to load).
+  var notesHtml = (ed && ed.initialized) ? ed.getContent() : (ta && ta.getAttribute("data-plain") ? ta.value : (cdLoadedNotes.notes_html || ""));
 
   if (cdJot) {
     var jotSvg = cdJot.isEmpty() ? "" : cdJot.getSVG();
