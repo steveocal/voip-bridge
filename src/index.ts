@@ -8,6 +8,7 @@ import { serveDashboard } from "./dashboard";
 import { handlePushRegister, handlePushWake } from "./push";
 import { handleGetVoicemail, handleSetVoicemail, handleCreateGreeting, handleRenameGreeting, handleDeleteGreeting, handleGreetingAudio, handleVoicemailSync, handleVoicemailSynced } from "./voicemail";
 import type { Contact, Message } from "./odoo";
+import { jotToText } from "./jottext";
 
 // Durable Object class must be exported from the entrypoint module.
 export { CallState } from "./callstate";
@@ -633,6 +634,21 @@ async function handleContactDetail(env: Env, id: number, cachedOnly: boolean): P
   return Response.json({ contact, totals, calls: calls.results || [] });
 }
 
+// Handwritten Jot page (PNG/JPEG data: URL) → plain text.
+async function handleJotToText(request: Request, env: Env): Promise<Response> {
+  let body: { image?: string };
+  try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
+  const image = body.image ?? "";
+  if (!/^data:image\/(png|jpeg);base64,/.test(image)) return Response.json({ error: "image must be a PNG/JPEG data URL" }, { status: 400 });
+  if (image.length > 4_000_000) return Response.json({ error: "image too large" }, { status: 413 });
+  try {
+    return Response.json({ text: await jotToText(env, image) });
+  } catch (e) {
+    console.error("Jot to text failed:", e);
+    return Response.json({ error: String(e) }, { status: 502 });
+  }
+}
+
 // ── CORS ───────────────────────────────────────────────────────
 
 function corsHeaders(): Record<string, string> {
@@ -672,6 +688,7 @@ export default {
     else if (request.method === "GET" && url.pathname === "/call-notes") response = await handleGetCallNotes(request, env);
     else if (request.method === "POST" && url.pathname === "/call-notes") response = await handleSaveCallNotes(request, env);
     else if (request.method === "GET" && url.pathname === "/recording") response = await handleGetRecording(request, env);
+    else if (request.method === "POST" && url.pathname === "/jot-to-text") response = await handleJotToText(request, env);
     else if (request.method === "GET" && url.pathname === "/transcript") response = await handleGetTranscript(request, env);
     else if (request.method === "POST" && url.pathname === "/transcribe") response = await handleTranscribe(request, env);
     else if (request.method === "GET" && url.pathname === "/voicemail") response = await handleGetVoicemail(env);

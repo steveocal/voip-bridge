@@ -307,6 +307,12 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 .jt-btn.jt-zoom-label{width:auto;padding:0 8px;font-size:12px}
 .jt-wordinfo{margin-left:auto;font-size:11px;color:#888;white-space:nowrap;font-variant-numeric:tabular-nums}
 .jt-sep{width:1px;align-self:stretch;background:#2c2c2c;margin:2px 4px}
+.jt-text{width:100%;border-radius:10px;background:#1e1e1e;border:1px solid #2c2c2c;padding:14px 16px;overflow-y:auto;white-space:pre-wrap;font-size:16px;line-height:1.55;color:#e9ecef;box-sizing:border-box}
+.jt-text.hidden,.jt-canvas-wrap.hidden{display:none}
+.jt-text-note{color:#999;font-style:italic}
+#jot-canvas .jt-text{height:420px}
+#cd-jot-canvas .jt-text{height:58vh}
+.jt-btn.jt-totext{width:auto;padding:0 9px;font-weight:700;font-size:14px}
 .jt-canvas-wrap{width:100%;border-radius:10px;background:#1e1e1e;border:1px solid #2c2c2c;overflow:hidden}
 .jt-canvas-wrap canvas{display:block;cursor:none}
 #jot-canvas .jt-canvas-wrap{height:420px}
@@ -1662,7 +1668,8 @@ function jtMakeWord(strokes, prevRotate, prevScale) {
 }
 
 function createJot(hostEl, onChange) {
-  function notifyChange() { if (onChange) onChange(); }
+  function notifyChange() { jotTextCache = null; if (onChange) onChange(); }
+  var jotTextCache = null, jotTextMode = false, jotTextSeq = 0;
   hostEl.innerHTML = "";
   hostEl.classList.add("jt-wrap");
 
@@ -1682,6 +1689,7 @@ function createJot(hostEl, onChange) {
     '<button class="jt-btn" data-act="zoomin" title="Zoom in">+</button>' +
     '<span class="jt-sep"></span>' +
     '<button class="jt-btn ghost" data-act="clear" title="Clear all">🗑</button>' +
+    '<button class="jt-btn jt-totext" data-act="totext" title="Convert handwriting to text (tap again for the ink)">Aa</button>' +
     '<span class="jt-wordinfo" title="Last stroke: pause, gap from the word, and the decision"></span>';
   hostEl.appendChild(toolbar);
 
@@ -1690,6 +1698,9 @@ function createJot(hostEl, onChange) {
   var canvas = document.createElement("canvas");
   canvasWrap.appendChild(canvas);
   hostEl.appendChild(canvasWrap);
+  var textView = document.createElement("div");
+  textView.className = "jt-text hidden";
+  hostEl.appendChild(textView);
 
   var ctx = canvas.getContext("2d");
   var dpr = window.devicePixelRatio || 1;
@@ -2301,9 +2312,39 @@ function createJot(hostEl, onChange) {
     canvas.style.outlineOffset = "-2px";
   }
 
+  // Aa: swap the ink for an AI reading of it (Workers AI), and back again.
+  // The reading is cached until the jot changes.
+  function setTextMode(on) {
+    jotTextMode = on;
+    jotTextSeq++;
+    canvasWrap.classList.toggle("hidden", on);
+    textView.classList.toggle("hidden", !on);
+    toolbar.querySelector('[data-act="totext"]').classList.toggle("armed", on);
+    if (on) showJotText();
+  }
+  function showJotText() {
+    if (api.isEmpty()) { textView.innerHTML = '<span class="jt-text-note">Nothing written yet</span>'; return; }
+    if (jotTextCache !== null) { textView.textContent = jotTextCache || "(no text recognised)"; return; }
+    var seq = jotTextSeq;
+    textView.innerHTML = '<span class="jt-text-note">Converting handwriting…</span>';
+    jotToImage(api.getSVG()).then(function(image) {
+      return fetch(API + "/jot-to-text", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: image }) });
+    }).then(function(r) { return r.json(); }).then(function(d) {
+      if (seq !== jotTextSeq) return;
+      if (d.error) { textView.innerHTML = '<span class="jt-text-note">Conversion failed: ' + esc(d.error) + '</span>'; return; }
+      jotTextCache = d.text || "";
+      textView.textContent = jotTextCache || "(no text recognised)";
+    }).catch(function(err) {
+      if (seq === jotTextSeq) textView.innerHTML = '<span class="jt-text-note">Conversion failed: ' + esc(err.message) + '</span>';
+    });
+  }
+
   toolbar.addEventListener("click", function(e) {
     var btn = e.target.closest(".jt-btn");
     if (!btn) return;
+    if (btn.getAttribute("data-act") === "totext") { setTextMode(!jotTextMode); return; }
+    // Any other tool goes back to the ink first.
+    if (jotTextMode) setTextMode(false);
     var m = btn.getAttribute("data-mode");
     if (m) {
       finalizeWord();
@@ -2338,7 +2379,7 @@ function createJot(hostEl, onChange) {
 
   redraw();
 
-  return {
+  var api = {
     clear: function() { finalizeWord(); actions = []; drawStrokes = {}; boxes = []; activeBoxId = null; camera.x = 0; camera.y = 0; camera.scale = 1; updateZoomLabel(); updateDocWidth(); redraw(); },
     isEmpty: function() { return actions.length === 0 && !writingWord; },
     getJSON: function() { return withPendingWord(function() {
@@ -2442,6 +2483,31 @@ function createJot(hostEl, onChange) {
       canvas.removeEventListener("pointercancel", onUp);
     }
   };
+  return api;
+}
+// Jot SVG (light ink on dark) → dark-on-white JPEG data URL for the vision
+// model, at most JOT_OCR_MAX_W wide.
+var JOT_OCR_MAX_W = 1000, JOT_OCR_MAX_H = 4000;
+function jotToImage(svg) {
+  svg = svg.split("#1e1e1e").join("#ffffff").split("#e9ecef").join("#000000");
+  return new Promise(function(resolve, reject) {
+    var img = new Image();
+    var url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+    img.onload = function() {
+      URL.revokeObjectURL(url);
+      var k = Math.min(1, JOT_OCR_MAX_W / img.width, JOT_OCR_MAX_H / img.height);
+      var c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(img.width * k));
+      c.height = Math.max(1, Math.round(img.height * k));
+      var g = c.getContext("2d");
+      g.fillStyle = "#fff";
+      g.fillRect(0, 0, c.width, c.height);
+      g.drawImage(img, 0, 0, c.width, c.height);
+      resolve(c.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = function() { URL.revokeObjectURL(url); reject(new Error("couldn't render the jot")); };
+    img.src = url;
+  });
 }
 function jtOutlineToPath(outline) {
   if (!outline || outline.length < 3) return "";
