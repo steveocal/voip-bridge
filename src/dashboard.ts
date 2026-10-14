@@ -103,6 +103,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .hist-play{background:#1a1a1a;border:none;color:#34d399;width:30px;height:30px;border-radius:50%;font-size:13px;cursor:pointer;margin-left:8px;flex-shrink:0}
 .hist-play:active{background:#262626}
 .hist-player{margin:8px 0 2px 38px;font-size:12px;color:#999}
+.hist-tx-btn{flex-shrink:0;width:50px;height:50px;border:none;border-radius:12px;background:#1a1a1a;color:#ececec;font-size:20px;cursor:pointer}
+.hist-tx-btn.on{background:linear-gradient(135deg,#4db8ff,#2563eb)}
+.hist-match{margin:4px 0 0 38px;font-size:12.5px;color:#ccc;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hist-match mark{background:#f7c948;color:#000;border-radius:2px;font-style:normal}
 .hist-player audio{width:100%;height:36px}
 .hist-transcript{margin-top:6px;max-height:40vh;overflow-y:auto;font-size:13px;line-height:1.45;color:#ccc}
 .hist-transcript .tl{padding:2px 0;cursor:pointer}
@@ -447,6 +451,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       <h2>🕐 History</h2>
       <div class="entry">
         <input id="history-search" type="text" placeholder="Search calls (name / number)" autocomplete="off" autocapitalize="off">
+        <button class="hist-tx-btn" id="hist-tx-btn" onclick="toggleTranscriptSearch()" title="Search call transcripts">💬</button>
       </div>
       <div class="hist-toolbar" id="hist-toolbar">
         <button class="green" data-action="call" onclick="histAction('call')" disabled>📞 Call</button>
@@ -2837,13 +2842,25 @@ function setStatus(msg, isErr) {
 
 // ── history ────────────────────────────────────────────────────
 var historyTimer = null;
+var historyTxSearch = false;
+// 💬 next to the search box: search what was said on calls instead of names/numbers.
+function toggleTranscriptSearch() {
+  historyTxSearch = !historyTxSearch;
+  document.getElementById("hist-tx-btn").classList.toggle("on", historyTxSearch);
+  var inp = document.getElementById("history-search");
+  inp.placeholder = historyTxSearch ? "Search transcripts" : "Search calls (name / number)";
+  inp.focus();
+  loadHistory();
+}
 function loadHistory() {
   var q = document.getElementById("history-search").value.trim();
   var el = document.getElementById("history-list");
+  if (historyTxSearch && !q) { el.innerHTML = '<div class="empty">Type words to find in call transcripts</div>'; return; }
   el.innerHTML = '<div class="empty">Loading…</div>';
-  fetch(API + "/call-history?limit=" + PV.historyLimit + "&q=" + encodeURIComponent(q)).then(function(r){return r.json();}).then(function(d){
+  fetch(API + "/call-history?limit=" + PV.historyLimit + "&q=" + encodeURIComponent(q) + (historyTxSearch ? "&in=transcript" : "")).then(function(r){return r.json();}).then(function(d){
+    if (q !== document.getElementById("history-search").value.trim()) return;
     var calls = d.calls || [];
-    if (!calls.length) { el.innerHTML = '<div class="empty">' + (q ? "No matching calls" : "No calls yet") + '</div>'; return; }
+    if (!calls.length) { el.innerHTML = '<div class="empty">' + (historyTxSearch ? "No transcripts mention that" : q ? "No matching calls" : "No calls yet") + '</div>'; return; }
     if (selected && selected.type === "call") deselect();
     el.innerHTML = renderHistory(calls);
   }).catch(function(){ el.innerHTML = '<div class="empty">Error loading history</div>'; });
@@ -2874,7 +2891,16 @@ function renderHistoryRow(c) {
   return '<div class="hist-row" data-key="' + esc(key) + '">'
     + '<div class="hist-main">' + dirIcon(dir, missed) + '<div><div class="who">' + esc(who) + notesFlag + '</div>' + (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div><div class="meta">' + when + dur + '</div>'
     + (c.has_recording ? '<button class="hist-play" title="Play recording">▶</button>' : '') + '</div>'
+    + (c.match ? '<div class="hist-match">' + markMatch(c.match, document.getElementById("history-search").value.trim()) + '</div>' : '')
     + '</div>';
+}
+// Escaped text with the (case-insensitive) search term highlighted.
+function markMatch(text, term) {
+  var i = term ? text.toLowerCase().indexOf(term.toLowerCase()) : -1;
+  if (i < 0) return esc(text);
+  // Keep the hit on screen when it's deep into a long line.
+  if (i > 40) { text = "…" + text.slice(i - 30); i = 31; }
+  return esc(text.slice(0, i)) + '<mark>' + esc(text.slice(i, i + term.length)) + '</mark>' + esc(text.slice(i + term.length));
 }
 function fmtDur(sec) {
   sec = Math.round(sec || 0);

@@ -185,7 +185,20 @@ async function handleCallHistory(request: Request, env: Env): Promise<Response> 
   const q = (url.searchParams.get("q") ?? "").trim();
   const select = CALL_HISTORY_SELECT;
   let rows;
-  if (q) {
+  if (q && url.searchParams.get("in") === "transcript") {
+    // Transcript search: newest first, each row carrying its first matching line.
+    rows = await env.DB.prepare(
+      `${select.replace("c.voicemail", "c.voicemail, c.transcript")}
+       WHERE c.transcript LIKE ?1
+       ORDER BY COALESCE(c.start_date, c.create_date) DESC LIMIT ?2`
+    ).bind(`%${q}%`, limit).all<Record<string, unknown>>();
+    const needle = q.toLowerCase();
+    for (const r of rows.results || []) {
+      const lines = String(r.transcript || "").split("\n");
+      r.match = lines.find(l => l.toLowerCase().includes(needle)) ?? "";
+      delete r.transcript;
+    }
+  } else if (q) {
     const like = `%${q}%`;
     rows = await env.DB.prepare(
       `${select}
