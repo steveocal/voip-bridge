@@ -104,7 +104,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .hist-play{background:#1a1a1a;border:none;color:#34d399;width:30px;height:30px;border-radius:50%;font-size:13px;cursor:pointer;margin-left:8px;flex-shrink:0}
 .hist-play:active{background:#262626}
 .hist-player{margin:8px 0 2px 38px;font-size:12px;color:#999}
-.hist-tx-btn{flex-shrink:0;width:50px;height:50px;border:none;border-radius:12px;background:#1a1a1a;color:#ececec;font-size:20px;cursor:pointer}
+.hist-tx-btn{flex-shrink:0;width:42px;height:42px;margin-right:-15px;border:none;border-radius:10px;background:#1a1a1a;color:#ececec;font-size:17px;cursor:pointer}
 .hist-tx-btn.on{background:linear-gradient(135deg,#4db8ff,#2563eb)}
 .hist-match{margin:4px 0 0 38px;font-size:12.5px;color:#ccc;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hist-match mark{background:#f7c948;color:#000;border-radius:2px;font-style:normal}
