@@ -585,7 +585,7 @@ export async function searchQuotations(env: Env, partnerId: number, limit = 20):
     const uid = await odooAuth(env);
     if (!uid) return [];
     const r = await odooCall(env, uid, "sale.order", "search_read",
-      [[["partner_id", "child_of", partnerId]]],
+      [[["partner_id", "=", partnerId]]],
       { fields: ["id", "name", "state", "amount_total", "date_order"], limit, order: "date_order desc" });
     const orders = ((r.parsed ?? []) as unknown as Array<Record<string, unknown>>);
     const itemSummaries = await fetchOrderItemSummaries(env, uid, orders.map(o => o.id as number));
@@ -601,44 +601,6 @@ export async function searchQuotations(env: Env, partnerId: number, limit = 20):
     console.error("Odoo quotation search failed:", e);
     return [];
   }
-}
-
-export interface ContactTotals {
-  sales_total: number | null;
-  sales_count: number | null;
-  invoiced_total: number | null;
-}
-
-/** Sum an Odoo model's money field over a domain; null if the lookup fails
- *  (app not installed, no access rights, …). */
-async function sumField(env: Env, uid: number, model: string, domain: unknown[], field: string): Promise<{ total: number; count: number } | null> {
-  try {
-    const r = await odooCall(env, uid, model, "search_read", [domain], { fields: [field] });
-    if (r.fault) { console.error(`Odoo ${model} sum failed:`, r.fault); return null; }
-    const rows = (r.parsed ?? []) as Array<Record<string, unknown>>;
-    let total = 0;
-    for (const row of rows) total += typeof row[field] === "number" ? row[field] as number : 0;
-    return { total, count: rows.length };
-  } catch (e) {
-    console.error(`Odoo ${model} sum failed:`, e);
-    return null;
-  }
-}
-
-/** Confirmed sales orders and posted invoices (net of credit notes) for a
- *  partner and its child contacts. */
-export async function contactTotals(env: Env, partnerId: number): Promise<ContactTotals> {
-  const uid = await odooAuth(env);
-  if (!uid) return { sales_total: null, sales_count: null, invoiced_total: null };
-  const [sales, invoiced] = await Promise.all([
-    sumField(env, uid, "sale.order", [["partner_id", "child_of", partnerId], ["state", "in", ["sale", "done"]]], "amount_total"),
-    sumField(env, uid, "account.move", [["partner_id", "child_of", partnerId], ["state", "=", "posted"], ["move_type", "in", ["out_invoice", "out_refund"]]], "amount_total_signed"),
-  ]);
-  return {
-    sales_total: sales ? sales.total : null,
-    sales_count: sales ? sales.count : null,
-    invoiced_total: invoiced ? invoiced.total : null,
-  };
 }
 
 // ── Contact messages (↔ Odoo mail.message) ────────────────────
