@@ -113,6 +113,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .hist-transcript .tl .ts{color:#4db8ff;margin-right:6px;font-variant-numeric:tabular-nums}
 .hist-transcript .tl .who{font-weight:600;margin-right:4px;color:#f5a623}
 .hist-transcript .tl.us .who{color:#34d399}
+.hist-transcript .tl.hit{background:#3a3210;border-radius:6px}
+#cd-pane-transcript .hist-transcript{max-height:none}
 .hist-transcript button{background:#2c2c2c;border:none;color:#ececec;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer}
 .contact-row .mini-call{width:38px;height:38px;border-radius:50%;border:none;background:#10b981;color:#fff;font-size:16px;cursor:pointer;flex-shrink:0}
 .empty{color:#666;text-align:center;padding:28px 0;font-size:14px}
@@ -511,11 +513,13 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       <div class="cp-tabs">
         <button class="cp-tab" data-tab="details" onclick="switchCallDetailTab('details')">Details</button>
         <button class="cp-tab" data-tab="notes" onclick="switchCallDetailTab('notes')">Notes</button>
+        <button class="cp-tab" data-tab="transcript" onclick="switchCallDetailTab('transcript')">Transcript</button>
         <button class="cp-tab active" data-tab="jot" onclick="switchCallDetailTab('jot')">Jot</button>
       </div>
       <div class="cd-body">
         <div class="cp-pane hidden" id="cd-pane-details"></div>
         <div class="cp-pane hidden" id="cd-pane-notes"><div class="empty">Loading…</div></div>
+        <div class="cp-pane hidden" id="cd-pane-transcript"></div>
         <div class="cp-pane" id="cd-pane-jot">
           <div class="jot-toolbar"><span class="jot-status" id="cd-jot-status"></span></div>
           <div id="cd-jot-canvas"></div>
@@ -2928,7 +2932,7 @@ document.getElementById("history-list").addEventListener("click", function(e) {
   if (e.target.closest(".hist-player")) return;
   if (e.target.closest(".hist-play")) { toggleRecording(row, c); return; }
   // A transcript search hit opens straight into the call's details.
-  if (c.match) { selectItem("call", c, key); openCallDetailView(c); return; }
+  if (c.match) { selectItem("call", c, key); openCallDetailView(c, { tab: "transcript", highlight: document.getElementById("history-search").value.trim() }); return; }
   // Otherwise selecting is all a tap does; the toolbar above the list acts on the selection.
   if (row.classList.contains("selected")) deselect(); else selectItem("call", c, key);
 });
@@ -2941,28 +2945,53 @@ function toggleRecording(row, c) {
   for (var i = 0; i < prev.length; i++) closeRecording(prev[i]);
   var box = document.createElement("div");
   box.className = "hist-player";
-  box.innerHTML = '<div class="hist-audio">Loading recording…</div><div class="hist-transcript"></div>';
   row.appendChild(box);
   row.querySelector(".hist-play").textContent = "■";
+  fillRecordingPlayer(box, c, true);
+}
+// Audio player + transcript into box (shared by History rows and the call
+// detail Transcript tab). Tapping a transcript line seeks the audio there.
+// highlight: optional search term whose first matching line is marked and
+// scrolled into view.
+function fillRecordingPlayer(box, c, autoplay, highlight) {
+  box.innerHTML = '<div class="hist-audio">' + (c.has_recording ? "Loading recording…" : "No recording for this call") + '</div><div class="hist-transcript"></div>';
   var audioBox = box.querySelector(".hist-audio"), tBox = box.querySelector(".hist-transcript");
-  fetch(API + "/recording?call_id=" + encodeURIComponent(c.call_id)).then(function(r) {
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    return r.blob();
-  }).then(function(blob) {
-    if (!box.parentNode) return;
-    var a = document.createElement("audio");
-    a.controls = true;
-    a.src = URL.createObjectURL(blob);
-    audioBox.textContent = "";
-    audioBox.appendChild(a);
-    a.play().catch(function() {});
-  }).catch(function(err) {
-    audioBox.textContent = "Couldn't load recording (" + err.message + ")";
-  });
+  if (c.has_recording) {
+    fetch(API + "/recording?call_id=" + encodeURIComponent(c.call_id)).then(function(r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.blob();
+    }).then(function(blob) {
+      if (!box.parentNode || !box.contains(audioBox)) return;
+      var a = document.createElement("audio");
+      a.controls = true;
+      a.src = URL.createObjectURL(blob);
+      audioBox.textContent = "";
+      audioBox.appendChild(a);
+      if (autoplay) a.play().catch(function() {});
+    }).catch(function(err) {
+      audioBox.textContent = "Couldn't load recording (" + err.message + ")";
+    });
+  }
+  if (!c.call_id || (!c.has_recording && !c.has_transcript)) return;
   tBox.textContent = "Loading transcript…";
   fetch(API + "/transcript?call_id=" + encodeURIComponent(c.call_id)).then(function(r) { return r.json(); }).then(function(d) {
+    if (!box.contains(tBox)) return;
     renderTranscript(tBox, c, d.transcript);
+    if (highlight) highlightTranscriptLine(tBox, highlight);
   }).catch(function() { tBox.textContent = "Couldn't load transcript"; });
+}
+function highlightTranscriptLine(tBox, term) {
+  var lines = tBox.querySelectorAll(".tl"), t = term.toLowerCase();
+  for (var i = 0; i < lines.length; i++) {
+    if (lines[i].textContent.toLowerCase().indexOf(t) < 0) continue;
+    lines[i].classList.add("hit");
+    lines[i].scrollIntoView({ block: "center" });
+    return;
+  }
+}
+function stopRecordingPlayer(box) {
+  var a = box && box.querySelector("audio");
+  if (a) { a.pause(); URL.revokeObjectURL(a.src); }
 }
 // transcript: null = never transcribed (offer the button), "" = nothing said.
 function renderTranscript(tBox, c, transcript) {
@@ -2999,8 +3028,7 @@ function renderTranscript(tBox, c, transcript) {
   };
 }
 function closeRecording(box) {
-  var a = box.querySelector("audio");
-  if (a) { a.pause(); URL.revokeObjectURL(a.src); }
+  stopRecordingPlayer(box);
   var btn = box.parentNode.querySelector(".hist-play");
   if (btn) btn.textContent = "▶";
   box.parentNode.removeChild(box);
@@ -3417,14 +3445,18 @@ document.getElementById("ct-pane-calls").addEventListener("click", function(e) {
 // A drill-down from History, not a dialog — replaces the whole screen like
 // any other view (see switchView), with a back arrow to return.
 var cdReturnView = "history";
+var cdCall = null, cdTranscriptLoaded = false, cdHighlight = "";
 var cdOpenCallId = null, cdLoadedNotes = {}, cdJotData = null, activeCdTab = "details";
 var cdJot = null;
 
 
-function openCallDetailView(c) {
+// opts.tab picks the starting tab; opts.highlight marks a transcript line.
+function openCallDetailView(c, opts) {
   c = c || (selected && selected.data);
   if (!c) return;
+  opts = opts || {};
   destroyCallDetailEditors();
+  cdCall = c; cdTranscriptLoaded = false; cdHighlight = opts.highlight || "";
   cdReturnView = currentViewName() === "contact-detail" ? "contact-detail" : "history";
   var name = (c.partner_name || "").trim();
   var num = c.phone_number || c.did || "";
@@ -3433,7 +3465,7 @@ function openCallDetailView(c) {
   document.getElementById("cd-callback-btn").classList.toggle("hidden", !(num && /^[+0-9*#]/.test(num)));
   renderCallDetailsPane(c);
   switchView("call-detail");
-  switchCallDetailTab("jot");
+  switchCallDetailTab(opts.tab || "jot");
   loadCallDetailNotes(c.call_id || null);
 }
 
@@ -3461,6 +3493,10 @@ function switchCallDetailTab(tab) {
   var panes = document.querySelectorAll("#view-call-detail .cp-pane");
   for (var j = 0; j < panes.length; j++) panes[j].classList.toggle("hidden", panes[j].id !== "cd-pane-" + tab);
   if (tab === "jot" && !cdJot) initCallDetailJot();
+  if (tab === "transcript" && !cdTranscriptLoaded && cdCall) {
+    cdTranscriptLoaded = true;
+    fillRecordingPlayer(document.getElementById("cd-pane-transcript"), cdCall, false, cdHighlight);
+  }
 }
 
 function loadCallDetailNotes(callId) {
@@ -3520,6 +3556,9 @@ function initCallDetailJot() {
 
 function destroyCallDetailEditors() {
   flushCallDetailSave();
+  var tp = document.getElementById("cd-pane-transcript");
+  stopRecordingPlayer(tp);
+  tp.innerHTML = "";
   try { if (typeof tinymce !== "undefined" && tinymce.get("cd-notes")) tinymce.get("cd-notes").remove(); } catch (e) {}
   try { if (cdJot) cdJot.destroy(); } catch (e) {}
   cdJot = null;
