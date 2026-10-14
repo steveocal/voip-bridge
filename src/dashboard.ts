@@ -313,6 +313,15 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 .cd-callback{background:linear-gradient(135deg,#34d399,#10b981);border:none;color:#04210f;width:40px;height:40px;border-radius:50%;font-size:17px;cursor:pointer;flex-shrink:0}
 .cd-callback.hidden{display:none}
 .cd-body{padding-top:6px}
+.ct-name-edit{width:100%;font:inherit;font-size:16px;font-weight:600;color:#fff;background:#111;border:1px solid #2c2c2c;border-radius:8px;padding:9px 11px;outline:none}
+.ct-name-edit:focus{border-color:#2563eb}
+.ct-label{display:flex;justify-content:space-between;font-size:12px;color:#999;margin:4px 0 6px}
+.ct-addr{white-space:pre-line;text-align:right}
+.ct-totals{display:flex;gap:10px;margin:14px 0 6px}
+.ct-total{flex:1;background:#1a1a1a;border:1px solid #2c2c2c;border-radius:12px;padding:12px}
+.ct-total .k{font-size:12px;color:#999}
+.ct-total .v{font-size:19px;font-weight:700;color:#34d399;margin-top:2px}
+.ct-total .n{font-size:11px;color:#777}
 .cd-footer{padding:16px 0 4px}
 .qt-panel{margin:10px 0 0;background:#111;border:1px solid #2c2c2c;border-radius:12px;padding:8px;max-height:200px;overflow-y:auto}
 .qt-panel .qt-head{font-size:11px;color:#999;text-transform:uppercase;letter-spacing:.5px;padding:4px 8px 8px}
@@ -512,6 +521,30 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       </div>
     </div>
 
+    <!-- CONTACT DETAIL VIEW (drill-down from Contacts / History) -->
+    <div class="view hidden" id="view-contact-detail">
+      <div class="cd-head">
+        <button class="cd-back" onclick="closeContactView()" aria-label="Back">←</button>
+        <div class="cd-title">
+          <div class="cd-name" id="ct-name">Contact</div>
+          <div class="cd-sub" id="ct-sub"></div>
+        </div>
+        <button class="cd-callback hidden" id="ct-dial-btn" onclick="dialContactView()">📞</button>
+      </div>
+      <div class="cp-tabs">
+        <button class="cp-tab active" data-tab="details" onclick="switchContactTab('details')">Details</button>
+        <button class="cp-tab" data-tab="sales" onclick="switchContactTab('sales')">Sales / Purchases</button>
+        <button class="cp-tab" data-tab="messages" onclick="switchContactTab('messages')">Messages</button>
+        <button class="cp-tab" data-tab="calls" onclick="switchContactTab('calls')">Calls</button>
+      </div>
+      <div class="cd-body">
+        <div class="cp-pane" id="ct-pane-details"></div>
+        <div class="cp-pane hidden" id="ct-pane-sales"></div>
+        <div class="cp-pane hidden" id="ct-pane-messages"></div>
+        <div class="cp-pane hidden" id="ct-pane-calls"></div>
+      </div>
+    </div>
+
     <!-- FAVOURITES VIEW -->
     <div class="view hidden" id="view-favourites">
       <h2>⭐ Favourites</h2>
@@ -660,6 +693,7 @@ defParam(G_LIST, "suggestionsLimit", "Contact suggestions while dialling", 6, { 
 defParam(G_LIST, "contactsLimit", "Contacts loaded", 100, { min: 1, max: 1000, step: 10 });
 defParam(G_LIST, "callPanelMessagesLimit", "Messages in call panel", 100, { min: 1, max: 500, step: 10 });
 defParam(G_LIST, "contactMessagesLimit", "Messages per contact", 50, { min: 1, max: 500, step: 10 });
+defParam(G_LIST, "contactOrdersLimit", "Sales orders per contact", 20, { min: 1, max: 100, step: 5 });
 defParam(G_LIST, "recentMessagesDays", "Recent messages: days back", 7, { unit: "days", min: 1, max: 90 });
 defParam(G_LIST, "recentMessagesLimit", "Recent messages: max", 50, { min: 1, max: 500, step: 10 });
 
@@ -2962,11 +2996,8 @@ function histAction(action) {
 }
 function openContactById(id) {
   if (!id) return;
-  fetch(API + "/contacts/" + id).then(function(r) { return r.json(); }).then(function(d) {
-    if (!d || !d.contact) return;
-    selectItem("contact", d.contact, "hc-" + d.contact.id);
-    openContactFull(d.contact);
-  }).catch(function() {});
+  var c = selected && selected.data;
+  openContactFull({ id: id, name: (c && c.partner_name) || "" });
 }
 function fmtTime(ts) {
   var d = new Date(ts);
@@ -3172,20 +3203,166 @@ function setDetail(title, bodyHtml, footHtml) {
   document.getElementById("detail-foot").innerHTML = footHtml || "";
   openDetail();
 }
+// ── contact detail: in-screen view (Details / Sales / Messages / Calls) ──
+var ctContact = null, ctReturnView = "contacts", ctData = null, ctLoaded = {};
+var ctNameTimer = null;
+function currentViewName() {
+  var v = document.querySelector(".view:not(.hidden)");
+  return v ? v.id.replace("view-", "") : "contacts";
+}
 function openContactFull(c) {
   c = c || (selected && selected.data);
   if (!c) return;
-  var rows = "";
-  var fields = [["Phone", c.phone], ["Mobile", c.mobile], ["Email", c.email], ["Website", c.website], ["VAT", c.vat], ["Role", c.function], ["City", c.city]];
+  var id = c.id || c.partner_id;
+  if (!id) return;
+  var from = currentViewName();
+  if (from !== "contact-detail") ctReturnView = from;
+  ctContact = { id: id, name: c.name || c.partner_name || "", phone: c.phone || "", mobile: c.mobile || "", email: c.email || "" };
+  ctData = null; ctLoaded = {};
+  deselect();
+  renderContactHead();
+  document.getElementById("ct-pane-details").innerHTML = '<div class="empty">Loading…</div>';
+  switchView("contact-detail");
+  switchContactTab("details");
+  fetch(API + "/contacts/" + id).then(function(r) { return r.json(); }).then(function(d) {
+    if (!ctContact || ctContact.id !== id) return;
+    if (!d || !d.contact) { document.getElementById("ct-pane-details").innerHTML = '<div class="empty">Contact not found</div>'; return; }
+    ctData = d;
+    var k = d.contact;
+    ctContact.name = k.name || ctContact.name;
+    ctContact.phone = k.phone || ""; ctContact.mobile = k.mobile || ""; ctContact.email = k.email || "";
+    renderContactHead();
+    renderContactDetails();
+    if (ctLoaded.calls) renderContactCalls();
+  }).catch(function() { document.getElementById("ct-pane-details").innerHTML = '<div class="empty">Error loading contact</div>'; });
+}
+function closeContactView() {
+  flushContactName();
+  ctContact = null;
+  switchView(ctReturnView || "contacts");
+}
+function dialContactView() { if (ctContact) prepareDial(ctContact.phone || ctContact.mobile || ""); }
+function renderContactHead() {
+  var num = ctContact.phone || ctContact.mobile || "";
+  document.getElementById("ct-name").textContent = ctContact.name || "Contact";
+  document.getElementById("ct-sub").textContent = [num, ctContact.email].filter(Boolean).join(" · ");
+  document.getElementById("ct-dial-btn").classList.toggle("hidden", !num);
+}
+function switchContactTab(tab) {
+  var tabs = document.querySelectorAll("#view-contact-detail .cp-tab");
+  for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle("active", tabs[i].getAttribute("data-tab") === tab);
+  var panes = document.querySelectorAll("#view-contact-detail .cp-pane");
+  for (var j = 0; j < panes.length; j++) panes[j].classList.toggle("hidden", panes[j].id !== "ct-pane-" + tab);
+  if (!ctContact || ctLoaded[tab]) return;
+  ctLoaded[tab] = true;
+  if (tab === "sales") loadContactSales();
+  if (tab === "messages") loadContactMessages();
+  if (tab === "calls") renderContactCalls();
+}
+function renderContactDetails() {
+  var k = ctData.contact, t = ctData.totals || {};
+  var cityLine = [k.city, k.state, k.zip].filter(Boolean).join(", ");
+  var addr = [k.street, k.street2, cityLine, k.country].filter(Boolean).join(NL);
+  var rows = '<div class="ct-label"><span>Name</span><span class="jot-status" id="ct-name-status"></span></div>'
+    + '<input class="ct-name-edit" id="ct-name-input" type="text" autocomplete="off" value="' + esc(ctContact.name) + '">'
+    + '<div class="ct-totals">'
+    + '<div class="ct-total"><div class="k">Total Sales Orders</div><div class="v">' + (t.sales_total == null ? "—" : esc(fmtMoney(t.sales_total))) + '</div>'
+    + (t.sales_count != null ? '<div class="n">' + t.sales_count + ' order' + (t.sales_count === 1 ? "" : "s") + '</div>' : '') + '</div>'
+    + '<div class="ct-total"><div class="k">Invoiced</div><div class="v">' + (t.invoiced_total == null ? "—" : esc(fmtMoney(t.invoiced_total))) + '</div></div>'
+    + '</div>'
+    + '<div class="detail-row"><span class="k">Address</span><span class="v ct-addr">' + (addr ? esc(addr) : "—") + '</span></div>';
+  var fields = [["Phone", k.phone], ["Mobile", k.mobile], ["Email", k.email], ["Website", k.website], ["VAT", k.vat], ["Role", k["function"]]];
   for (var i = 0; i < fields.length; i++) {
     if (fields[i][1]) rows += '<div class="detail-row"><span class="k">' + fields[i][0] + '</span><span class="v">' + esc(fields[i][1]) + '</span></div>';
   }
-  var foot = '<button class="green" onclick="prepareDialSelected()">📞 Dial</button><button onclick="openMessages()">💬 Messages</button><button class="primary" onclick="newMessage()">✉️ Message</button>';
-  setDetail((c.is_company ? "🏢 " : "👤 ") + c.name, rows || '<div class="empty">No details</div>', foot);
+  document.getElementById("ct-pane-details").innerHTML = rows;
+  document.getElementById("ct-name-input").addEventListener("input", function() {
+    setContactNameStatus("", false);
+    if (ctNameTimer) clearTimeout(ctNameTimer);
+    ctNameTimer = setTimeout(saveContactName, PV.contactRenameAutosaveMs);
+  });
+  document.getElementById("ct-name-input").addEventListener("blur", flushContactName);
 }
+function flushContactName() {
+  if (!ctNameTimer) return;
+  clearTimeout(ctNameTimer);
+  saveContactName();
+}
+function setContactNameStatus(text, err) {
+  var st = document.getElementById("ct-name-status");
+  if (!st) return;
+  st.textContent = text;
+  st.style.color = err ? "#f87171" : "";
+}
+function saveContactName() {
+  ctNameTimer = null;
+  var inp = document.getElementById("ct-name-input");
+  if (!inp || !ctContact) return;
+  var id = ctContact.id, name = inp.value.trim();
+  if (!name || name === ctContact.name) return;
+  setContactNameStatus("Saving…", false);
+  fetch(API + "/contacts/" + id, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name }) })
+    .then(function(r) { return r.json(); }).then(function(d) {
+      if (!d.ok) { setContactNameStatus("Save failed", true); return; }
+      if (contactsCache[id]) contactsCache[id].name = name;
+      if (activeContact && activeContact.id === id) activeContact.name = name;
+      if (ctContact && ctContact.id === id) { ctContact.name = name; renderContactHead(); setContactNameStatus("Saved ✓", false); }
+    }).catch(function() { setContactNameStatus("Save failed", true); });
+}
+function loadContactSales() {
+  var el = document.getElementById("ct-pane-sales"), id = ctContact.id;
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  fetch(API + "/quotations?contact=" + encodeURIComponent(id) + "&limit=" + PV.contactOrdersLimit).then(function(r) { return r.json(); }).then(function(d) {
+    if (!ctContact || ctContact.id !== id) return;
+    var list = d.quotations || [];
+    if (!list.length) { el.innerHTML = '<div class="empty">No sales orders found</div>'; return; }
+    el.innerHTML = list.map(function(o) {
+      var when = o.date_order ? new Date(o.date_order.replace(" ", "T") + "Z").toLocaleDateString() : "";
+      return '<div class="cp-quote-row"><div>'
+        + '<div class="n">' + esc(o.name) + (when ? ' <span class="dt">' + esc(when) + '</span>' : '') + '</div>'
+        + (o.state ? '<div class="st">' + esc(orderStateLabel(o.state)) + '</div>' : '')
+        + '</div><span class="amt">' + esc(fmtMoney(o.amount_total || 0)) + '</span></div>';
+    }).join("");
+  }).catch(function() { el.innerHTML = '<div class="empty">Error loading sales orders</div>'; });
+}
+function orderStateLabel(st) {
+  return { draft: "Quotation", sent: "Quotation sent", sale: "Sales order", done: "Locked", cancel: "Cancelled" }[st] || st;
+}
+function loadContactMessages() {
+  var el = document.getElementById("ct-pane-messages"), id = ctContact.id;
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  fetch(API + "/messages?contact=" + encodeURIComponent(id) + "&limit=" + PV.contactMessagesLimit).then(function(r) { return r.json(); }).then(function(d) {
+    if (!ctContact || ctContact.id !== id) return;
+    var msgs = (d.messages || []).filter(function(m) { return m.source === "gmail" || m.message_type === "email"; });
+    if (!msgs.length) { el.innerHTML = '<div class="empty">No emails found</div>'; return; }
+    el.innerHTML = msgs.map(function(m) { return renderMessageRow(m); }).join("");
+  }).catch(function() { el.innerHTML = '<div class="empty">Error loading emails</div>'; });
+}
+document.getElementById("ct-pane-messages").addEventListener("click", function(e) {
+  var row = e.target.closest(".msg-row");
+  if (!row) return;
+  var m = messagesCache[row.getAttribute("data-key")];
+  if (m) openMessageFull(m);
+});
+function renderContactCalls() {
+  var el = document.getElementById("ct-pane-calls");
+  if (!ctData) { el.innerHTML = '<div class="empty">Loading…</div>'; return; }
+  var calls = ctData.calls || [];
+  el.innerHTML = calls.length ? renderHistory(calls) : '<div class="empty">No calls yet</div>';
+}
+document.getElementById("ct-pane-calls").addEventListener("click", function(e) {
+  var row = e.target.closest(".hist-row");
+  if (!row) return;
+  var c = callsCache[row.getAttribute("data-key")];
+  if (!c || e.target.closest(".hist-player")) return;
+  if (e.target.closest(".hist-play")) { toggleRecording(row, c); return; }
+  selectItem("call", c, row.getAttribute("data-key"));
+  openCallDetailView(c);
+});
 // ── call detail: in-screen view (Details / Notes / Jot) ────────
 // A drill-down from History, not a dialog — replaces the whole screen like
 // any other view (see switchView), with a back arrow to return.
+var cdReturnView = "history";
 var cdOpenCallId = null, cdLoadedNotes = {}, cdJotData = null, activeCdTab = "details";
 var cdJot = null;
 
@@ -3194,6 +3371,7 @@ function openCallDetailView(c) {
   c = c || (selected && selected.data);
   if (!c) return;
   destroyCallDetailEditors();
+  cdReturnView = currentViewName() === "contact-detail" ? "contact-detail" : "history";
   var name = (c.partner_name || "").trim();
   var num = c.phone_number || c.did || "";
   document.getElementById("cd-caller-name").textContent = name || num || "Unknown";
@@ -3219,7 +3397,7 @@ function renderCallDetailsPane(c) {
 
 function closeCallDetailView() {
   destroyCallDetailEditors();
-  switchView("history");
+  switchView(cdReturnView);
 }
 
 function switchCallDetailTab(tab) {

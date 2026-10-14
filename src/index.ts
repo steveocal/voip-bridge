@@ -1,5 +1,5 @@
 import type { Env, ExecutionContext, D1PreparedStatement } from "./types";
-import { lookupCaller, logCompletedCall, trackCall, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages, searchQuotations, phoneKey, createContactForNumber, renameContact } from "./odoo";
+import { lookupCaller, logCompletedCall, trackCall, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages, searchQuotations, contactTotals, phoneKey, createContactForNumber, renameContact } from "./odoo";
 import { searchGmailMessages, searchRecentGmailMessages, getGmailBody, sendGmailMessage } from "./gmail";
 import { ariRequest } from "./asterisk";
 import { playbackResponse } from "./recording";
@@ -165,23 +165,25 @@ async function handleActiveCalls(_request: Request, env: Env): Promise<Response>
   return stub.fetch(new Request("https://do/active"));
 }
 
+const CALL_HISTORY_SELECT = `SELECT c.id, c.call_id, c.phone_number, c.did, c.direction, c.state,
+     COALESCE(c.start_date, c.create_date) AS start_date,
+     c.end_date,
+     CASE WHEN c.end_date > c.start_date THEN (c.end_date - c.start_date) / 1000 ELSE 0 END AS duration,
+     c.partner_id AS partner_id,
+     COALESCE(p.name, '') AS partner_name,
+     COALESCE(p.email, '') AS partner_email,
+     CASE WHEN COALESCE(c.notes_html, '') != '' THEN 1 ELSE 0 END AS has_notes,
+     CASE WHEN COALESCE(c.recording, '') != '' THEN 1 ELSE 0 END AS has_recording,
+     CASE WHEN c.transcript IS NOT NULL THEN 1 ELSE 0 END AS has_transcript,
+     c.voicemail
+   FROM call_log c
+   LEFT JOIN contacts p ON p.id = c.partner_id`;
+
 async function handleCallHistory(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50") || 50, 200);
   const q = (url.searchParams.get("q") ?? "").trim();
-  const select = `SELECT c.id, c.call_id, c.phone_number, c.did, c.direction, c.state,
-       COALESCE(c.start_date, c.create_date) AS start_date,
-       c.end_date,
-       CASE WHEN c.end_date > c.start_date THEN (c.end_date - c.start_date) / 1000 ELSE 0 END AS duration,
-       c.partner_id AS partner_id,
-       COALESCE(p.name, '') AS partner_name,
-       COALESCE(p.email, '') AS partner_email,
-       CASE WHEN COALESCE(c.notes_html, '') != '' THEN 1 ELSE 0 END AS has_notes,
-       CASE WHEN COALESCE(c.recording, '') != '' THEN 1 ELSE 0 END AS has_recording,
-       CASE WHEN c.transcript IS NOT NULL THEN 1 ELSE 0 END AS has_transcript,
-       c.voicemail
-     FROM call_log c
-     LEFT JOIN contacts p ON p.id = c.partner_id`;
+  const select = CALL_HISTORY_SELECT;
   let rows;
   if (q) {
     const like = `%${q}%`;
@@ -568,50 +570,50 @@ function digitsOf(s: string): string {
   return (s || "").replace(/\D/g, "");
 }
 
+const CONTACT_DETAIL_FIELDS = ["id", "name", "company_type", "is_company", "phone", "mobile", "email", "website", "vat", "function", "street", "street2", "zip", "city", "state_id", "country_id", "active"];
+
+/** Odoo's many2one comes back as [id, label]; empty fields as false. */
+function m2oLabel(v: unknown): string {
+  return Array.isArray(v) ? String(v[1] ?? "") : "";
+}
+
 async function handleContactDetail(env: Env, id: number): Promise<Response> {
   const uid = await odooAuth(env);
-  let contact: Contact | null = null;
+  let contact: Record<string, unknown> | null = null;
   if (uid) {
     const result = await odooCall(env, uid, "res.partner", "search_read",
       [[["id", "=", id]]],
-      { fields: ["id", "name", "company_type", "is_company", "phone", "mobile", "email", "website", "vat", "function", "city", "active"], limit: 1 }) as { parsed: Array<Record<string, unknown>> };
-    contact = (((result.parsed || [])[0] ?? null) as unknown as Contact) || null;
+      { fields: CONTACT_DETAIL_FIELDS, limit: 1 }) as { parsed: Array<Record<string, unknown>> };
+    const p = (result.parsed || [])[0];
+    if (p) {
+      contact = {};
+      for (const f of CONTACT_DETAIL_FIELDS) contact[f] = p[f] === false ? "" : p[f];
+      contact.state = m2oLabel(p.state_id);
+      contact.country = m2oLabel(p.country_id);
+      delete contact.state_id;
+      delete contact.country_id;
+    }
   }
   if (!contact) {
-    // Fall back to D1 cache.
-    const cached = await env.DB.prepare(
+    // Fall back to D1 cache (no address beyond city).
+    contact = await env.DB.prepare(
       "SELECT id, name, company_type, is_company, phone, mobile, email, website, vat, function, city, active FROM contacts WHERE id = ?1"
     ).bind(id).first<Record<string, unknown>>();
-    contact = cached ? (cached as unknown as Contact) : null;
   }
   if (!contact) return Response.json({ error: "not found" }, { status: 404 });
 
-  // Recent calls for this contact: match on the last 7 digits of phone/mobile.
-  const calls: Array<Record<string, unknown>> = [];
-  for (const p of [contact.phone, contact.mobile]) {
-    if (!p) continue;
-    const d = digitsOf(p).slice(-7);
-    if (d.length < 7) continue;
-    const rows = await env.DB.prepare(
-      `SELECT phone_number, did, direction, state,
-         COALESCE(start_date, create_date) AS start_date,
-         end_date,
-         CASE WHEN end_date > start_date THEN (end_date - start_date) / 1000 ELSE 0 END AS duration
-       FROM call_log WHERE phone_number LIKE ?1
-       ORDER BY COALESCE(start_date, create_date) DESC LIMIT 20`
-    ).bind(`%${d}%`).all<Record<string, unknown>>();
-    for (const r of rows.results || []) calls.push(r);
-  }
-  // De-dupe by start_date+phone_number, sort desc.
-  const seen = new Set<string>();
-  const unique = calls.filter(r => {
-    const k = `${r.start_date}-${r.phone_number}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  }).sort((a, b) => (b.start_date as number) - (a.start_date as number));
+  // Calls linked to this contact, plus any from its numbers (last 7 digits)
+  // that were never linked — same row shape as /call-history.
+  const keys = [contact.phone, contact.mobile]
+    .map(p => digitsOf(String(p || "")).slice(-7))
+    .filter(d => d.length >= 7);
+  const where = ["c.partner_id = ?1", ...keys.map((_, i) => `c.phone_number LIKE ?${i + 2}`)].join(" OR ");
+  const calls = await env.DB.prepare(
+    `${CALL_HISTORY_SELECT} WHERE ${where} ORDER BY COALESCE(c.start_date, c.create_date) DESC LIMIT 100`
+  ).bind(id, ...keys.map(k => `%${k}%`)).all<Record<string, unknown>>();
 
-  return Response.json({ contact, calls: unique });
+  const totals = await contactTotals(env, id);
+  return Response.json({ contact, totals, calls: calls.results || [] });
 }
 
 // ── CORS ───────────────────────────────────────────────────────
