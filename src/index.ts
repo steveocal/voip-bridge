@@ -577,29 +577,34 @@ function m2oLabel(v: unknown): string {
   return Array.isArray(v) ? String(v[1] ?? "") : "";
 }
 
-async function handleContactDetail(env: Env, id: number): Promise<Response> {
+/** Fresh contact (with full address) from Odoo, or null if unavailable. */
+async function fetchOdooContact(env: Env, id: number): Promise<Record<string, unknown> | null> {
   const uid = await odooAuth(env);
-  let contact: Record<string, unknown> | null = null;
-  if (uid) {
-    const result = await odooCall(env, uid, "res.partner", "search_read",
-      [[["id", "=", id]]],
-      { fields: CONTACT_DETAIL_FIELDS, limit: 1 }) as { parsed: Array<Record<string, unknown>> };
-    const p = (result.parsed || [])[0];
-    if (p) {
-      contact = {};
-      for (const f of CONTACT_DETAIL_FIELDS) contact[f] = p[f] === false ? "" : p[f];
-      contact.state = m2oLabel(p.state_id);
-      contact.country = m2oLabel(p.country_id);
-      delete contact.state_id;
-      delete contact.country_id;
-    }
-  }
-  if (!contact) {
-    // Fall back to D1 cache (no address beyond city).
-    contact = await env.DB.prepare(
-      "SELECT id, name, company_type, is_company, phone, mobile, email, website, vat, function, city, active FROM contacts WHERE id = ?1"
-    ).bind(id).first<Record<string, unknown>>();
-  }
+  if (!uid) return null;
+  const result = await odooCall(env, uid, "res.partner", "search_read",
+    [[["id", "=", id]]],
+    { fields: CONTACT_DETAIL_FIELDS, limit: 1 }) as { parsed: Array<Record<string, unknown>> };
+  const p = (result.parsed || [])[0];
+  if (!p) return null;
+  const contact: Record<string, unknown> = {};
+  for (const f of CONTACT_DETAIL_FIELDS) contact[f] = p[f] === false ? "" : p[f];
+  contact.state = m2oLabel(p.state_id);
+  contact.country = m2oLabel(p.country_id);
+  delete contact.state_id;
+  delete contact.country_id;
+  return contact;
+}
+
+/** ?cached=1 answers from D1 alone (fast: no address beyond city, no
+ *  totals); otherwise the contact comes from Odoo along with its totals. */
+async function handleContactDetail(env: Env, id: number, cachedOnly: boolean): Promise<Response> {
+  const [odooContact, totals] = cachedOnly
+    ? [null, null]
+    : await Promise.all([fetchOdooContact(env, id), contactTotals(env, id)]);
+  // Fall back to D1 cache (no address beyond city).
+  const contact = odooContact ?? await env.DB.prepare(
+    "SELECT id, name, company_type, is_company, phone, mobile, email, website, vat, function, city, active FROM contacts WHERE id = ?1"
+  ).bind(id).first<Record<string, unknown>>();
   if (!contact) return Response.json({ error: "not found" }, { status: 404 });
 
   // Calls linked to this contact, plus any from its numbers (last 7 digits)
@@ -612,7 +617,6 @@ async function handleContactDetail(env: Env, id: number): Promise<Response> {
     `${CALL_HISTORY_SELECT} WHERE ${where} ORDER BY COALESCE(c.start_date, c.create_date) DESC LIMIT 100`
   ).bind(id, ...keys.map(k => `%${k}%`)).all<Record<string, unknown>>();
 
-  const totals = await contactTotals(env, id);
   return Response.json({ contact, totals, calls: calls.results || [] });
 }
 
@@ -672,7 +676,7 @@ export default {
     else if (request.method === "POST" && url.pathname === "/send-message") response = await handleSendMessage(request, env);
     else if (request.method === "GET" && url.pathname === "/contacts") response = await handleContacts(request, env);
     else if (request.method === "GET" && url.pathname === "/contacts/cache") response = await handleContactsCache(request, env);
-    else if (request.method === "GET" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleContactDetail(env, parseInt(url.pathname.split("/")[2]));
+    else if (request.method === "GET" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleContactDetail(env, parseInt(url.pathname.split("/")[2]), url.searchParams.get("cached") === "1");
     else if (request.method === "POST" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleRenameContact(request, env, parseInt(url.pathname.split("/")[2]));
     else if (url.pathname === "/") response = Response.json({ service: "voip-bridge", routes: ["/call-event", "/click2call", "/caller-lookup", "/active-calls", "/answer", "/hangup-call", "/call-history", "/call-notes", "/quotations", "/contacts", "/contacts/:id"] });
     else if (url.pathname === "/dashboard") response = serveDashboard();

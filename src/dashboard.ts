@@ -3224,17 +3224,32 @@ function openContactFull(c) {
   document.getElementById("ct-pane-details").innerHTML = '<div class="empty">Loading…</div>';
   switchView("contact-detail");
   switchContactTab("details");
+  // Cached details first (instant), then Odoo's address + totals on top.
+  fetch(API + "/contacts/" + id + "?cached=1").then(function(r) { return r.json(); }).then(function(d) {
+    if (!ctContact || ctContact.id !== id || ctData || !d || !d.contact) return;
+    applyContactData(d);
+  }).catch(function() {});
   fetch(API + "/contacts/" + id).then(function(r) { return r.json(); }).then(function(d) {
     if (!ctContact || ctContact.id !== id) return;
-    if (!d || !d.contact) { document.getElementById("ct-pane-details").innerHTML = '<div class="empty">Contact not found</div>'; return; }
-    ctData = d;
-    var k = d.contact;
-    ctContact.name = k.name || ctContact.name;
-    ctContact.phone = k.phone || ""; ctContact.mobile = k.mobile || ""; ctContact.email = k.email || "";
-    renderContactHead();
-    renderContactDetails();
-    if (ctLoaded.calls) renderContactCalls();
-  }).catch(function() { document.getElementById("ct-pane-details").innerHTML = '<div class="empty">Error loading contact</div>'; });
+    if (!d || !d.contact) { if (!ctData) document.getElementById("ct-pane-details").innerHTML = '<div class="empty">Contact not found</div>'; else { ctData.totals = {}; renderContactTotals(); renderContactInfo(); } return; }
+    applyContactData(d);
+  }).catch(function() {
+    if (!ctData) document.getElementById("ct-pane-details").innerHTML = '<div class="empty">Error loading contact</div>';
+    else { ctData.totals = {}; renderContactTotals(); renderContactInfo(); }
+  });
+}
+function applyContactData(d) {
+  var first = !ctData;
+  ctData = d;
+  var k = d.contact;
+  ctContact.phone = k.phone || ""; ctContact.mobile = k.mobile || ""; ctContact.email = k.email || "";
+  // Leave the name alone once the box is showing — the user may be typing.
+  if (first) ctContact.name = k.name || ctContact.name;
+  renderContactHead();
+  if (first) renderContactDetails();
+  renderContactTotals();
+  renderContactInfo();
+  if (ctLoaded.calls) renderContactCalls();
 }
 function closeContactView() {
   flushContactName();
@@ -3260,28 +3275,39 @@ function switchContactTab(tab) {
   if (tab === "calls") renderContactCalls();
 }
 function renderContactDetails() {
-  var k = ctData.contact, t = ctData.totals || {};
-  var cityLine = [k.city, k.state, k.zip].filter(Boolean).join(", ");
-  var addr = [k.street, k.street2, cityLine, k.country].filter(Boolean).join(NL);
-  var rows = '<div class="ct-label"><span>Name</span><span class="jot-status" id="ct-name-status"></span></div>'
+  document.getElementById("ct-pane-details").innerHTML = '<div class="ct-label"><span>Name</span><span class="jot-status" id="ct-name-status"></span></div>'
     + '<input class="ct-name-edit" id="ct-name-input" type="text" autocomplete="off" value="' + esc(ctContact.name) + '">'
-    + '<div class="ct-totals">'
-    + '<div class="ct-total"><div class="k">Total Sales Orders</div><div class="v">' + (t.sales_total == null ? "—" : esc(fmtMoney(t.sales_total))) + '</div>'
-    + (t.sales_count != null ? '<div class="n">' + t.sales_count + ' order' + (t.sales_count === 1 ? "" : "s") + '</div>' : '') + '</div>'
-    + '<div class="ct-total"><div class="k">Invoiced</div><div class="v">' + (t.invoiced_total == null ? "—" : esc(fmtMoney(t.invoiced_total))) + '</div></div>'
-    + '</div>'
-    + '<div class="detail-row"><span class="k">Address</span><span class="v ct-addr">' + (addr ? esc(addr) : "—") + '</span></div>';
-  var fields = [["Phone", k.phone], ["Mobile", k.mobile], ["Email", k.email], ["Website", k.website], ["VAT", k.vat], ["Role", k["function"]]];
-  for (var i = 0; i < fields.length; i++) {
-    if (fields[i][1]) rows += '<div class="detail-row"><span class="k">' + fields[i][0] + '</span><span class="v">' + esc(fields[i][1]) + '</span></div>';
-  }
-  document.getElementById("ct-pane-details").innerHTML = rows;
+    + '<div class="ct-totals" id="ct-totals"></div><div id="ct-info"></div>';
   document.getElementById("ct-name-input").addEventListener("input", function() {
     setContactNameStatus("", false);
     if (ctNameTimer) clearTimeout(ctNameTimer);
     ctNameTimer = setTimeout(saveContactName, PV.contactRenameAutosaveMs);
   });
   document.getElementById("ct-name-input").addEventListener("blur", flushContactName);
+}
+// totals === null means the Odoo lookup is still on its way.
+function renderContactTotals() {
+  var el = document.getElementById("ct-totals");
+  if (!el || !ctData) return;
+  var t = ctData.totals, wait = t === null;
+  t = t || {};
+  function money(v) { return wait ? "…" : (v == null ? "—" : esc(fmtMoney(v))); }
+  el.innerHTML = '<div class="ct-total"><div class="k">Total Sales Orders</div><div class="v">' + money(t.sales_total) + '</div>'
+    + (t.sales_count != null ? '<div class="n">' + t.sales_count + ' order' + (t.sales_count === 1 ? "" : "s") + '</div>' : '') + '</div>'
+    + '<div class="ct-total"><div class="k">Invoiced</div><div class="v">' + money(t.invoiced_total) + '</div></div>';
+}
+function renderContactInfo() {
+  var el = document.getElementById("ct-info");
+  if (!el || !ctData) return;
+  var k = ctData.contact;
+  var cityLine = [k.city, k.state, k.zip].filter(Boolean).join(", ");
+  var addr = [k.street, k.street2, cityLine, k.country].filter(Boolean).join(NL);
+  var rows = '<div class="detail-row"><span class="k">Address</span><span class="v ct-addr">' + (addr ? esc(addr) : (ctData.totals === null ? "…" : "—")) + '</span></div>';
+  var fields = [["Phone", k.phone], ["Mobile", k.mobile], ["Email", k.email], ["Website", k.website], ["VAT", k.vat], ["Role", k["function"]]];
+  for (var i = 0; i < fields.length; i++) {
+    if (fields[i][1]) rows += '<div class="detail-row"><span class="k">' + fields[i][0] + '</span><span class="v">' + esc(fields[i][1]) + '</span></div>';
+  }
+  el.innerHTML = rows;
 }
 function flushContactName() {
   if (!ctNameTimer) return;
