@@ -310,6 +310,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 .jt-text{width:100%;border-radius:10px;background:#1e1e1e;border:1px solid #2c2c2c;padding:14px 16px;overflow-y:auto;white-space:pre-wrap;font-size:16px;line-height:1.55;color:#e9ecef;box-sizing:border-box}
 .jt-text.hidden,.jt-canvas-wrap.hidden{display:none}
 .jt-text-note{color:#999;font-style:italic}
+.jt-text-saved{margin-top:12px;font-size:12px;color:#34d399}
 #jot-canvas .jt-text{height:420px}
 #cd-jot-canvas .jt-text{height:58vh}
 .jt-btn.jt-totext{width:auto;padding:0 9px;font-weight:700;font-size:14px}
@@ -1406,6 +1407,38 @@ function addNoteLine(text) {
     ta.scrollTop = ta.scrollHeight;
   }
 }
+// Jot's Aa text goes into the notes as one "From Jot" block, replaced (not
+// duplicated) by later conversions. Works on the TinyMCE editor, its plain
+// textarea fallback, or (neither mounted yet) the stored html via setHtml.
+var JOT_NOTES_HEAD = "✍️ From Jot";
+function jotNotesBlock(text) {
+  return '<div data-jot-text="1"><p><strong>' + JOT_NOTES_HEAD + '</strong></p>'
+    + text.split(NL).map(function(l) { return '<p>' + (esc(l) || "&nbsp;") + '</p>'; }).join("") + '</div>';
+}
+function upsertJotNotesHtml(html, text) {
+  var box = document.createElement("div");
+  box.innerHTML = html || "";
+  var old = box.querySelector("[data-jot-text]");
+  if (old) { old.outerHTML = jotNotesBlock(text); return box.innerHTML; }
+  return (html || "") + jotNotesBlock(text);
+}
+function upsertJotNotesPlain(value, text) {
+  var head = JOT_NOTES_HEAD + ":";
+  var i = value.indexOf(head);
+  var block = head + NL + text;
+  if (i >= 0) {
+    var end = value.indexOf(NL + NL, i);
+    return value.slice(0, i) + block + (end >= 0 ? value.slice(end) : "");
+  }
+  return value ? value + NL + NL + block : block;
+}
+function putJotTextInNotes(editorId, text, getHtml, setHtml) {
+  var ed = (typeof tinymce !== "undefined") ? tinymce.get(editorId) : null;
+  var ta = document.getElementById(editorId);
+  if (ed) ed.setContent(upsertJotNotesHtml(ed.getContent(), text));
+  else if (ta) ta.value = upsertJotNotesPlain(ta.value, text);
+  if (setHtml && !ed && !ta) setHtml(upsertJotNotesHtml(getHtml(), text));
+}
 // ── in-call panel: caller name + tabs ───────────────────────────
 var activeCpTab = "notes";
 var currentCallPartner = null;
@@ -1667,7 +1700,8 @@ function jtMakeWord(strokes, prevRotate, prevScale) {
   };
 }
 
-function createJot(hostEl, onChange) {
+// onText(text), if given, receives each fresh Aa conversion (to put into the notes).
+function createJot(hostEl, onChange, onText) {
   function notifyChange() { jotTextCache = null; if (onChange) onChange(); }
   var jotTextCache = null, jotTextMode = false, jotTextSeq = 0;
   hostEl.innerHTML = "";
@@ -2334,6 +2368,13 @@ function createJot(hostEl, onChange) {
       if (d.error) { textView.innerHTML = '<span class="jt-text-note">Conversion failed: ' + esc(d.error) + '</span>'; return; }
       jotTextCache = d.text || "";
       textView.textContent = jotTextCache || "(no text recognised)";
+      if (jotTextCache && onText) {
+        onText(jotTextCache);
+        var note = document.createElement("div");
+        note.className = "jt-text-note jt-text-saved";
+        note.textContent = "Added to Notes ✓";
+        textView.appendChild(note);
+      }
     }).catch(function(err) {
       if (seq === jotTextSeq) textView.innerHTML = '<span class="jt-text-note">Conversion failed: ' + esc(err.message) + '</span>';
     });
@@ -2520,7 +2561,7 @@ function jtOutlineToPath(outline) {
 function initJotEditor() {
   var host = document.getElementById("jot-canvas");
   if (liveJot) { resetJotIfNewCall(); return; }
-  liveJot = createJot(host, scheduleCallSave);
+  liveJot = createJot(host, scheduleCallSave, function(text) { putJotTextInNotes("call-notes", text); scheduleCallSave(); });
   jotCallId = currentCall ? currentCall.id : null;
 }
 
@@ -3617,7 +3658,10 @@ function initCallDetailNotesEditor(html) {
 function initCallDetailJot() {
   var host = document.getElementById("cd-jot-canvas");
   if (!host) return;
-  cdJot = createJot(host, scheduleCallDetailSave);
+  cdJot = createJot(host, scheduleCallDetailSave, function(text) {
+    putJotTextInNotes("cd-notes", text, function() { return cdLoadedNotes.notes_html || ""; }, function(html) { cdLoadedNotes.notes_html = html; });
+    scheduleCallDetailSave();
+  });
   if (cdJotData) cdJot.loadJSON(cdJotData);
 }
 
