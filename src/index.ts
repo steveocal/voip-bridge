@@ -180,6 +180,50 @@ const CALL_HISTORY_SELECT = `SELECT c.id, c.call_id, c.phone_number, c.did, c.di
    FROM call_log c
    LEFT JOIN contacts p ON p.id = c.partner_id`;
 
+// One inbound call lands in call_log several times: Asterisk's AGI logs the
+// trunk leg (call_id "<epoch>.<seq>", did set, owns the recording), then
+// every softphone that rang logs its own leg (SIP Call-ID, no did) a few
+// seconds later. Fold those into one row: notes live on the answered leg,
+// so that leg's call_id stays primary and rec_call_id points at the leg
+// holding the recording/transcript. Outgoing calls are only logged once.
+type CallRow = Record<string, unknown>;
+const LEG_SLACK_MS = 3000;
+function mergeCallLegs(rows: CallRow[]): CallRow[] {
+  type Group = { rows: CallRow[]; key: string; end: number; trunk: boolean };
+  const groups: Group[] = [];
+  const latest = new Map<string, Group>();
+  for (const r of [...rows].reverse()) {
+    const start = Number(r.start_date) || 0;
+    const end = Math.max(Number(r.end_date) || 0, start);
+    const trunk = !!r.did;
+    const key = digitsOf(String(r.phone_number || "")).slice(-9);
+    const g = r.direction === "incoming" && key ? latest.get(key) : undefined;
+    if (g && start <= g.end + LEG_SLACK_MS && !(trunk && g.trunk)) {
+      g.rows.push(r); g.end = Math.max(g.end, end); g.trunk = g.trunk || trunk;
+      continue;
+    }
+    const ng: Group = { rows: [r], key, end, trunk };
+    groups.push(ng);
+    if (r.direction === "incoming" && key) latest.set(key, ng);
+  }
+  return groups.reverse().map(({ rows: legs }) => {
+    if (legs.length === 1) return legs[0];
+    const trunkLeg = legs.find(l => l.did);
+    const answered = legs.find(l => !l.did && (l.state === "terminated" || l.state === "ongoing"));
+    const primary = legs.find(l => l.has_notes) ?? answered ?? trunkLeg ?? legs[0];
+    const rec = legs.find(l => l.has_recording) ?? legs.find(l => l.has_transcript) ?? primary;
+    const out: CallRow = { ...primary };
+    out.start_date = Math.min(...legs.map(l => Number(l.start_date) || Infinity));
+    out.did = trunkLeg?.did ?? primary.did;
+    if (answered) { out.state = answered.state; out.duration = answered.duration; out.end_date = answered.end_date; }
+    else if (trunkLeg) { out.state = trunkLeg.state; out.duration = trunkLeg.duration; out.end_date = trunkLeg.end_date; }
+    for (const f of ["has_notes", "has_recording", "has_transcript", "voicemail"]) out[f] = legs.some(l => Number(l[f])) ? 1 : 0;
+    for (const f of ["partner_id", "partner_name", "partner_email", "match"]) out[f] = legs.find(l => l[f])?.[f] ?? primary[f];
+    out.rec_call_id = rec.call_id;
+    return out;
+  });
+}
+
 async function handleCallHistory(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50") || 50, 200);
@@ -211,7 +255,7 @@ async function handleCallHistory(request: Request, env: Env): Promise<Response> 
       `${select} ORDER BY COALESCE(c.start_date, c.create_date) DESC LIMIT ?1`
     ).bind(limit).all<Record<string, unknown>>();
   }
-  return Response.json({ calls: rows.results || [] });
+  return Response.json({ calls: mergeCallLegs(rows.results || []) });
 }
 
 // ── Naming calls: link call_log rows to contacts by phone number ──
@@ -639,7 +683,7 @@ async function handleContactDetail(env: Env, id: number, cachedOnly: boolean): P
     `${CALL_HISTORY_SELECT} WHERE ${where} ORDER BY COALESCE(c.start_date, c.create_date) DESC LIMIT 100`
   ).bind(id, ...keys.map(k => `%${k}%`)).all<Record<string, unknown>>();
 
-  return Response.json({ contact, totals, calls: calls.results || [] });
+  return Response.json({ contact, totals, calls: mergeCallLegs(calls.results || []) });
 }
 
 // Handwritten Jot page (PNG/JPEG data: URL) → plain text.

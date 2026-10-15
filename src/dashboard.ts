@@ -35,7 +35,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .entry{display:flex;align-items:center;gap:8px;padding:8px 16px}
 .entry input{flex:1;min-width:0;width:0;padding:13px 14px;border:none;border-radius:12px;background:#1a1a1a;color:#fff;font-size:20px;letter-spacing:.5px;outline:none}
 .entry input::placeholder{color:#666}
-#history-search{font-size:16px;letter-spacing:0}
 .backspace{width:46px;height:46px;border:none;border-radius:12px;background:#1a1a1a;color:#ccc;font-size:20px;cursor:pointer}
 .suggestions{padding:0 16px 6px;min-height:0}
 .sugg-row{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:10px;background:#1a1a1a;margin-bottom:6px;cursor:pointer}
@@ -110,7 +109,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .hist-play{background:#1a1a1a;border:none;color:#34d399;width:30px;height:30px;border-radius:50%;font-size:13px;cursor:pointer;margin-left:8px;flex-shrink:0}
 .hist-play:active{background:#262626}
 .hist-player{margin:6px 0 4px 26px;font-size:12px;color:#999}
-.hist-tx-btn{flex-shrink:0;width:42px;height:42px;margin-right:-15px;border:none;border-radius:10px;background:#1a1a1a;color:#ececec;font-size:17px;cursor:pointer}
+.hist-tx-btn{flex-shrink:0;width:46px;height:46px;border:none;border-radius:10px;background:#1a1a1a;color:#ececec;font-size:17px;cursor:pointer}
 .hist-tx-btn.on{background:linear-gradient(135deg,#4db8ff,#2563eb)}
 .hist-match{margin:0 0 4px 74px;font-size:12.5px;color:#ccc;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hist-match mark{background:#f7c948;color:#000;border-radius:2px;font-style:normal}
@@ -388,10 +387,6 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
   <div class="views">
     <!-- DIAL VIEW -->
     <div class="view" id="view-dial">
-      <div class="entry" id="hist-search-row">
-        <input id="history-search" type="text" placeholder="Search calls (name / number)" autocomplete="off" autocapitalize="off">
-        <button class="hist-tx-btn" id="hist-tx-btn" onclick="toggleTranscriptSearch()" title="Search call transcripts">💬</button>
-      </div>
       <div class="hist-toolbar" id="hist-toolbar">
         <button class="green" data-action="call" onclick="histAction('call')" disabled>📞 Call</button>
         <button data-action="email" onclick="histAction('email')" disabled>✉️ Email</button>
@@ -450,6 +445,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       <div class="dial-bottom" id="dial-bottom">
         <div class="entry" id="dial-entry">
           <input id="dial-input" type="text" placeholder="Number or name (T9)" autocomplete="off" autocapitalize="off">
+          <button class="hist-tx-btn" id="hist-tx-btn" onclick="toggleTranscriptSearch()" title="Search call transcripts">💬</button>
           <button class="backspace" onclick="backspace()">⌫</button>
         </div>
         <div class="dialpad" id="dialpad">
@@ -1237,7 +1233,7 @@ function onDialView() { return !document.getElementById("view-dial").classList.c
 function navDialAction() {
   if (currentCall) { hangup(); return; }
   if (!onDialView()) { switchView("dial"); dialKeypadOpen = true; updateDialBottomVisibility(); return; }
-  if (document.getElementById("dial-input").value.trim()) { dialAction(); return; }
+  if (document.getElementById("dial-input").value.trim() && !historyTxSearch) { dialAction(); return; }
   dialKeypadOpen = !dialKeypadOpen;
   updateDialBottomVisibility();
 }
@@ -2877,13 +2873,18 @@ function hlNum(num, range) {
 }
 function onDialInput() {
   updateDialBottomVisibility();
+  if (historyTxSearch) {
+    if (historyTimer) clearTimeout(historyTimer);
+    historyTimer = setTimeout(loadHistory, PV.historyDebounceMs);
+    return;
+  }
   if (suggestTimer) clearTimeout(suggestTimer);
   suggestTimer = setTimeout(renderT9, PV.suggestDebounceMs);
 }
 function renderT9() {
   var el = document.getElementById("dial-suggestions");
   var raw = document.getElementById("dial-input").value.trim();
-  if (!raw) { el.innerHTML = ""; return; }
+  if (!raw || historyTxSearch) { el.innerHTML = ""; return; }
   var letters = /[a-zA-Z]/.test(raw);
   var q = letters ? raw.toLowerCase() : digitsOnly(raw);
   if (!q) { el.innerHTML = ""; return; }
@@ -2925,7 +2926,7 @@ document.getElementById("dial-suggestions").addEventListener("click", function(e
   onDialInput();
 });
 document.getElementById("dial-input").addEventListener("input", onDialInput);
-document.getElementById("dial-input").addEventListener("keydown", function(e) { if (e.key === "Enter") { e.preventDefault(); dialAction(); } });
+document.getElementById("dial-input").addEventListener("keydown", function(e) { if (e.key === "Enter" && !historyTxSearch) { e.preventDefault(); dialAction(); } });
 function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/'/g,"&#39;").replace(/"/g,"&quot;"); }
 // Combined color+direction indicator: ▲ outgoing / ▼ incoming, colored green
 // (completed in), blue (completed out), or red (missed/rejected/aborted).
@@ -3065,11 +3066,12 @@ function updateDialBottomVisibility() {
   var connected = !!(currentCall && currentCall.state === "active");
   document.getElementById("nav-dial").classList.toggle("in-call", inAnyCall);
   document.getElementById("nav-dial").setAttribute("aria-label", inAnyCall ? "Hang up" : "Dial");
-  var typed = !!document.getElementById("dial-input").value.trim();
+  // Typing shows T9 matches in place of the list — unless 💬 is on, when the
+  // box searches transcripts and the list itself shows the hits.
+  var typed = !!document.getElementById("dial-input").value.trim() && !historyTxSearch;
   document.getElementById("dialpad").classList.toggle("hidden", inAnyCall || !dialKeypadOpen);
-  document.getElementById("dial-entry").classList.toggle("hidden", inAnyCall || !(dialKeypadOpen || typed));
+  document.getElementById("dial-entry").classList.toggle("hidden", inAnyCall || !(dialKeypadOpen || typed || historyTxSearch));
   document.getElementById("dial-callbar").classList.toggle("hidden", inAnyCall);
-  document.getElementById("hist-search-row").classList.toggle("hidden", inAnyCall);
   document.getElementById("hist-toolbar").classList.toggle("hidden", inAnyCall);
   document.getElementById("history-list").classList.toggle("hidden", inAnyCall || typed);
   document.getElementById("dial-suggestions").classList.toggle("hidden", inAnyCall || !typed);
@@ -3115,22 +3117,26 @@ function setStatus(msg, isErr) {
 // ── history ────────────────────────────────────────────────────
 var historyTimer = null;
 var historyTxSearch = false;
-// 💬 next to the search box: search what was said on calls instead of names/numbers.
+// 💬 beside the dial box: the box searches what was said on calls instead
+// of T9-matching names/numbers.
 function toggleTranscriptSearch() {
   historyTxSearch = !historyTxSearch;
   document.getElementById("hist-tx-btn").classList.toggle("on", historyTxSearch);
-  var inp = document.getElementById("history-search");
-  inp.placeholder = historyTxSearch ? "Search transcripts" : "Search calls (name / number)";
+  var inp = document.getElementById("dial-input");
+  inp.placeholder = historyTxSearch ? "Search transcripts" : "Number or name (T9)";
+  inp.value = "";
   inp.focus();
+  onDialInput();
   loadHistory();
 }
+function historyQuery() { return historyTxSearch ? document.getElementById("dial-input").value.trim() : ""; }
 function loadHistory() {
-  var q = document.getElementById("history-search").value.trim();
+  var q = historyQuery();
   var el = document.getElementById("history-list");
   if (historyTxSearch && !q) { el.innerHTML = '<div class="empty">Type words to find in call transcripts</div>'; return; }
   if (!el.querySelector(".hist-row")) el.innerHTML = '<div class="empty">Loading…</div>';
   fetch(API + "/call-history?limit=" + PV.historyLimit + "&q=" + encodeURIComponent(q) + (historyTxSearch ? "&in=transcript" : "")).then(function(r){return r.json();}).then(function(d){
-    if (q !== document.getElementById("history-search").value.trim()) return;
+    if (q !== historyQuery()) return;
     var calls = d.calls || [];
     if (!calls.length) { el.innerHTML = '<div class="empty">' + (historyTxSearch ? "No transcripts mention that" : q ? "No matching calls" : "No calls yet") + '</div>'; return; }
     if (selected && selected.type === "call") deselect();
@@ -3168,7 +3174,7 @@ function renderHistoryRow(c) {
     + '<div class="hist-main">' + dirIcon(dir, missed) + '<span class="h-time">' + when + '</span>'
     + '<span class="who">' + esc(name || num) + (c.voicemail ? ' <span title="Voicemail">📼</span>' : '') + '</span>'
     + note + tx + play + '</div>'
-    + (c.match ? '<div class="hist-match">' + markMatch(c.match, document.getElementById("history-search").value.trim()) + '</div>' : '')
+    + (c.match ? '<div class="hist-match">' + markMatch(c.match, historyQuery()) + '</div>' : '')
     + '</div>';
 }
 // Row icon taps shared by History and a contact's Calls tab: ▶ plays under
@@ -3201,10 +3207,7 @@ function fmtDay(ts) {
   if (d.toDateString() === y.toDateString()) return "Yesterday";
   return d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
 }
-document.getElementById("history-search").addEventListener("input", function(e) {
-  if (historyTimer) clearTimeout(historyTimer);
-  historyTimer = setTimeout(loadHistory, PV.historyDebounceMs);
-});
+
 document.getElementById("history-list").addEventListener("click", function(e) {
   var row = e.target.closest(".hist-row");
   if (!row) return;
@@ -3214,7 +3217,7 @@ document.getElementById("history-list").addEventListener("click", function(e) {
   if (e.target.closest(".hist-player")) return;
   if (histIconTap(e, row, c)) return;
   // A transcript search hit opens straight into the call's details.
-  if (c.match) { selectItem("call", c, key); openCallDetailView(c, { tab: "transcript", highlight: document.getElementById("history-search").value.trim() }); return; }
+  if (c.match) { selectItem("call", c, key); openCallDetailView(c, { tab: "transcript", highlight: historyQuery() }); return; }
   // Otherwise selecting is all a tap does; the toolbar above the list acts on the selection.
   if (row.classList.contains("selected")) deselect(); else selectItem("call", c, key);
 });
@@ -3239,7 +3242,7 @@ function fillRecordingPlayer(box, c, autoplay, highlight) {
   box.innerHTML = '<div class="hist-audio">' + (c.has_recording ? "Loading recording…" : "No recording for this call") + '</div><div class="hist-transcript"></div>';
   var audioBox = box.querySelector(".hist-audio"), tBox = box.querySelector(".hist-transcript");
   if (c.has_recording) {
-    fetch(API + "/recording?call_id=" + encodeURIComponent(c.call_id)).then(function(r) {
+    fetch(API + "/recording?call_id=" + encodeURIComponent(c.rec_call_id || c.call_id)).then(function(r) {
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.blob();
     }).then(function(blob) {
@@ -3256,7 +3259,7 @@ function fillRecordingPlayer(box, c, autoplay, highlight) {
   }
   if (!c.call_id || (!c.has_recording && !c.has_transcript)) return;
   tBox.textContent = "Loading transcript…";
-  fetch(API + "/transcript?call_id=" + encodeURIComponent(c.call_id)).then(function(r) { return r.json(); }).then(function(d) {
+  fetch(API + "/transcript?call_id=" + encodeURIComponent(c.rec_call_id || c.call_id)).then(function(r) { return r.json(); }).then(function(d) {
     if (!box.contains(tBox)) return;
     renderTranscript(tBox, c, d.transcript);
     if (highlight) highlightTranscriptLine(tBox, highlight);
@@ -3281,7 +3284,7 @@ function renderTranscript(tBox, c, transcript) {
     tBox.innerHTML = '<button>Transcribe</button>';
     tBox.querySelector("button").onclick = function() {
       tBox.textContent = "Transcribing… (about 10s per minute of call)";
-      fetch(API + "/transcribe?call_id=" + encodeURIComponent(c.call_id), { method: "POST" }).then(function(r) { return r.json(); }).then(function(d) {
+      fetch(API + "/transcribe?call_id=" + encodeURIComponent(c.rec_call_id || c.call_id), { method: "POST" }).then(function(r) { return r.json(); }).then(function(d) {
         if (d.error) { tBox.textContent = "Transcription failed: " + d.error; return; }
         c.has_transcript = 1;
         renderTranscript(tBox, c, d.transcript);
