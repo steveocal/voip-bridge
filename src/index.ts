@@ -545,6 +545,14 @@ async function handleContactsCache(request: Request, env: Env): Promise<Response
   return Response.json({ contacts: rows.results || [] });
 }
 
+// Every dialable contact, slim, for the dialpad's client-side T9 search.
+async function handleContactsT9(env: Env): Promise<Response> {
+  const rows = await env.DB.prepare(
+    "SELECT name, phone, mobile FROM contacts WHERE active = 1 AND (COALESCE(phone, '') != '' OR COALESCE(mobile, '') != '') ORDER BY name"
+  ).all<Record<string, unknown>>();
+  return Response.json({ contacts: rows.results || [] });
+}
+
 // Bulk sync Odoo → D1 (contacts + last N call-log records).
 async function handleSync(env: Env): Promise<Response> {
   try {
@@ -705,6 +713,7 @@ export default {
     else if (request.method === "GET" && url.pathname === "/message") response = await handleMessageDetail(request, env);
     else if (request.method === "POST" && url.pathname === "/send-message") response = await handleSendMessage(request, env);
     else if (request.method === "GET" && url.pathname === "/contacts") response = await handleContacts(request, env);
+    else if (request.method === "GET" && url.pathname === "/contacts/t9") response = await handleContactsT9(env);
     else if (request.method === "GET" && url.pathname === "/contacts/cache") response = await handleContactsCache(request, env);
     else if (request.method === "GET" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleContactDetail(env, parseInt(url.pathname.split("/")[2]), url.searchParams.get("cached") === "1");
     else if (request.method === "POST" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleRenameContact(request, env, parseInt(url.pathname.split("/")[2]));
