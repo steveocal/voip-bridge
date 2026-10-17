@@ -1,4 +1,5 @@
 import type { Env, D1PreparedStatement } from "./types";
+import { ariRecordingFile } from "./asterisk";
 
 // ── Odoo XML-RPC client (hand-rolled, no library) ────────────
 
@@ -473,43 +474,119 @@ export async function syncCallLog(env: Env, limit = 100): Promise<number> {
   return calls.length;
 }
 
-// ── Call data tracking for Odoo logging on hangup ─────────────
+// ── Call history → Odoo voip.call ─────────────────────────────
+// Every call the worker logs (call_id set) is mirrored into voip.call, so it
+// shows in Odoo's own call history. Rows pulled *from* Odoo (call_id NULL,
+// e.g. the Odoo softphone on ext 203) are never pushed back.
+// The bridge_* / notes / transcript / recording fields come from the
+// voip_bridge Odoo module (odoo/voip_bridge); until it is installed only the
+// standard voip.call fields are written.
 
-const callData = new Map<string, { caller: string; partnerId?: number; startTime: number }>();
-
-export function trackCall(callId: string, caller: string, partnerId?: number) {
-  callData.set(callId, { caller, partnerId, startTime: Date.now() });
+interface CallRow {
+  call_id: string; odoo_id: number | null; phone_number: string | null; did: string | null;
+  direction: string | null; state: string | null; partner_id: number | null;
+  start_date: number | null; end_date: number | null; notes_html: string | null;
+  transcript: string | null; recording: string | null; voicemail: number;
 }
 
-export async function logCompletedCall(env: Env, callId: string, caller: string, did: string, duration: number) {
-  const data = callData.get(callId);
-  if (!data) return;
-  callData.delete(callId);
+// Recordings are ~1 MB a minute (8 kHz 16-bit WAV); past this the base64 copy
+// in the XML-RPC body gets too close to the Worker's 128 MB memory limit.
+const MAX_RECORDING_BYTES = 15 * 1024 * 1024;
 
-  try {
-    const uid = await odooAuth(env);
-    if (!uid) return;
+function odooDatetime(ms: number | null): string | false {
+  return ms ? new Date(ms).toISOString().slice(0, 19).replace("T", " ") : false;
+}
 
-    // Find partner by caller number
-    let partnerId: number | false = data.partnerId || false;
-    if (!partnerId) {
-      const partner = await lookupCaller(env, caller);
-      partnerId = (partner as any)?.id || false;
+function toBase64(bytes: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+async function hasBridgeModule(env: Env, uid: number): Promise<boolean> {
+  const r = await odooCall(env, uid, "voip.call", "fields_get", [["bridge_call_id"]], { attributes: ["type"] });
+  return !!(r.parsed && typeof r.parsed === "object" && "bridge_call_id" in (r.parsed as object));
+}
+
+/** Create or update the voip.call for one logged call. `withRecording`
+ *  uploads the audio too (only worth it once the recording event has come). */
+export async function pushCallToOdoo(env: Env, callId: string, withRecording = false): Promise<number | null> {
+  const row = await env.DB.prepare("SELECT * FROM call_log WHERE call_id = ?1").bind(callId).first<CallRow>();
+  if (!row?.call_id || !row.phone_number) return null;
+  const uid = await odooAuth(env);
+  if (!uid) return null;
+  const bridge = await hasBridgeModule(env, uid);
+
+  const vals: Record<string, unknown> = {
+    phone_number: row.phone_number,
+    direction: row.direction === "outgoing" ? "outgoing" : "incoming",
+    state: row.state || "calling",
+    start_date: odooDatetime(row.start_date),
+    end_date: odooDatetime(row.end_date),
+    partner_id: row.partner_id || false,
+  };
+  if (bridge) {
+    Object.assign(vals, {
+      bridge_call_id: row.call_id,
+      bridge_did: row.did || false,
+      voicemail: !!row.voicemail,
+      notes: row.notes_html || false,
+      transcript: row.transcript || false,
+    });
+    if (withRecording && row.recording) {
+      const res = await ariRecordingFile(env, row.recording);
+      if (res.ok) {
+        const audio = new Uint8Array(await res.arrayBuffer());
+        if (audio.length <= MAX_RECORDING_BYTES) {
+          vals.recording = toBase64(audio);
+          vals.recording_filename = `${row.recording}.wav`;
+        } else {
+          console.error(`pushCallToOdoo: recording ${row.recording} is ${audio.length} bytes, not uploaded`);
+        }
+      }
     }
-
-    const outcome = duration > 0 ? "answered" : "no_answer";
-    await odooCall(env, uid, "mail.message", "log_call", [[{
-      res_model: partnerId ? "res.partner" : "res.users",
-      res_id: partnerId || uid,
-      direction: "inbound" as string,
-      duration: duration,
-      outcome: outcome,
-      caller_number: caller,
-      callee_number: did,
-    }]]);
-  } catch (e) {
-    console.error("logCompletedCall failed:", e);
   }
+
+  let odooId = row.odoo_id;
+  // Two events (hangup, recording) can both get here before either has
+  // stored odoo_id, so look the call up by its Asterisk id before creating.
+  if (!odooId && bridge) {
+    const found = await odooCall(env, uid, "voip.call", "search", [[["bridge_call_id", "=", row.call_id]]], { limit: 1 });
+    odooId = (found.parsed as number[] | null)?.[0] ?? null;
+  }
+  if (odooId) {
+    const r = await odooCall(env, uid, "voip.call", "write", [[odooId], vals]);
+    if (r.fault) throw new Error(`voip.call write failed: ${r.fault}`);
+  } else {
+    const r = await odooCall(env, uid, "voip.call", "create", [vals]);
+    if (r.fault || typeof r.parsed !== "number") throw new Error(`voip.call create failed: ${r.fault ?? r._xml}`);
+    odooId = r.parsed;
+  }
+  if (odooId !== row.odoo_id) {
+    // syncCallLog may already have pulled the new voip.call in as its own
+    // row; drop that copy so odoo_id stays unique.
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM call_log WHERE odoo_id = ?1 AND call_id IS NULL").bind(odooId),
+      env.DB.prepare("UPDATE call_log SET odoo_id = ?1 WHERE call_id = ?2").bind(odooId, row.call_id),
+    ]);
+  }
+  return odooId;
+}
+
+/** Push logged calls not yet in Odoo (oldest first), recordings included. */
+export async function pushCallHistory(env: Env, limit = 20): Promise<{ pushed: number; failed: number; remaining: number }> {
+  const { results } = await env.DB.prepare(
+    "SELECT call_id FROM call_log WHERE call_id IS NOT NULL AND odoo_id IS NULL AND phone_number IS NOT NULL ORDER BY start_date LIMIT ?1"
+  ).bind(limit).all<{ call_id: string }>();
+  let pushed = 0, failed = 0;
+  for (const { call_id } of results ?? []) {
+    try { if (await pushCallToOdoo(env, call_id, true)) pushed++; else failed++; }
+    catch (e) { failed++; console.error(`pushCallHistory ${call_id}:`, e); }
+  }
+  const left = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM call_log WHERE call_id IS NOT NULL AND odoo_id IS NULL AND phone_number IS NOT NULL"
+  ).first<{ n: number }>();
+  return { pushed, failed, remaining: left?.n ?? 0 };
 }
 
 // ── Sales / quotations (↔ Odoo sale.order) ────────────────────

@@ -1,5 +1,5 @@
 import type { Env, ExecutionContext, D1PreparedStatement } from "./types";
-import { lookupCaller, logCompletedCall, trackCall, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages, searchQuotations, contactTotals, phoneKey, createContactForNumber, renameContact } from "./odoo";
+import { lookupCaller, pushCallToOdoo, pushCallHistory, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages, searchQuotations, contactTotals, phoneKey, createContactForNumber, renameContact } from "./odoo";
 import { searchGmailMessages, searchRecentGmailMessages, getGmailBody, sendGmailMessage } from "./gmail";
 import { ariRequest } from "./asterisk";
 import { playbackResponse } from "./recording";
@@ -36,7 +36,6 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
       method: "POST",
       body: JSON.stringify({ callId, caller, did, partnerId: (partner as any)?.id, partnerName: (partner as any)?.name }),
     }));
-    trackCall(callId, caller, (partner as any)?.id);
     // Log the call in D1 as soon as it rings (so missed calls are captured too).
     await env.DB.prepare(
       `INSERT INTO call_log (call_id, phone_number, did, direction, state, start_date, partner_id)
@@ -72,6 +71,7 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
     // than waitUntil's 30s grace, and Asterisk's curl is happy to wait.
     let transcribed = false;
     try { await transcribeCall(env, callId); transcribed = true; } catch (e) { console.error("transcribeCall failed:", e); }
+    ctx.waitUntil(pushCallToOdoo(env, callId, true).catch((e) => console.error("pushCallToOdoo failed:", e)));
     return Response.json({ action: "recording", file, transcribed });
   }
 
@@ -89,7 +89,7 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
     // as this responds and see the new/linked contact's name.
     let partner: Contact | null = null;
     try { partner = await ensureCallContact(env, callId, caller); } catch (e) { console.error("ensureCallContact failed:", e); }
-    ctx.waitUntil(logCompletedCall(env, callId, caller, did, duration));
+    ctx.waitUntil(pushCallToOdoo(env, callId).catch((e) => console.error("pushCallToOdoo failed:", e)));
     return Response.json({ action: "hangup", duration, partner: partner?.name ?? null });
   }
 
@@ -405,7 +405,7 @@ async function handleGetCallNotes(request: Request, env: Env): Promise<Response>
   return Response.json({ notes: row });
 }
 
-async function handleSaveCallNotes(request: Request, env: Env): Promise<Response> {
+async function handleSaveCallNotes(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   let body: { call_id?: string; notes_html?: string; jot_svg?: string; jot_json?: string };
   try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
   const callId = (body.call_id ?? "").trim();
@@ -414,6 +414,7 @@ async function handleSaveCallNotes(request: Request, env: Env): Promise<Response
     `UPDATE call_log SET notes_html=?1, jot_svg=?2, jot_json=?3, write_date=?4 WHERE call_id=?5`
   ).bind(body.notes_html ?? "", body.jot_svg ?? "", body.jot_json ?? "", Date.now(), callId).run();
   if (!result.meta.changes) return Response.json({ error: "call not found" }, { status: 404 });
+  ctx.waitUntil(pushCallToOdoo(env, callId).catch((e) => console.error("pushCallToOdoo failed:", e)));
   return Response.json({ ok: true });
 }
 
@@ -436,10 +437,12 @@ async function handleGetTranscript(request: Request, env: Env): Promise<Response
 
 // (Re)run Whisper on a call's recording, e.g. one recorded before
 // transcription existed or whose automatic run failed.
-async function handleTranscribe(request: Request, env: Env): Promise<Response> {
+async function handleTranscribe(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const callId = new URL(request.url).searchParams.get("call_id") ?? "";
   try {
-    return Response.json({ transcript: await transcribeCall(env, callId) });
+    const transcript = await transcribeCall(env, callId);
+    ctx.waitUntil(pushCallToOdoo(env, callId).catch((e) => console.error("pushCallToOdoo failed:", e)));
+    return Response.json({ transcript });
   } catch (e) {
     return Response.json({ error: String((e as Error).message || e) }, { status: 502 });
   }
@@ -608,6 +611,13 @@ async function handleSync(env: Env): Promise<Response> {
   }
 }
 
+// Backfill: push logged calls that aren't in Odoo's voip.call yet, a batch
+// at a time (recordings make each one a few MB). Call again until remaining=0.
+async function handlePushCalls(request: Request, env: Env): Promise<Response> {
+  const limit = Math.min(parseInt(new URL(request.url).searchParams.get("limit") ?? "10") || 10, 50);
+  return Response.json(await pushCallHistory(env, limit));
+}
+
 // Read all app settings (key-value) from D1.
 async function handleGetSettings(env: Env): Promise<Response> {
   const rows = await env.DB.prepare("SELECT key, value FROM settings")
@@ -728,6 +738,7 @@ export default {
     else if (request.method === "POST" && url.pathname === "/answer") response = await handleAnswer(request, env);
     else if (request.method === "POST" && url.pathname === "/hangup-call") response = await handleHangupCall(request, env);
     else if (request.method === "POST" && url.pathname === "/sync") response = await handleSync(env);
+    else if (request.method === "POST" && url.pathname === "/odoo/push-calls") response = await handlePushCalls(request, env);
     else if (request.method === "POST" && url.pathname === "/push/register") response = await handlePushRegister(request, env);
     else if ((request.method === "POST" || request.method === "GET") && url.pathname === "/push/wake") response = await handlePushWake(request, env);
     else if (request.method === "GET" && url.pathname === "/settings") response = await handleGetSettings(env);
@@ -738,11 +749,11 @@ export default {
     else if (request.method === "POST" && url.pathname === "/call-history/resolve-names") response = await handleResolveHistoryNames(env);
     else if (request.method === "POST" && url.pathname === "/call-history/create-missing-contacts") response = await handleCreateMissingContacts(env);
     else if (request.method === "GET" && url.pathname === "/call-notes") response = await handleGetCallNotes(request, env);
-    else if (request.method === "POST" && url.pathname === "/call-notes") response = await handleSaveCallNotes(request, env);
+    else if (request.method === "POST" && url.pathname === "/call-notes") response = await handleSaveCallNotes(request, env, ctx);
     else if (request.method === "GET" && url.pathname === "/recording") response = await handleGetRecording(request, env);
     else if (request.method === "POST" && url.pathname === "/jot-to-text") response = await handleJotToText(request, env);
     else if (request.method === "GET" && url.pathname === "/transcript") response = await handleGetTranscript(request, env);
-    else if (request.method === "POST" && url.pathname === "/transcribe") response = await handleTranscribe(request, env);
+    else if (request.method === "POST" && url.pathname === "/transcribe") response = await handleTranscribe(request, env, ctx);
     else if (request.method === "GET" && url.pathname === "/voicemail") response = await handleGetVoicemail(env);
     else if (request.method === "POST" && url.pathname === "/voicemail") response = await handleSetVoicemail(request, env);
     else if (request.method === "GET" && url.pathname === "/voicemail/sync") response = await handleVoicemailSync(env);
