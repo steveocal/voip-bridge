@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="staff_location.StaffMap">
+        <div class="o_action d-flex flex-column h-100">
+            <div class="d-flex flex-wrap align-items-center gap-2 p-2 border-bottom">
+                <button class="btn btn-secondary btn-sm" t-on-click="() => this.shiftDay(-1)">‹</button>
+                <input type="date" class="form-control form-control-sm w-auto" t-att-value="state.day" t-on-change="onDay"/>
+                <button class="btn btn-secondary btn-sm" t-on-click="() => this.shiftDay(1)">›</button>
+                <select class="form-select form-select-sm w-auto" t-on-change="onEmployee">
+                    <option value="">All staff</option>
+                    <t t-foreach="state.employees" t-as="e" t-key="e.id">
+                        <option t-att-value="e.id" t-att-selected="state.employeeId == e.id" t-esc="e.name"/>
+                    </t>
+                </select>
+                <span class="text-muted small ms-2">
+                    <t t-if="state.pickedIds">Selected stops · </t>
+                    <t t-esc="state.stays.length"/> stops ·
+                    <t t-esc="state.stays.filter((s) => s.is_meeting).length"/> meetings
+                </span>
+            </div>
+            <div t-ref="map" class="flex-grow-1" style="min-height: 400px;"/>
+        </div>
+    </t>
+</templates>

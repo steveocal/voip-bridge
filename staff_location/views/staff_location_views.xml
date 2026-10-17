@@ -1,0 +1,115 @@
+<?xml version="1.0"?>
+<odoo>
+    <record id="staff_location_stay_list" model="ir.ui.view">
+        <field name="name">staff.location.stay.list</field>
+        <field name="model">staff.location.stay</field>
+        <field name="arch" type="xml">
+            <list string="Stops" create="false">
+                <header>
+                    <button name="action_open_map" type="object" string="Show on Map"/>
+                </header>
+                <field name="arrived_at"/>
+                <field name="last_seen"/>
+                <field name="duration" sum="Total"/>
+                <field name="employee_id"/>
+                <field name="partner_id"/>
+                <field name="partner_distance" optional="hide"/>
+                <field name="is_meeting"/>
+                <field name="fix_count" optional="hide"/>
+                <field name="latitude" optional="hide"/>
+                <field name="longitude" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="staff_location_stay_form" model="ir.ui.view">
+        <field name="name">staff.location.stay.form</field>
+        <field name="model">staff.location.stay</field>
+        <field name="arch" type="xml">
+            <form string="Stop" create="false">
+                <header>
+                    <button name="action_open_map" type="object" string="Show on Map"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="employee_id"/>
+                            <field name="arrived_at"/>
+                            <field name="last_seen"/>
+                            <field name="duration"/>
+                            <field name="fix_count"/>
+                        </group>
+                        <group>
+                            <field name="partner_id"/>
+                            <field name="partner_distance"/>
+                            <field name="is_meeting"/>
+                            <field name="event_id"/>
+                            <field name="latitude"/>
+                            <field name="longitude"/>
+                            <field name="accuracy"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="staff_location_stay_pivot" model="ir.ui.view">
+        <field name="name">staff.location.stay.pivot</field>
+        <field name="model">staff.location.stay</field>
+        <field name="arch" type="xml">
+            <pivot string="Customer Meetings">
+                <field name="arrived_at" interval="week" type="row"/>
+                <field name="employee_id" type="col"/>
+                <field name="duration" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="staff_location_stay_search" model="ir.ui.view">
+        <field name="name">staff.location.stay.search</field>
+        <field name="model">staff.location.stay</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="employee_id"/>
+                <field name="partner_id"/>
+                <filter name="meetings" string="Customer Meetings" domain="[('is_meeting', '=', True)]"/>
+                <filter name="at_contact" string="At a Contact" domain="[('partner_id', '!=', False)]"/>
+                <separator/>
+                <filter name="today" string="Today" domain="[('arrived_at', '&gt;=', (context_today()).strftime('%Y-%m-%d'))]"/>
+                <filter name="arrived_at" string="Arrived" date="arrived_at"/>
+                <group expand="0" string="Group By">
+                    <filter name="group_week" string="Week" context="{'group_by': 'arrived_at:week'}"/>
+                    <filter name="group_day" string="Day" context="{'group_by': 'arrived_at:day'}"/>
+                    <filter name="group_employee" string="Employee" context="{'group_by': 'employee_id'}"/>
+                    <filter name="group_partner" string="Contact" context="{'group_by': 'partner_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_staff_location_stays" model="ir.actions.act_window">
+        <field name="name">Stops</field>
+        <field name="res_model">staff.location.stay</field>
+        <field name="view_mode">list,form,pivot</field>
+        <field name="context">{'search_default_group_day': 1}</field>
+    </record>
+
+    <record id="action_staff_customer_meetings" model="ir.actions.act_window">
+        <field name="name">Customer Meetings</field>
+        <field name="res_model">staff.location.stay</field>
+        <field name="view_mode">list,pivot,form</field>
+        <field name="domain">[('is_meeting', '=', True)]</field>
+        <field name="context">{'search_default_group_week': 1}</field>
+    </record>
+
+    <record id="action_staff_map" model="ir.actions.client">
+        <field name="name">Staff Map</field>
+        <field name="tag">staff_location.map</field>
+    </record>
+
+    <menuitem id="menu_staff_location_root" name="Locations" parent="hr.menu_hr_root" sequence="85"/>
+    <menuitem id="menu_staff_map" name="Map" parent="menu_staff_location_root" action="action_staff_map" sequence="1"/>
+    <menuitem id="menu_staff_stays" name="Stops" parent="menu_staff_location_root" action="action_staff_location_stays" sequence="2"/>
+    <menuitem id="menu_staff_meetings" name="Customer Meetings" parent="menu_staff_location_root" action="action_staff_customer_meetings" sequence="3"/>
+</odoo>
