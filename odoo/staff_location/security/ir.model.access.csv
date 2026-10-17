@@ -1,0 +1,3 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_staff_location_stay_user,staff.location.stay user,model_staff_location_stay,base.group_user,1,1,1,0
+access_staff_location_stay_manager,staff.location.stay manager,model_staff_location_stay,base.group_system,1,1,1,1

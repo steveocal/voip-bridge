@@ -82,5 +82,6 @@ export interface Env {
   GOOGLE_REFRESH_TOKEN: string;
   FCM_SERVICE_ACCOUNT: string; // Firebase service-account JSON (secret)
   PUSH_SECRET: string; // shared secret Asterisk sends to /push/wake (secret)
+  STAFF_TOKEN_SECRET: string; // signs staff location-tracking tokens (secret, src/staff.ts)
   AI: { run(model: string, inputs: Record<string, unknown>): Promise<unknown> }; // Workers AI binding
 }

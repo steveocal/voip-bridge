@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<!-- Tunables (Settings > Technical > System Parameters). -->
+<odoo noupdate="1">
+    <record id="param_same_place_m" model="ir.config_parameter">
+        <field name="key">staff_location.same_place_m</field>
+        <field name="value">20</field>
+    </record>
+    <record id="param_match_radius_m" model="ir.config_parameter">
+        <field name="key">staff_location.match_radius_m</field>
+        <field name="value">150</field>
+    </record>
+    <record id="param_meeting_min" model="ir.config_parameter">
+        <field name="key">staff_location.meeting_min</field>
+        <field name="value">20</field>
+    </record>
+    <record id="param_max_gap_min" model="ir.config_parameter">
+        <field name="key">staff_location.max_gap_min</field>
+        <field name="value">120</field>
+    </record>
+</odoo>

@@ -90,7 +90,7 @@ function executeKwRequest(
 
 function xmlrpcValue(v: unknown): string {
   if (typeof v === "string") return `<value><string>${escapeXml(v)}</string></value>`;
-  if (typeof v === "number") return `<value><int>${v}</int></value>`;
+  if (typeof v === "number") return Number.isInteger(v) ? `<value><int>${v}</int></value>` : `<value><double>${v}</double></value>`;
   if (typeof v === "boolean") return `<value><boolean>${v ? 1 : 0}</boolean></value>`;
   if (Array.isArray(v)) return `<value><array><data>${v.map(xmlrpcValue).join("")}</data></array></value>`;
   if (v === null || v === undefined) return "<value><nil/></value>";

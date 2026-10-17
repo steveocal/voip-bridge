@@ -39,6 +39,9 @@ dependencies {
     // Direct dependency: CallMessagingService extends FirebaseMessagingService,
     // and the push plugin doesn't expose it to this module.
     implementation "com.google.firebase:firebase-messaging:24.1.2"
+    // Staff location tracking
+    implementation "androidx.work:work-runtime:2.10.5"
+    implementation "com.google.android.gms:play-services-location:21.3.0"
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

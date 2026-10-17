@@ -106,3 +106,10 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_contact ON messages(contact_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_odoo ON messages(odoo_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_gmail ON messages(gmail_id);
+
+-- ── Staff sign-in lockout (see migrations/0010_staff_login.sql) ──
+CREATE TABLE IF NOT EXISTS staff_login_failures (
+  employee_id INTEGER NOT NULL,
+  at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_staff_login_failures ON staff_login_failures(employee_id, at);

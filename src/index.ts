@@ -10,6 +10,7 @@ import { handleGetVoicemail, handleSetVoicemail, handleCreateGreeting, handleRen
 import type { Contact, Message } from "./odoo";
 import { jotToText } from "./jottext";
 import { groupCallLegs } from "./calllegs";
+import { handleStaffEmployees, handleStaffLogin, handleStaffLocation } from "./staff";
 
 // Durable Object class must be exported from the entrypoint module.
 export { CallState } from "./callstate";
@@ -726,6 +727,9 @@ export default {
     else if (request.method === "POST" && url.pathname === "/hangup-call") response = await handleHangupCall(request, env);
     else if (request.method === "POST" && url.pathname === "/sync") response = await handleSync(env);
     else if (request.method === "POST" && url.pathname === "/odoo/push-calls") response = await handlePushCalls(request, env);
+    else if (request.method === "GET" && url.pathname === "/staff/employees") response = await handleStaffEmployees(env);
+    else if (request.method === "POST" && url.pathname === "/staff/login") response = await handleStaffLogin(request, env);
+    else if (request.method === "POST" && url.pathname === "/staff/location") response = await handleStaffLocation(request, env);
     else if (request.method === "POST" && url.pathname === "/push/register") response = await handlePushRegister(request, env);
     else if ((request.method === "POST" || request.method === "GET") && url.pathname === "/push/wake") response = await handlePushWake(request, env);
     else if (request.method === "GET" && url.pathname === "/settings") response = await handleGetSettings(env);

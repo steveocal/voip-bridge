@@ -14,6 +14,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        registerPlugin(StaffLocationPlugin.class);
         super.onCreate(savedInstanceState);
         markAnswerRequested(getIntent());
     }
