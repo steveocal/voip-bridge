@@ -51,7 +51,8 @@ CREATE TABLE IF NOT EXISTS call_log (
   jot_json TEXT,                         -- local-only: jot sketch, Excalidraw scene (elements+appState, re-editable)
   recording TEXT,                        -- local-only: Asterisk stored-recording name (see migrations/0006_call_recording.sql)
   transcript TEXT,                       -- local-only: Whisper transcript, one "[m:ss] text" line per segment (NULL = not transcribed)
-  voicemail INTEGER NOT NULL DEFAULT 0   -- local-only: 1 = went to voicemail; the message is in recording (see migrations/0008_voicemail.sql)
+  voicemail INTEGER NOT NULL DEFAULT 0,  -- local-only: 1 = went to voicemail; the message is in recording (see migrations/0008_voicemail.sql)
+  odoo_synced_at INTEGER                 -- local-only: when pushCallToOdoo last sent this leg's call (see migrations/0009_odoo_push.sql)
 );
 CREATE INDEX IF NOT EXISTS idx_call_log_phone ON call_log(phone_number);
 CREATE INDEX IF NOT EXISTS idx_call_log_start ON call_log(start_date);

@@ -9,6 +9,7 @@ import { handlePushRegister, handlePushWake } from "./push";
 import { handleGetVoicemail, handleSetVoicemail, handleCreateGreeting, handleRenameGreeting, handleDeleteGreeting, handleGreetingAudio, handleVoicemailSync, handleVoicemailSynced } from "./voicemail";
 import type { Contact, Message } from "./odoo";
 import { jotToText } from "./jottext";
+import { groupCallLegs } from "./calllegs";
 
 // Durable Object class must be exported from the entrypoint module.
 export { CallState } from "./callstate";
@@ -180,33 +181,12 @@ const CALL_HISTORY_SELECT = `SELECT c.id, c.call_id, c.phone_number, c.did, c.di
    FROM call_log c
    LEFT JOIN contacts p ON p.id = c.partner_id`;
 
-// One inbound call lands in call_log several times: Asterisk's AGI logs the
-// trunk leg (call_id "<epoch>.<seq>", did set, owns the recording), then
-// every softphone that rang logs its own leg (SIP Call-ID, no did) a few
-// seconds later. Fold those into one row: notes live on the answered leg,
-// so that leg's call_id stays primary and rec_call_id points at the leg
-// holding the recording/transcript. Outgoing calls are only logged once.
+// Fold each call's legs (see calllegs.ts) into one row: notes live on the
+// answered leg, so that leg's call_id stays primary and rec_call_id points at
+// the leg holding the recording/transcript.
 type CallRow = Record<string, unknown>;
-const LEG_SLACK_MS = 3000;
 function mergeCallLegs(rows: CallRow[]): CallRow[] {
-  type Group = { rows: CallRow[]; key: string; end: number; trunk: boolean };
-  const groups: Group[] = [];
-  const latest = new Map<string, Group>();
-  for (const r of [...rows].reverse()) {
-    const start = Number(r.start_date) || 0;
-    const end = Math.max(Number(r.end_date) || 0, start);
-    const trunk = !!r.did;
-    const key = digitsOf(String(r.phone_number || "")).slice(-9);
-    const g = r.direction === "incoming" && key ? latest.get(key) : undefined;
-    if (g && start <= g.end + LEG_SLACK_MS && !(trunk && g.trunk)) {
-      g.rows.push(r); g.end = Math.max(g.end, end); g.trunk = g.trunk || trunk;
-      continue;
-    }
-    const ng: Group = { rows: [r], key, end, trunk };
-    groups.push(ng);
-    if (r.direction === "incoming" && key) latest.set(key, ng);
-  }
-  return groups.reverse().map(({ rows: legs }) => {
+  return groupCallLegs(rows).map((legs) => {
     if (legs.length === 1) return legs[0];
     const trunkLeg = legs.find(l => l.did);
     const answered = legs.find(l => !l.did && (l.state === "terminated" || l.state === "ongoing"));
@@ -613,8 +593,15 @@ async function handleSync(env: Env): Promise<Response> {
 
 // Backfill: push logged calls that aren't in Odoo's voip.call yet, a batch
 // at a time (recordings make each one a few MB). Call again until remaining=0.
+// ?call_id=… (re)pushes just that call.
 async function handlePushCalls(request: Request, env: Env): Promise<Response> {
-  const limit = Math.min(parseInt(new URL(request.url).searchParams.get("limit") ?? "10") || 10, 50);
+  const params = new URL(request.url).searchParams;
+  const callId = params.get("call_id");
+  if (callId) {
+    try { return Response.json({ odoo_id: await pushCallToOdoo(env, callId, true) }); }
+    catch (e) { return Response.json({ error: String((e as Error).message || e) }, { status: 502 }); }
+  }
+  const limit = Math.min(parseInt(params.get("limit") ?? "10") || 10, 50);
   return Response.json(await pushCallHistory(env, limit));
 }
 

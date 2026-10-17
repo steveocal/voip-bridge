@@ -1,5 +1,6 @@
 import type { Env, D1PreparedStatement } from "./types";
 import { ariRecordingFile } from "./asterisk";
+import { groupCallLegs } from "./calllegs";
 
 // ── Odoo XML-RPC client (hand-rolled, no library) ────────────
 
@@ -451,8 +452,11 @@ export async function syncCallLog(env: Env, limit = 100): Promise<number> {
   const uid = await odooAuth(env);
   if (!uid) return 0;
   const fields = ["id", "phone_number", "direction", "state", "partner_id", "user_id", "start_date", "end_date", "create_date", "write_date"];
+  // Calls the worker pushed itself (bridge_call_id set) are already in
+  // call_log as their Asterisk legs.
+  const domain = await hasBridgeModule(env, uid) ? [["bridge_call_id", "=", false]] : [];
   const r = await odooCall(env, uid, "voip.call", "search_read",
-    [[]], { fields, limit, order: "create_date desc" });
+    [domain], { fields, limit, order: "create_date desc" });
   const calls = ((r.parsed ?? []) as unknown as Array<Record<string, unknown>>);
   const statements: D1PreparedStatement[] = [];
   for (const c of calls) {
@@ -508,50 +512,80 @@ async function hasBridgeModule(env: Env, uid: number): Promise<boolean> {
   return !!(r.parsed && typeof r.parsed === "object" && "bridge_call_id" in (r.parsed as object));
 }
 
-/** Create or update the voip.call for one logged call. `withRecording`
- *  uploads the audio too (only worth it once the recording event has come). */
-export async function pushCallToOdoo(env: Env, callId: string, withRecording = false): Promise<number | null> {
+// Legs of a call are logged within seconds of each other, so an hour either
+// side is plenty to find them all.
+const LEG_WINDOW_MS = 60 * 60 * 1000;
+
+/** call_id's row plus the other legs of the same call (see calllegs.ts). */
+async function callLegs(env: Env, callId: string): Promise<CallRow[]> {
   const row = await env.DB.prepare("SELECT * FROM call_log WHERE call_id = ?1").bind(callId).first<CallRow>();
-  if (!row?.call_id || !row.phone_number) return null;
+  if (!row?.call_id || !row.phone_number) return [];
+  if (row.direction === "outgoing") return [row];
+  const key = phoneKey(row.phone_number);
+  if (!key) return [row];
+  const start = row.start_date ?? 0;
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM call_log WHERE call_id IS NOT NULL AND direction = 'incoming'
+       AND start_date BETWEEN ?1 AND ?2 ORDER BY start_date DESC`
+  ).bind(start - LEG_WINDOW_MS, start + LEG_WINDOW_MS).all<CallRow>();
+  const near = (results ?? []).filter(r => phoneKey(r.phone_number ?? "") === key);
+  return groupCallLegs(near).find(g => g.some(l => l.call_id === callId)) ?? [row];
+}
+
+/** Create or update the voip.call for one logged call (all its legs as one
+ *  record). `withRecording` uploads the audio too, which is only worth it
+ *  once the recording event has come. */
+export async function pushCallToOdoo(env: Env, callId: string, withRecording = false): Promise<number | null> {
+  const legs = await callLegs(env, callId);
+  if (!legs.length) return null;
   const uid = await odooAuth(env);
   if (!uid) return null;
   const bridge = await hasBridgeModule(env, uid);
 
+  // Same choice of leg per field as mergeCallLegs in index.ts.
+  const first = legs[0];  // oldest leg: its call_id identifies the call in Odoo
+  const trunk = legs.find(l => l.did);
+  const answered = legs.find(l => !l.did && (l.state === "terminated" || l.state === "ongoing"));
+  const outcome = answered ?? trunk ?? first;
+  const noted = legs.find(l => l.notes_html);
+  const rec = legs.find(l => l.recording) ?? legs.find(l => l.transcript);
+
   const vals: Record<string, unknown> = {
-    phone_number: row.phone_number,
-    direction: row.direction === "outgoing" ? "outgoing" : "incoming",
-    state: row.state || "calling",
-    start_date: odooDatetime(row.start_date),
-    end_date: odooDatetime(row.end_date),
-    partner_id: row.partner_id || false,
+    phone_number: first.phone_number,
+    direction: first.direction === "outgoing" ? "outgoing" : "incoming",
+    state: outcome.state || "calling",
+    start_date: odooDatetime(Math.min(...legs.map(l => l.start_date || Infinity))),
+    end_date: odooDatetime(outcome.end_date),
+    partner_id: legs.find(l => l.partner_id)?.partner_id || false,
   };
   if (bridge) {
     Object.assign(vals, {
-      bridge_call_id: row.call_id,
-      bridge_did: row.did || false,
-      voicemail: !!row.voicemail,
-      notes: row.notes_html || false,
-      transcript: row.transcript || false,
+      bridge_call_id: first.call_id,
+      bridge_did: trunk?.did || first.did || false,
+      voicemail: legs.some(l => l.voicemail),
+      notes: noted?.notes_html || false,
+      transcript: rec?.transcript || false,
     });
-    if (withRecording && row.recording) {
-      const res = await ariRecordingFile(env, row.recording);
+    if (withRecording && rec?.recording) {
+      const res = await ariRecordingFile(env, rec.recording);
       if (res.ok) {
         const audio = new Uint8Array(await res.arrayBuffer());
         if (audio.length <= MAX_RECORDING_BYTES) {
           vals.recording = toBase64(audio);
-          vals.recording_filename = `${row.recording}.wav`;
+          vals.recording_filename = `${rec.recording}.wav`;
         } else {
-          console.error(`pushCallToOdoo: recording ${row.recording} is ${audio.length} bytes, not uploaded`);
+          console.error(`pushCallToOdoo: recording ${rec.recording} is ${audio.length} bytes, not uploaded`);
         }
       }
     }
   }
 
-  let odooId = row.odoo_id;
+  // odoo_id is unique in call_log, so only the oldest leg holds it.
+  let odooId = legs.find(l => l.odoo_id)?.odoo_id ?? null;
   // Two events (hangup, recording) can both get here before either has
   // stored odoo_id, so look the call up by its Asterisk id before creating.
   if (!odooId && bridge) {
-    const found = await odooCall(env, uid, "voip.call", "search", [[["bridge_call_id", "=", row.call_id]]], { limit: 1 });
+    const found = await odooCall(env, uid, "voip.call", "search", [[["bridge_call_id", "=", first.call_id]]], { limit: 1 });
     odooId = (found.parsed as number[] | null)?.[0] ?? null;
   }
   if (odooId) {
@@ -562,30 +596,38 @@ export async function pushCallToOdoo(env: Env, callId: string, withRecording = f
     if (r.fault || typeof r.parsed !== "number") throw new Error(`voip.call create failed: ${r.fault ?? r._xml}`);
     odooId = r.parsed;
   }
-  if (odooId !== row.odoo_id) {
+  const now = Date.now();
+  await env.DB.batch([
     // syncCallLog may already have pulled the new voip.call in as its own
     // row; drop that copy so odoo_id stays unique.
-    await env.DB.batch([
-      env.DB.prepare("DELETE FROM call_log WHERE odoo_id = ?1 AND call_id IS NULL").bind(odooId),
-      env.DB.prepare("UPDATE call_log SET odoo_id = ?1 WHERE call_id = ?2").bind(odooId, row.call_id),
-    ]);
-  }
+    env.DB.prepare("DELETE FROM call_log WHERE odoo_id = ?1 AND call_id IS NULL").bind(odooId),
+    env.DB.prepare("UPDATE call_log SET odoo_id = NULL WHERE odoo_id = ?1 AND call_id != ?2").bind(odooId, first.call_id),
+    env.DB.prepare("UPDATE call_log SET odoo_id = ?1 WHERE call_id = ?2").bind(odooId, first.call_id),
+    ...legs.map(l => env.DB.prepare("UPDATE call_log SET odoo_synced_at = ?1 WHERE call_id = ?2").bind(now, l.call_id)),
+  ]);
   return odooId;
 }
 
+// Rows the backfill still has to send. test-… rows are the seeded demo calls.
+const UNSENT = "call_id IS NOT NULL AND odoo_synced_at IS NULL AND phone_number IS NOT NULL AND call_id NOT LIKE 'test-%'";
+
 /** Push logged calls not yet in Odoo (oldest first), recordings included. */
 export async function pushCallHistory(env: Env, limit = 20): Promise<{ pushed: number; failed: number; remaining: number }> {
-  const { results } = await env.DB.prepare(
-    "SELECT call_id FROM call_log WHERE call_id IS NOT NULL AND odoo_id IS NULL AND phone_number IS NOT NULL ORDER BY start_date LIMIT ?1"
-  ).bind(limit).all<{ call_id: string }>();
   let pushed = 0, failed = 0;
-  for (const { call_id } of results ?? []) {
-    try { if (await pushCallToOdoo(env, call_id, true)) pushed++; else failed++; }
-    catch (e) { failed++; console.error(`pushCallHistory ${call_id}:`, e); }
+  // Pushing a call marks all its legs, so pick the next unsent row each time
+  // rather than a list up front (that would push multi-leg calls twice).
+  const tried = new Set<string>();
+  while (pushed + failed < limit) {
+    const next = await env.DB.prepare(
+      `SELECT call_id FROM call_log WHERE ${UNSENT} ORDER BY start_date LIMIT ?1`
+    ).bind(tried.size + 1).all<{ call_id: string }>();
+    const callId = (next.results ?? []).map(r => r.call_id).find(id => !tried.has(id));
+    if (!callId) break;
+    tried.add(callId);
+    try { if (await pushCallToOdoo(env, callId, true)) pushed++; else failed++; }
+    catch (e) { failed++; console.error(`pushCallHistory ${callId}:`, e); }
   }
-  const left = await env.DB.prepare(
-    "SELECT COUNT(*) AS n FROM call_log WHERE call_id IS NOT NULL AND odoo_id IS NULL AND phone_number IS NOT NULL"
-  ).first<{ n: number }>();
+  const left = await env.DB.prepare(`SELECT COUNT(*) AS n FROM call_log WHERE ${UNSENT}`).first<{ n: number }>();
   return { pushed, failed, remaining: left?.n ?? 0 };
 }
 
