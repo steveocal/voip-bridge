@@ -128,7 +128,9 @@ class StaffLocationStay(models.Model):
                 "stop": stay.last_seen,
                 "user_id": employee.user_id.id or self.env.user.id,
                 "partner_ids": [Command.set(attendees.ids)],
-                "location": partner._display_address(without_company=True).replace("\n", ", "),
+                "location": ", ".join(filter(None, (
+                    (partner.street or "").strip(), (partner.street2 or "").strip(),
+                    (partner.city or "").strip(), (partner.zip or "").strip()))),
                 "description": Markup("<p>%s</p>") % _(
                     "Logged from %(employee)s's phone location.", employee=employee.name),
             })

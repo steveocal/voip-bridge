@@ -1,6 +1,6 @@
 {
     "name": "Staff Locations & Customer Visits",
-    "version": "18.0.1.0.0",
+    "version": "18.0.1.0.1",
     "category": "Human Resources",
     "summary": "Staff phone locations as stops, matched to contacts; customer meetings report and map",
     "description": """
