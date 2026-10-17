@@ -493,18 +493,61 @@ interface CallRow {
   transcript: string | null; recording: string | null; voicemail: number;
 }
 
-// Recordings are ~1 MB a minute (8 kHz 16-bit WAV); past this the base64 copy
-// in the XML-RPC body gets too close to the Worker's 128 MB memory limit.
-const MAX_RECORDING_BYTES = 15 * 1024 * 1024;
+// Recordings are ~1 MB a minute (8 kHz 16-bit WAV). uploadRecording streams
+// them from Asterisk to Odoo, so size only matters to Odoo's own upload limit.
+const MAX_RECORDING_BYTES = 200 * 1024 * 1024;
 
 function odooDatetime(ms: number | null): string | false {
   return ms ? new Date(ms).toISOString().slice(0, 19).replace("T", " ") : false;
 }
 
+// Multiple of 3 bytes, so each chunk's base64 has no padding and the chunks
+// concatenate into one valid base64 string.
+const B64_CHUNK = 3 * 0x4000;
+
 function toBase64(bytes: Uint8Array): string {
   let bin = "";
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(bin);
+}
+
+/** voip.call.write of the recording, streamed straight from Asterisk's
+ *  response (`size` bytes) into the XML-RPC body as base64. Building the body
+ *  as one string ran a 12-minute call out of Worker memory, and even holding
+ *  the raw audio failed at 23 MB. */
+async function uploadRecording(env: Env, uid: number, odooId: number, audio: ReadableStream<Uint8Array>, size: number, filename: string): Promise<void> {
+  const MARK = "@@RECORDING@@";
+  const body = executeKwRequest(env.ODOO_DB, String(uid), env.ODOO_PASS, "voip.call", "write",
+    [[odooId], { recording: MARK, recording_filename: filename }]);
+  const enc = new TextEncoder();
+  const [head, tail] = body.split(MARK).map(part => enc.encode(part));
+  const b64Len = Math.ceil(size / 3) * 4;
+  const stream = new FixedLengthStream(head.length + b64Len + tail.length);
+  const writer = stream.writable.getWriter();
+  const write = (async () => {
+    await writer.write(head);
+    // Encode whole multiples of 3 bytes as they arrive; carry the rest over.
+    let carry = new Uint8Array(0);
+    const reader = audio.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const buf = new Uint8Array(carry.length + value.length);
+      buf.set(carry); buf.set(value, carry.length);
+      const whole = buf.length - (buf.length % 3);
+      for (let i = 0; i < whole; i += B64_CHUNK) await writer.write(enc.encode(toBase64(buf.subarray(i, Math.min(i + B64_CHUNK, whole)))));
+      carry = buf.slice(whole);
+    }
+    if (carry.length) await writer.write(enc.encode(toBase64(carry)));
+    await writer.write(tail);
+    await writer.close();
+  })();
+  const [res] = await Promise.all([
+    fetch(`${env.ODOO_URL}/xmlrpc/2/object`, { method: "POST", headers: { "Content-Type": "text/xml" }, body: stream.readable }),
+    write,
+  ]);
+  const text = await res.text();
+  try { parseXmlrpcResponse(text); } catch (e) { throw new Error(`recording upload failed: ${e}`); }
 }
 
 async function hasBridgeModule(env: Env, uid: number): Promise<boolean> {
@@ -519,8 +562,8 @@ const LEG_WINDOW_MS = 60 * 60 * 1000;
 /** call_id's row plus the other legs of the same call (see calllegs.ts). */
 async function callLegs(env: Env, callId: string): Promise<CallRow[]> {
   const row = await env.DB.prepare("SELECT * FROM call_log WHERE call_id = ?1").bind(callId).first<CallRow>();
-  if (!row?.call_id || !row.phone_number) return [];
-  if (row.direction === "outgoing") return [row];
+  if (!row?.call_id) return [];
+  if (row.direction === "outgoing" || !row.phone_number) return [row];
   const key = phoneKey(row.phone_number);
   if (!key) return [row];
   const start = row.start_date ?? 0;
@@ -551,7 +594,8 @@ export async function pushCallToOdoo(env: Env, callId: string, withRecording = f
   const rec = legs.find(l => l.recording) ?? legs.find(l => l.transcript);
 
   const vals: Record<string, unknown> = {
-    phone_number: first.phone_number,
+    // voip.call requires a number; a blank one is a withheld caller ID.
+    phone_number: first.phone_number || "Withheld",
     direction: first.direction === "outgoing" ? "outgoing" : "incoming",
     state: outcome.state || "calling",
     start_date: odooDatetime(Math.min(...legs.map(l => l.start_date || Infinity))),
@@ -566,18 +610,6 @@ export async function pushCallToOdoo(env: Env, callId: string, withRecording = f
       notes: noted?.notes_html || false,
       transcript: rec?.transcript || false,
     });
-    if (withRecording && rec?.recording) {
-      const res = await ariRecordingFile(env, rec.recording);
-      if (res.ok) {
-        const audio = new Uint8Array(await res.arrayBuffer());
-        if (audio.length <= MAX_RECORDING_BYTES) {
-          vals.recording = toBase64(audio);
-          vals.recording_filename = `${rec.recording}.wav`;
-        } else {
-          console.error(`pushCallToOdoo: recording ${rec.recording} is ${audio.length} bytes, not uploaded`);
-        }
-      }
-    }
   }
 
   // odoo_id is unique in call_log, so only the oldest leg holds it.
@@ -595,6 +627,14 @@ export async function pushCallToOdoo(env: Env, callId: string, withRecording = f
     const r = await odooCall(env, uid, "voip.call", "create", [vals]);
     if (r.fault || typeof r.parsed !== "number") throw new Error(`voip.call create failed: ${r.fault ?? r._xml}`);
     odooId = r.parsed;
+  }
+  if (bridge && withRecording && rec?.recording) {
+    const res = await ariRecordingFile(env, rec.recording);
+    const size = Number(res.headers.get("Content-Length")) || 0;
+    if (!res.ok) console.error(`pushCallToOdoo: recording ${rec.recording}: Asterisk returned ${res.status}`);
+    else if (size > MAX_RECORDING_BYTES) { console.error(`pushCallToOdoo: recording ${rec.recording} is ${size} bytes, not uploaded`); await res.body?.cancel(); }
+    else if (!size || !res.body) console.error(`pushCallToOdoo: recording ${rec.recording}: no Content-Length`);
+    else await uploadRecording(env, uid, odooId, res.body, size, `${rec.recording}.wav`);
   }
   const now = Date.now();
   await env.DB.batch([

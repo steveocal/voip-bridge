@@ -2,6 +2,13 @@
 // These are always available in the Workers runtime as ambient globals.
 // Declared here for TypeScript checking without @cloudflare/workers-types.
 
+declare global {
+  /** A stream with a known total length, so fetch sends Content-Length. */
+  class FixedLengthStream extends TransformStream<Uint8Array, Uint8Array> {
+    constructor(expectedLength: number | bigint);
+  }
+}
+
 declare class DurableObjectState {
   readonly id: DurableObjectId;
   storage: DurableObjectStorage;
