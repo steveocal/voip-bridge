@@ -181,6 +181,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .acc-new{background:#2c2c2c;color:#ececec}
 .switch-row{display:flex;align-items:center;justify-content:space-between;padding:4px 0;margin-bottom:16px}
 .switch-row span{font-size:15px}
+.loc-box{border-top:1px solid #333;margin:4px 0 10px;padding-top:8px}
+.loc-box .loc-title{font-size:13px;font-weight:600;margin-bottom:6px}
+.loc-box .loc-row{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+.loc-box select,.loc-box input{flex:1;min-width:0}
+.loc-box button{padding:6px 10px;border-radius:6px;border:1px solid #444;background:#2a2a2a;color:inherit;font-size:13px}
+.loc-box .loc-status{font-size:12px;color:#999;line-height:1.5}
+.loc-box .loc-warn{color:#e0a030}
 .switch{position:relative;width:48px;height:28px;flex-shrink:0}
 .switch input{opacity:0;width:0;height:0}
 .switch .track{position:absolute;inset:0;background:#444;border-radius:28px;cursor:pointer;transition:background .15s}
@@ -310,6 +317,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 .jt-btn svg{width:20px;height:20px;display:block}
 .jt-btn.jt-zoom-label{width:auto;padding:0 8px;font-size:12px}
 .jt-wordinfo{margin-left:auto;font-size:11px;color:#888;white-space:nowrap;font-variant-numeric:tabular-nums}
+.jt-convinfo{font-size:11px;color:#34d399;white-space:nowrap}
 .jt-sep{width:1px;align-self:stretch;background:#2c2c2c;margin:2px 4px}
 .jt-text{width:100%;border-radius:10px;background:#1e1e1e;border:1px solid #2c2c2c;padding:14px 16px;overflow-y:auto;white-space:pre-wrap;font-size:16px;line-height:1.55;color:#e9ecef;box-sizing:border-box}
 .jt-text.hidden,.jt-canvas-wrap.hidden{display:none}
@@ -501,7 +509,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       <table class="ptable" id="params-table"></table>
       <div class="p-foot">
         <button id="params-reset-all" onclick="resetAllParams()">Reset all to defaults</button>
-        <div class="p-note">Saved automatically, on this device only. Jot values apply to Jot boxes opened afterwards.</div>
+        <div class="p-note">Saved automatically, on this device only. Jot values apply to Jot pages opened afterwards.</div>
       </div>
     </div>
 
@@ -633,6 +641,26 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       <label class="switch"><input type="checkbox" id="set-dev"><span class="track"></span></label>
     </div>
 
+    <div class="loc-box hidden" id="loc-box">
+      <div class="loc-title">📍 Location tracking</div>
+      <div id="loc-signed-out">
+        <div class="loc-row">
+          <select id="loc-employee" class="acc-select"></select>
+          <input id="loc-pin" type="password" inputmode="numeric" placeholder="PIN" autocomplete="off">
+          <button onclick="staffSignIn()">Sign in</button>
+        </div>
+      </div>
+      <div id="loc-signed-in" class="hidden">
+        <div class="loc-row"><span id="loc-name" style="flex:1"></span><button onclick="staffSignOut()">Sign out</button></div>
+        <div class="loc-row">
+          <button onclick="staffFixPermissions()">Location: always</button>
+          <button onclick="staffBattery()">Battery</button>
+          <button onclick="staffAutostart()">Autostart</button>
+        </div>
+      </div>
+      <div class="loc-status" id="loc-status"></div>
+    </div>
+
     <div class="set-field">
       <label>Quick Text — one per line: #nn **text** (e.g. #1 **Order received**)</label>
       <textarea id="set-quicktext" placeholder="#1 **Order received**&#10;#2 **Call back later**"></textarea>
@@ -684,7 +712,7 @@ function defParam(group, id, label, def, o, set) {
   PV[id] = def;
 }
 var G_CALL = "Calls & audio", G_LIST = "Lists & search", G_TIME = "Timing (typing & taps)";
-var J_INK = "Jot: ink", J_WORD = "Jot: word detection", J_LAY = "Jot: layout & splitting", J_DOT = "Jot: periods", J_GEST = "Jot: gestures", J_BOX = "Jot: boxes & zoom";
+var J_INK = "Jot: ink", J_WORD = "Jot: word detection", J_LAY = "Jot: layout & splitting", J_DOT = "Jot: periods", J_GEST = "Jot: gestures", J_BOX = "Jot: page & zoom";
 
 defParam(G_CALL, "wsKeepAliveSec", "WebSocket keep-alive", 25, { unit: "s", min: 0, max: 300, step: 5, note: "Ping the SIP server this often (0 = off); applies on next connect" });
 defParam(G_CALL, "reconnectMinMs", "Reconnect first retry", 2000, { unit: "ms", min: 500, max: 60000, step: 500, note: "Wait before the first reconnect after the connection drops; doubles on each failure" });
@@ -714,6 +742,7 @@ defParam(G_TIME, "suggestDebounceMs", "Dial T9 search delay", 60, { unit: "ms", 
 defParam(G_TIME, "historyDebounceMs", "History search delay", 250, { unit: "ms", min: 0, max: 2000, step: 10 });
 defParam(G_TIME, "contactsDebounceMs", "Contacts search delay", 250, { unit: "ms", min: 0, max: 2000, step: 10 });
 defParam(G_TIME, "doubleTapMs", "Double-tap window", 300, { unit: "ms", min: 100, max: 1000, step: 10, note: "Contacts / messages rows" });
+defParam(G_TIME, "jotAutoConvertMs", "Jot auto-convert delay", 1500, { unit: "ms", min: 0, max: 30000, step: 100, note: "Wait after the last finished word before the handwriting is read and copied into the notes" });
 defParam(G_TIME, "jotTextAutosaveMs", "Jot text edit autosave delay", 800, { unit: "ms", min: 200, max: 10000, step: 100, note: "Wait after the last keystroke before copying edited Aa text into the notes" });
 defParam(G_TIME, "contactRenameAutosaveMs", "Contact rename autosave delay", 900, { unit: "ms", min: 200, max: 10000, step: 100, note: "Wait after the last keystroke before saving the name to Odoo" });
 defParam(G_TIME, "notesAutosaveMs", "Notes autosave delay", 900, { unit: "ms", min: 200, max: 10000, step: 100, note: "Wait after the last edit before saving" });
@@ -728,6 +757,7 @@ defParam(J_INK, "jotDefaultPressure", "Default pen pressure", 0.5, { min: 0.05, 
 
 defParam(J_WORD, "jotNewWordPauseMs", "New word: pause", 900, { unit: "ms", min: 0, max: 10000, step: 50, note: "A new word needs BOTH this pause AND the gap below" });
 defParam(J_WORD, "jotNewWordGapMm", "New word: gap", 2, { unit: "mm", min: 0, max: 100, step: 0.5, note: "Sideways distance from the word so far (or distance below it), on screen; ink above the word never counts" });
+defParam(J_WORD, "jotNewLineMm", "New line = new word", 2, { unit: "mm", min: 0, max: 50, step: 0.5, note: "A stroke whose middle is this far below the word so far starts a new word straight away, with no pause needed" });
 defParam(J_WORD, "jotWordSettleMs", "Word settle delay", 2500, { unit: "ms", min: 500, max: 20000, step: 100, note: "With no new stroke for this long, the word is laid out; the next stroke then always starts a new word" });
 // Touch devices lay out at ~160 CSS px per inch (Android dp / iOS points), desktops at 96.
 var JOT_DEFAULT_PX_PER_MM = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 160 : 96) / 25.4;
@@ -754,20 +784,12 @@ defParam(J_GEST, "jotGestureStraightness", "Gesture straightness", 0.7, { min: 0
 defParam(J_GEST, "jotGestureAxisDominance", "Gesture axis dominance", 1.6, { min: 1, max: 6, step: 0.1, note: "One axis must beat the other by this ratio" }, function(v) { JOT_GESTURE_AXIS_DOMINANCE = v; });
 var GESTURE_PATHS = ["left-down", "down-left", "right-down", "down-right", "left-up", "up-left", "right-up", "up-right"];
 defParam(J_GEST, "jotGestureBackspace", "Backspace gesture", "left-down", { choices: GESTURE_PATHS, note: "Pen path: first leg, then second leg. Must differ from Return" });
-defParam(J_GEST, "jotGestureReturn", "Return gesture", "down-left", { choices: GESTURE_PATHS, note: "Starts a new line, left-aligned" });
+defParam(J_GEST, "jotGestureReturn", "Return gesture", "down-left", { choices: GESTURE_PATHS, note: "Starts a new handwriting box; the finished box is read in the background" });
 
-defParam(J_BOX, "jotBoxMinWidth", "Box minimum width", 80, { unit: "px", min: 20, max: 600, step: 5 }, function(v) { JOT_BOX_MIN_WIDTH = v; });
-defParam(J_BOX, "jotNewBoxRows", "New box height", 1, { unit: "lines", min: 1, max: 20, step: 1, note: "For boxes made with the + button" }, function(v) { JOT_NEW_BOX_ROWS = v; });
-defParam(J_BOX, "jotBoxHandleSize", "Resize handle size", 18, { unit: "px", min: 8, max: 60, step: 1 }, function(v) { JOT_BOX_HANDLE_SIZE = v; });
-defParam(J_BOX, "jotNewBoxWMin", "Default new-box width: min", 140, { unit: "px", min: 40, max: 1000, step: 5 });
-defParam(J_BOX, "jotNewBoxWMax", "Default new-box width: max", 340, { unit: "px", min: 40, max: 2000, step: 5 });
-defParam(J_BOX, "jotNewBoxWFrac", "Default new-box width: screen share", 0.55, { min: 0.1, max: 1, step: 0.05 });
 defParam(J_BOX, "jotZoomMin", "Zoom minimum", 0.25, { min: 0.05, max: 1, step: 0.05 });
 defParam(J_BOX, "jotZoomMax", "Zoom maximum", 4, { min: 1, max: 20, step: 0.5 });
 defParam(J_BOX, "jotZoomStep", "Zoom button step", 1.25, { min: 1.05, max: 3, step: 0.05 });
-defParam(J_BOX, "jotHitPad", "Touch tolerance (erase / select)", 10, { unit: "px", min: 0, max: 60, step: 1 });
-defParam(J_BOX, "jotHandleHitMin", "Resize handle touch area: min", 10, { unit: "px", min: 2, max: 60, step: 1 });
-defParam(J_BOX, "jotHandleHitFactor", "Resize handle touch area: scale", 0.9, { min: 0.3, max: 3, step: 0.05 });
+defParam(J_BOX, "jotHitPad", "Touch tolerance (erase)", 10, { unit: "px", min: 0, max: 60, step: 1 });
 defParam(J_BOX, "jotViewportMinW", "Canvas minimum width", 280, { unit: "px", min: 100, max: 2000, step: 10 });
 defParam(J_BOX, "jotViewportMinH", "Canvas minimum height", 200, { unit: "px", min: 100, max: 2000, step: 10 });
 
@@ -801,7 +823,6 @@ function paramApply(p, v) {
   if (p.group.indexOf("Jot") === 0) {
     // derived from the layout values above
     JOT_BOX_MIN_HEIGHT = JOT_PARA_TOP + JOT_LINE_HEIGHT;
-    JOT_NEW_BOX_HEIGHT = JOT_PARA_TOP + JOT_NEW_BOX_ROWS * JOT_LINE_HEIGHT;
   }
 }
 function applyAllParams() {
@@ -1406,8 +1427,8 @@ function addNoteLine(text) {
     ta.scrollTop = ta.scrollHeight;
   }
 }
-// Jot's Aa text goes into the notes as one "From Jot" block, replaced (not
-// duplicated) by later conversions. Works on the TinyMCE editor, its plain
+// Jot's text goes into the notes as one "From Jot" block, replaced (not
+// duplicated) by later conversions, removed when the page is emptied. Works on the TinyMCE editor, its plain
 // textarea fallback, or (neither mounted yet) the stored html via setHtml.
 var JOT_NOTES_HEAD = "✍️ From Jot";
 function jotNotesBlock(text) {
@@ -1418,6 +1439,7 @@ function upsertJotNotesHtml(html, text) {
   var box = document.createElement("div");
   box.innerHTML = html || "";
   var old = box.querySelector("[data-jot-text]");
+  if (!text) { if (old) old.remove(); return box.innerHTML; }
   if (old) { old.outerHTML = jotNotesBlock(text); return box.innerHTML; }
   return (html || "") + jotNotesBlock(text);
 }
@@ -1427,8 +1449,10 @@ function upsertJotNotesPlain(value, text) {
   var block = head + NL + text;
   if (i >= 0) {
     var end = value.indexOf(NL + NL, i);
+    if (!text) return (value.slice(0, i) + (end >= 0 ? value.slice(end + 2) : "")).trim();
     return value.slice(0, i) + block + (end >= 0 ? value.slice(end) : "");
   }
+  if (!text) return value;
   return value ? value + NL + NL + block : block;
 }
 // The From Jot block's text, from the editor, its textarea, or stored html.
@@ -1507,11 +1531,12 @@ function switchCallTab(tab) {
 // Vendored from perfect-freehand@1.2.3 (MIT, github.com/steveruizok/perfect-freehand).
 var PerfectFreehand=(()=>{var Q=Object.defineProperty;var zn=Object.getOwnPropertyDescriptor;var An=Object.getOwnPropertyNames;var bn=Object.prototype.hasOwnProperty;var In=(n,t)=>{for(var r in t)Q(n,r,{get:t[r],enumerable:!0})},Tn=(n,t,r,u)=>{if(t&&typeof t=="object"||typeof t=="function")for(let i of An(t))!bn.call(n,i)&&i!==r&&Q(n,i,{get:()=>t[i],enumerable:!(u=zn(t,i))||u.enumerable});return n};var jn=n=>Tn(Q({},"__esModule",{value:!0}),n);var Nn={};In(Nn,{default:()=>Kn,getStroke:()=>yn,getStrokeOutlinePoints:()=>dn,getStrokePoints:()=>xn});var{PI:wn}=Math,F=wn+1e-4,rn=.5,un=[1,1];function on(n,t,r,u=i=>i){return n*u(.5-t*(.5-r))}var{min:U}=Math;function gn(n,t,r){let u=U(1,t/r);return U(1,n+(U(1,1-u)-n)*(u*.275))}function Fn(n){return[-n[0],-n[1]]}function g(n,t){return[n[0]+t[0],n[1]+t[1]]}function en(n,t,r){return n[0]=t[0]+r[0],n[1]=t[1]+r[1],n}function L(n,t){return[n[0]-t[0],n[1]-t[1]]}function X(n,t,r){return n[0]=t[0]-r[0],n[1]=t[1]-r[1],n}function y(n,t){return[n[0]*t,n[1]*t]}function V(n,t,r){return n[0]=t[0]*r,n[1]=t[1]*r,n}function On(n,t){return[n[0]/t,n[1]/t]}function vn(n){return[n[1],-n[0]]}function W(n,t){let r=t[0];return n[0]=t[1],n[1]=-r,n}function sn(n,t){return n[0]*t[0]+n[1]*t[1]}function Rn(n,t){return n[0]===t[0]&&n[1]===t[1]}function _n(n){return Math.hypot(n[0],n[1])}function cn(n,t){let r=n[0]-t[0],u=n[1]-t[1];return r*r+u*u}function Mn(n){return On(n,_n(n))}function qn(n,t){return Math.hypot(n[1]-t[1],n[0]-t[0])}function Y(n,t,r){let u=Math.sin(r),i=Math.cos(r),e=n[0]-t[0],o=n[1]-t[1],c=e*i-o*u,v=e*u+o*i;return[c+t[0],v+t[1]]}function ln(n,t,r,u){let i=Math.sin(u),e=Math.cos(u),o=t[0]-r[0],c=t[1]-r[1],v=o*e-c*i,P=o*i+c*e;return n[0]=v+r[0],n[1]=P+r[1],n}function fn(n,t,r){return g(n,y(L(t,n),r))}function Bn(n,t,r,u){let i=r[0]-t[0],e=r[1]-t[1];return n[0]=t[0]+i*u,n[1]=t[1]+e*u,n}function mn(n,t,r){return g(n,y(t,r))}var l=[0,0],d=[0,0],x=[0,0];function Cn(n,t){let r=mn(n,Mn(vn(L(n,g(n,[1,1])))),-t),u=[],i=1/13;for(let e=i;e<=1;e+=i)u.push(Y(r,n,F*2*e));return u}function Dn(n,t,r){let u=[],i=1/r;for(let e=i;e<=1;e+=i)u.push(Y(t,n,F*e));return u}function En(n,t,r){let u=L(t,r),i=y(u,.5),e=y(u,.51);return[L(n,i),L(n,e),g(n,e),g(n,i)]}function Gn(n,t,r,u){let i=[],e=mn(n,t,r),o=1/u;for(let c=o;c<1;c+=o)i.push(Y(e,n,F*3*c));return i}function Hn(n,t,r){return[g(n,y(t,r)),g(n,y(t,r*.99)),L(n,y(t,r*.99)),L(n,y(t,r))]}function hn(n,t,r){return n===!1||n===void 0?0:n===!0?Math.max(t,r):n}function Jn(n,t,r){return n.slice(0,10).reduce((u,i)=>{let e=i.pressure;return t&&(e=gn(u,i.distance,r)),(u+e)/2},n[0].pressure)}function dn(n,t={}){let{size:r=16,smoothing:u=.5,thinning:i=.5,simulatePressure:e=!0,easing:o=s=>s,start:c={},end:v={},last:P=!1}=t,{cap:M=!0,easing:O=s=>s*(2-s)}=c,{cap:f=!0,easing:h=s=>--s*s*s+1}=v;if(n.length===0||r<=0)return[];let p=n[n.length-1].runningLength,A=hn(c.taper,r,p),b=hn(v.taper,r,p),Z=(r*u)**2,I=[],z=[],$=Jn(n,e,r),a=on(r,i,n[n.length-1].pressure,o),C,D=n[0].vector,T=n[0].point,R=T,S=T,k=R,E=!1;for(let s=0;s<n.length;s++){let{pressure:K}=n[s],{point:m,vector:j,distance:Ln,runningLength:w}=n[s],q=s===n.length-1;if(!q&&p-w<3)continue;i?(e&&(K=gn($,Ln,r)),a=on(r,i,K,o)):a=r/2,C===void 0&&(C=a);let Pn=w<A?O(w/A):1,Sn=p-w<b?h((p-w)/b):1;a=Math.max(.01,a*Math.min(Pn,Sn));let nn=(q?n[s]:n[s+1]).vector,N=q?1:sn(j,nn),kn=sn(j,D)<0&&!E,tn=N!==null&&N<0;if(kn||tn){W(l,D),V(l,l,a);for(let B=0;B<=1;B+=.07692307692307693)X(d,m,l),ln(d,d,m,F*B),S=[d[0],d[1]],I.push(S),en(x,m,l),ln(x,x,m,F*-B),k=[x[0],x[1]],z.push(k);T=S,R=k,tn&&(E=!0);continue}if(E=!1,q){W(l,j),V(l,l,a),I.push(L(m,l)),z.push(g(m,l));continue}Bn(l,nn,j,N),W(l,l),V(l,l,a),X(d,m,l),S=[d[0],d[1]],(s<=1||cn(T,S)>Z)&&(I.push(S),T=S),en(x,m,l),k=[x[0],x[1]],(s<=1||cn(R,k)>Z)&&(z.push(k),R=k),$=K,D=j}let G=[n[0].point[0],n[0].point[1]],H=n.length>1?[n[n.length-1].point[0],n[n.length-1].point[1]]:g(n[0].point,[1,1]),J=[],_=[];if(n.length===1){if(!(A||b)||P)return Cn(G,C||a)}else{A||b&&n.length===1||(M?J.push(...Dn(G,z[0],13)):J.push(...En(G,I[0],z[0])));let s=vn(Fn(n[n.length-1].vector));b||A&&n.length===1?_.push(H):f?_.push(...Gn(H,s,a,29)):_.push(...Hn(H,s,a))}return I.concat(_,z.reverse(),J)}var an=[0,0];function pn(n){return n!=null&&n>=0}function xn(n,t={}){let{streamline:r=.5,size:u=16,last:i=!1}=t;if(n.length===0)return[];let e=.15+(1-r)*.85,o=Array.isArray(n[0])?n:n.map(({x:f,y:h,pressure:p=rn})=>[f,h,p]);if(o.length===2){let f=o[1];o=o.slice(0,-1);for(let h=1;h<5;h++)o.push(fn(o[0],f,h/4))}o.length===1&&(o=[...o,[...g(o[0],un),...o[0].slice(2)]]);let c=[{point:[o[0][0],o[0][1]],pressure:pn(o[0][2])?o[0][2]:.25,vector:[...un],distance:0,runningLength:0}],v=!1,P=0,M=c[0],O=o.length-1;for(let f=1;f<o.length;f++){let h=i&&f===O?[o[f][0],o[f][1]]:fn(M.point,o[f],e);if(Rn(M.point,h))continue;let p=qn(h,M.point);if(P+=p,f<O&&!v){if(P<u)continue;v=!0}X(an,M.point,h),M={point:h,pressure:pn(o[f][2])?o[f][2]:rn,vector:Mn(an),distance:p,runningLength:P},c.push(M)}return c[0].vector=c[1]?.vector||[0,0],c}function yn(n,t={}){return dn(xn(n,t),t)}var Kn=yn;return jn(Nn);})();
 
-// ── Jot engine: Jot (auto-growing, word-wrapping text boxes, handwriting-
-// recognized) / Draw (freehand pencil ink) / Erase, undo, zoom, save/load ──
+// ── Jot engine: Jot (one auto-growing, word-wrapping page of handwriting,
+// read into the notes) / Draw (freehand pencil ink) / Erase, undo, zoom, save/load ──
 var JOT_INK = "#e9ecef";
 var JOT_STROKE_OPTS = { size: 5, thinning: 0.6, smoothing: 0.5, streamline: 0.5 };
-// End-of-word detection: a new stroke starts a new word only when BOTH
+// End-of-word detection: a stroke on a new line (see jtOnNewLine) is always a
+// new word; otherwise a new stroke starts a new word only when BOTH
 //   pause since the previous stroke lifted >= PV.jotNewWordPauseMs
 //   AND gap (on screen, mm) between the new stroke and the word so far >= PV.jotNewWordGapMm.
 // Anything else joins the current word. Separately, a word settles (is laid
@@ -1531,6 +1556,13 @@ function jtWordGap(word, stroke) {
   var dx = Math.max(0, word.minX - stroke.maxX, stroke.minX - word.maxX);
   var below = Math.max(0, stroke.minY - word.maxY);
   return Math.max(dx, below);
+}
+// Writing on the next line down always starts a new word, however quickly:
+// the stroke's middle sits at least PV.jotNewLineMm (on screen) below the
+// bottom of the word so far. Descenders and a T's crossbar never get there.
+function jtOnNewLine(word, stroke, scale) {
+  var midY = (stroke.minY + stroke.maxY) / 2;
+  return (midY - word.maxY) * scale / JOT_PX_PER_MM >= PV.jotNewLineMm;
 }
 // Cap the leveling rotation: a lone near-vertical stroke (e.g. a single "l")
 // has no horizontal spread, so the best-fit line through it is ~90° and
@@ -1560,19 +1592,10 @@ var JOT_DOT_WIDTH = 8;     // layout width reserved for a period
 var JOT_GESTURE_MIN_LEN = 22;         // screen px — minimum net travel per leg (zoom-independent)
 var JOT_GESTURE_STRAIGHTNESS = 0.7;   // net displacement / actual path length, per leg
 var JOT_GESTURE_AXIS_DOMINANCE = 1.6; // one axis must outrun the other by this ratio, per leg
-// Text boxes: created by tapping empty canvas in Jot mode. Each owns its own
-// word-wrapped layout (wrapWidth -> contentHeight, exactly like the old
-// single full-page layout, just scoped per box). Outside Jot mode a box
-// becomes a plain movable/resizable object — dragging its body moves it,
-// dragging its corner handle stretches it (w/h independent of wrapWidth,
-// rendered as a uniform scale over the box's content so text grows/shrinks
-// without re-wrapping). Re-entering Jot mode on a stretched box "bakes" its
-// current width back in as the new wrapWidth and re-wraps at that width.
+// The page box (one per Jot page) word-wraps at its width and grows down.
 var JOT_BOX_MIN_WIDTH = 80;
 var JOT_BOX_MIN_HEIGHT = JOT_PARA_TOP + JOT_LINE_HEIGHT;
-var JOT_NEW_BOX_ROWS = 1;   // boxes made with the + button start this many lines tall
-var JOT_NEW_BOX_HEIGHT = JOT_PARA_TOP + JOT_NEW_BOX_ROWS * JOT_LINE_HEIGHT;
-var JOT_BOX_HANDLE_SIZE = 18; // kept a constant on-screen size regardless of zoom
+var JOT_BOX_GAP = 10;        // space between handwriting boxes (a Return starts a new one)
 
 function jtOutline(pts) { return PerfectFreehand.getStroke(pts, JOT_STROKE_OPTS); }
 function jtFillOutline(ctx, outline) {
@@ -1721,23 +1744,20 @@ function jtMakeWord(strokes, prevRotate, prevScale) {
   };
 }
 
-// notesText, if given, links the Aa text to the call's notes:
+// notesText, if given, links the page's text to the call's notes:
 // save(text) stores a conversion or edit, saved() returns what's there.
+// The handwriting is read automatically (PV.jotAutoConvertMs after the last
+// finished word) and saved into the notes; Aa shows/edits that text.
 function createJot(hostEl, onChange, notesText) {
-  function notifyChange() { jotTextCache = null; inkChanged = true; if (onChange) onChange(); }
-  var jotTextCache = null, jotTextMode = false, jotTextSeq = 0, inkChanged = false, jotTextSaveTimer = null;
   hostEl.innerHTML = "";
   hostEl.classList.add("jt-wrap");
 
   var toolbar = document.createElement("div");
   toolbar.className = "jt-toolbar";
   toolbar.innerHTML =
-    '<button class="jt-btn jt-mode active" data-mode="jot" title="Jot: tap to add/edit a text box">🖊️</button>' +
-    '<button class="jt-btn jt-mode" data-mode="draw" title="Draw">✏️</button>' +
+    '<button class="jt-btn jt-mode active" data-mode="jot" title="Jot: handwriting, read into the notes">🖊️</button>' +
+    '<button class="jt-btn jt-mode" data-mode="draw" title="Freehand drawing">✏️</button>' +
     '<button class="jt-btn jt-mode" data-mode="erase" title="Erase">🧽</button>' +
-    '<button class="jt-btn" data-act="newbox" title="New jot box: tap this, then tap the page to place a full-width box">' +
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2.5" y="5" width="19" height="14" rx="2" stroke-dasharray="3 2.5"/><path d="M12 9v6M9 12h6"/></svg>' +
-    '</button>' +
     '<span class="jt-sep"></span>' +
     '<button class="jt-btn" data-act="undo" title="Undo">↶</button>' +
     '<button class="jt-btn" data-act="zoomout" title="Zoom out">−</button>' +
@@ -1745,9 +1765,11 @@ function createJot(hostEl, onChange, notesText) {
     '<button class="jt-btn" data-act="zoomin" title="Zoom in">+</button>' +
     '<span class="jt-sep"></span>' +
     '<button class="jt-btn ghost" data-act="clear" title="Clear all">🗑</button>' +
-    '<button class="jt-btn jt-totext" data-act="totext" title="Convert handwriting to text (tap again for the ink)">Aa</button>' +
-    '<span class="jt-wordinfo" title="Last stroke: pause, gap from the word, and the decision"></span>';
+    '<button class="jt-btn jt-totext" data-act="totext" title="Show / edit the text saved to Notes (tap again for the ink)">Aa</button>' +
+    '<span class="jt-wordinfo" title="Last stroke: pause, gap from the word, and the decision"></span>' +
+    '<span class="jt-convinfo"></span>';
   hostEl.appendChild(toolbar);
+  var convInfo = toolbar.querySelector(".jt-convinfo");
 
   var canvasWrap = document.createElement("div");
   canvasWrap.className = "jt-canvas-wrap";
@@ -1772,39 +1794,42 @@ function createJot(hostEl, onChange, notesText) {
   canvas.style.width = viewportW + "px";
   canvas.style.height = viewportH + "px";
   canvas.style.touchAction = "none";
-  // DOC_WIDTH is only informational now (persisted for reference / as an SVG
-  // width floor) — each text box owns its own word-wrap width independent of
-  // zoom, unlike the old single full-page layout.
+  // DOC_WIDTH is only informational (persisted for reference / as an SVG
+  // width floor) — the page box wraps at the width it was opened at.
   var DOC_WIDTH = viewportW;
   function updateDocWidth() {
     DOC_WIDTH = Math.max(160, viewportW / camera.scale);
   }
-  // Default width for a freshly-created box — scaled to the viewport so it
-  // reads sensibly on both the narrow in-call panel and the wider call-detail
-  // view.
-  function jotDefaultBoxWidth() {
-    return Math.max(PV.jotNewBoxWMin, Math.min(PV.jotNewBoxWMax, viewportW * PV.jotNewBoxWFrac));
-  }
 
-  var mode = "jot";       // "jot" | "draw" | "erase" | null (deselected -> pan/zoom + box move/resize)
+  // One page box, always there and always the write target in Jot mode, so
+  // writing starts the moment the tab opens. It spans the screen width at
+  // 100% zoom and grows downward as words are laid out.
+  var mode = "jot";       // "jot" | "draw" | "erase" | null (deselected -> pan/zoom)
   var camera = { x: 0, y: 0, scale: 1 }; // document-space coords of viewport top-left, and zoom
   var nextId = 1;
-  var drawStrokes = {};   // id -> { points:[[x,y,p],...], bbox } — freehand pencil ink, not boxed
-  var boxes = [];          // ordered [{ id, x, y, wrapWidth, contentHeight, w, h, stretched, words:[...] }]
-  var activeBoxId = null;  // the box currently being written into in Jot mode
-  var placingBox = false;  // + button armed: the next tap on the canvas drops a new full-width box there
-  var actions = [];        // undo log (box creation, words/breaks within a box, erases — not moves/resizes/pan/zoom)
+  var drawStrokes = {};   // id -> { points:[[x,y,p],...], bbox } — freehand pencil ink, not in the box
+  var box = { wrapWidth: Math.max(JOT_BOX_MIN_WIDTH, viewportW), h: JOT_BOX_MIN_HEIGHT, words: [], segs: [] };
+  var actions = [];        // undo log (words/breaks, strokes, erases — not pan/zoom)
   var current = null;      // in-progress stroke while pointer is down
-  var writingWord = null;  // { strokes:[...], bbox } — belongs to activeBoxId
+  var writingWord = null;  // { strokes:[...], bbox } — raw ink of the word being written
   var wordPauseTimer = null;
   var lastStrokeUpAt = 0;  // performance.now() when the last Jot stroke lifted
   var strokeDownAt = 0;    // performance.now() when the in-progress Jot stroke landed
   var erasing = false;
-  var activePointers = {}; // pointerId -> {x,y}, tracked whenever a tool is deselected (pan/pinch-zoom)
+  var activePointers = {}; // pointerId -> {x,y}, for pan/pinch-zoom
   var panState = null;     // {x,y} last client point, while 1 finger drags with no tool selected
-  var pinchState = null;   // {dist, anchorDoc}, while 2 fingers are down with no tool selected
-  var boxDragState = null;   // {box, offsetX, offsetY}, while dragging a box's body with no tool selected
-  var boxResizeState = null; // {box, startW, startH, startX, startY}, while dragging a box's corner handle
+  var pinchState = null;   // {dist, anchorDoc}, while 2 fingers are down
+
+  // Text conversion state. textSig() names the words currently on the page;
+  // convertedSig is the one the notes' text was read from, so a conversion
+  // only runs when the words actually changed (drawing never triggers one).
+  // Each box is read on its own: segTexts caches a box's text by its words
+  // (segSig), so only the box that changed is sent again.
+  var jotTextCache = null, jotTextMode = false, jotTextSaveTimer = null;
+  var convertTimer = null, convertSeq = 0, convertedSig = "";
+  var segTexts = {}, segReading = {};
+
+  function notifyChange() { scheduleAutoConvert(); if (onChange) onChange(); }
 
   function pointerIds() { return Object.keys(activePointers); }
   function pointerDistance(ids) {
@@ -1820,141 +1845,86 @@ function createJot(hostEl, onChange, notesText) {
     if (label) label.textContent = Math.round(camera.scale * 100) + "%";
   }
 
-  function findBox(id) {
-    for (var i = 0; i < boxes.length; i++) if (boxes[i].id === id) return boxes[i];
-    return null;
-  }
-  function activeBox() { return activeBoxId != null ? findBox(activeBoxId) : null; }
-
-  // Content height a box's current words actually need at its wrapWidth —
-  // this is what "the box will grow automatically in length as words are
-  // entered" means: height always tracks this unless the box has been
-  // manually stretched (see "stretched" below).
-  function jtBoxContentHeight(b) {
-    var maxY = JOT_PARA_TOP;
-    for (var i = 0; i < b.words.length; i++) if (b.words[i].y > maxY) maxY = b.words[i].y;
-    return Math.max(Math.ceil(maxY + JOT_PARA_MARGIN + PV.jotBoxBottomPad), b.minH || JOT_BOX_MIN_HEIGHT);
-  }
-
-  function relayoutBox(b) {
-    var lineIdx = 0, x = JOT_PARA_MARGIN;
-    var maxWidth = b.wrapWidth - JOT_PARA_MARGIN * 2;
-    for (var i = 0; i < b.words.length; i++) {
-      var w = b.words[i];
-      // A Return (the down+back gesture) is a hidden marker word, not real
-      // ink — it always starts a new line and takes no width itself, same
-      // idea as running out of width, but never on the very first item so a
-      // break with nothing before it doesn't leave a blank opening line.
+  // Lays the words out into boxes stacked down the page: each Return (a
+  // hidden marker word, see jtBreakWord) closes the box it ends and starts a
+  // new one below. Each box word-wraps at wrapWidth and grows with its words.
+  // A Return in a box with no words yet does nothing, so there's never an
+  // empty box above another.
+  function relayoutBox() {
+    var segs = [], seg = null, top = 0;
+    function openSeg() { seg = { top: top, h: JOT_BOX_MIN_HEIGHT, words: [], closed: false, line: 0, x: JOT_PARA_MARGIN }; segs.push(seg); }
+    function sizeSeg() {
+      seg.h = Math.max(Math.ceil(JOT_PARA_TOP + seg.line * JOT_LINE_HEIGHT + JOT_PARA_MARGIN + PV.jotBoxBottomPad), JOT_BOX_MIN_HEIGHT);
+      top = seg.top + seg.h + JOT_BOX_GAP;
+    }
+    var maxWidth = box.wrapWidth - JOT_PARA_MARGIN * 2;
+    openSeg();
+    for (var i = 0; i < box.words.length; i++) {
+      var w = box.words[i];
       if (w.isBreak) {
-        if (i > 0) { lineIdx++; x = JOT_PARA_MARGIN; }
-        w.line = lineIdx; w.x = x; w.y = JOT_PARA_TOP + lineIdx * JOT_LINE_HEIGHT;
+        w.line = seg.line; w.x = JOT_PARA_MARGIN; w.y = seg.top + JOT_PARA_TOP;
+        if (seg.words.length) { seg.closed = true; sizeSeg(); openSeg(); }
         continue;
       }
-      if (x + w.width > maxWidth && x > JOT_PARA_MARGIN) { lineIdx++; x = JOT_PARA_MARGIN; }
-      w.line = lineIdx;
-      w.x = x;
-      w.y = JOT_PARA_TOP + lineIdx * JOT_LINE_HEIGHT;
-      x += w.width + JOT_WORD_GAP;
+      if (seg.x + w.width > maxWidth && seg.x > JOT_PARA_MARGIN) { seg.line++; seg.x = JOT_PARA_MARGIN; }
+      w.line = seg.line;
+      w.x = seg.x;
+      w.y = seg.top + JOT_PARA_TOP + seg.line * JOT_LINE_HEIGHT;
+      seg.x += w.width + JOT_WORD_GAP;
+      seg.words.push(w);
     }
-    b.contentHeight = jtBoxContentHeight(b);
-    // Only auto-follow the content size while the box hasn't been manually
-    // stretched (outside Jot mode) — a stretched box keeps its own w/h and
-    // just re-wraps/re-scales relative to them (see bakeBox()).
-    if (!b.stretched) { b.w = b.wrapWidth; b.h = b.contentHeight; }
+    sizeSeg();
+    box.segs = segs;
+    box.h = seg.top + seg.h;
   }
 
-  // Adopts a manually-stretched box's current on-screen width as its new
-  // authoring width and re-wraps at that width — this is the "if the box is
-  // resized, words will wordwrap" behavior, triggered the moment Jot mode
-  // resumes editing a box that was resized while Jot mode was off.
-  function bakeBox(b) {
-    if (!b.stretched) return;
-    b.wrapWidth = Math.max(JOT_BOX_MIN_WIDTH, b.w);
-    b.stretched = false;
-    relayoutBox(b);
+  function hasText() {
+    for (var i = 0; i < box.words.length; i++) if (!box.words[i].isBreak) return true;
+    return false;
   }
-
-  function createBoxAt(p, full) {
-    // full: a box from the + button — spans the visible width and starts
-    // JOT_NEW_BOX_ROWS lines tall (it still grows past that as text needs it).
-    var b = {
-      id: nextId++, x: full ? camera.x : p[0], y: p[1],
-      wrapWidth: full ? Math.max(JOT_BOX_MIN_WIDTH, Math.floor(viewportW / camera.scale)) : jotDefaultBoxWidth(),
-      minH: full ? JOT_NEW_BOX_HEIGHT : 0,
-      contentHeight: full ? JOT_NEW_BOX_HEIGHT : JOT_BOX_MIN_HEIGHT,
-      w: 0, h: 0, stretched: false, words: []
-    };
-    b.w = b.wrapWidth; b.h = b.contentHeight;
-    boxes.push(b);
-    actions.push({ type: "add-box", id: b.id, x: b.x, y: b.y, wrapWidth: b.wrapWidth, minH: b.minH });
-    return b;
-  }
-
-  function hitTestBoxBody(p) {
-    for (var i = boxes.length - 1; i >= 0; i--) {
-      var b = boxes[i];
-      if (p[0] >= b.x && p[0] <= b.x + b.w && p[1] >= b.y && p[1] <= b.y + b.h) return b;
-    }
-    return null;
-  }
-  function hitTestBoxHandle(p) {
-    var pad = Math.max(JOT_BOX_HANDLE_SIZE / camera.scale, PV.jotHandleHitMin) * PV.jotHandleHitFactor;
-    for (var i = boxes.length - 1; i >= 0; i--) {
-      var b = boxes[i];
-      var hx = b.x + b.w, hy = b.y + b.h;
-      if (Math.abs(p[0] - hx) <= pad && Math.abs(p[1] - hy) <= pad) return b;
-    }
-    return null;
+  function textSig() {
+    var ids = [];
+    for (var i = 0; i < box.words.length; i++) ids.push(box.words[i].id);
+    return ids.join(",");
   }
 
   function redraw() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, viewportW, viewportH);
-    if (!boxes.length && !Object.keys(drawStrokes).length) {
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.fillStyle = "#777";
+    if (!box.words.length && !writingWord && !current && !Object.keys(drawStrokes).length) {
+      ctx.fillStyle = "#666";
       ctx.font = "14px sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(placingBox ? "Tap here to place the jot box" : "Tap the + box button, then tap here", viewportW / 2, viewportH / 2);
+      ctx.fillText(mode === "draw" ? "Draw anywhere" : "Write here", viewportW / 2, viewportH / 2);
       ctx.textAlign = "start";
     }
     // Everything below is drawn in document space; this transform maps it
     // through the camera (pan + zoom) onto the viewport-sized canvas.
     ctx.setTransform(camera.scale * dpr, 0, 0, camera.scale * dpr, -camera.x * camera.scale * dpr, -camera.y * camera.scale * dpr);
-    ctx.fillStyle = JOT_INK;
-    var id;
-    for (id in drawStrokes) jtFillOutline(ctx, jtOutline(drawStrokes[id].points));
-    for (var bi = 0; bi < boxes.length; bi++) {
-      var b = boxes[bi];
-      var sx = b.w / b.wrapWidth, sy = b.h / Math.max(b.contentHeight, 1);
-      ctx.save();
-      ctx.translate(b.x, b.y);
-      ctx.scale(sx, sy);
-      var isSelected = mode === "jot" && b.id === activeBoxId;
-      ctx.strokeStyle = isSelected ? "rgba(37,99,235,0.95)" : (mode !== "jot") ? "rgba(37,99,235,0.55)" : "rgba(255,255,255,0.22)";
-      ctx.setLineDash(mode !== "jot" || isSelected ? [] : [4, 3]);
-      ctx.lineWidth = 1 / Math.max(Math.min(sx, sy), 0.01);
-      ctx.strokeRect(0, 0, b.wrapWidth, b.contentHeight);
-      ctx.setLineDash([]);
-      ctx.fillStyle = JOT_INK;
-      for (var wi = 0; wi < b.words.length; wi++) {
-        var w = b.words[wi];
-        if (w.isBreak) continue;
-        ctx.save();
-        ctx.translate(w.x, w.y);
-        ctx.rotate(-w.rotate);
-        ctx.scale(w.scale, w.scale);
-        ctx.translate(-w.anchor[0], -w.anchor[1]);
-        for (var s = 0; s < w.rawStrokes.length; s++) jtFillOutline(ctx, jtOutline(w.rawStrokes[s]));
-        ctx.restore();
-      }
-      ctx.restore();
-      var hs = JOT_BOX_HANDLE_SIZE / camera.scale; // kept a roughly constant on-screen size
-      ctx.fillStyle = (mode !== "jot") ? "#2563eb" : "rgba(37,99,235,0.7)";
-      ctx.fillRect(b.x + b.w - hs / 2, b.y + b.h - hs / 2, hs, hs);
+    ctx.strokeStyle = "#3a3a3a";
+    ctx.lineWidth = 1 / camera.scale;
+    for (var si = 0; si < box.segs.length; si++) {
+      var sg = box.segs[si];
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(2, sg.top + 2, box.wrapWidth - 4, sg.h - 4, 8);
+      else ctx.rect(2, sg.top + 2, box.wrapWidth - 4, sg.h - 4);
+      ctx.stroke();
     }
-    if (writingWord) { ctx.fillStyle = JOT_INK; for (var ws = 0; ws < writingWord.strokes.length; ws++) jtFillOutline(ctx, jtOutline(writingWord.strokes[ws])); }
-    if (current) { ctx.fillStyle = JOT_INK; jtFillOutline(ctx, jtOutline(current.points)); }
+    ctx.fillStyle = JOT_INK;
+    for (var id in drawStrokes) jtFillOutline(ctx, jtOutline(drawStrokes[id].points));
+    for (var wi = 0; wi < box.words.length; wi++) {
+      var w = box.words[wi];
+      if (w.isBreak) continue;
+      ctx.save();
+      ctx.translate(w.x, w.y);
+      ctx.rotate(-w.rotate);
+      ctx.scale(w.scale, w.scale);
+      ctx.translate(-w.anchor[0], -w.anchor[1]);
+      for (var s = 0; s < w.rawStrokes.length; s++) jtFillOutline(ctx, jtOutline(w.rawStrokes[s]));
+      ctx.restore();
+    }
+    if (writingWord) for (var ws = 0; ws < writingWord.strokes.length; ws++) jtFillOutline(ctx, jtOutline(writingWord.strokes[ws]));
+    if (current) jtFillOutline(ctx, jtOutline(current.points));
   }
 
   // A Return is stored as its own zero-width "word" (rather than a flag
@@ -1964,32 +1934,22 @@ function createJot(hostEl, onChange, notesText) {
   function jtBreakWord(id) {
     return { id: id, isBreak: true, rawStrokes: [], anchor: [0, 0], rotate: 0, scale: 1, width: 0, height: JOT_WORD_HEIGHT };
   }
+  function wordFromAction(a) {
+    return { id: a.id, rawStrokes: a.rawStrokes, anchor: a.anchor, rotate: a.rotate, scale: a.scale, width: a.width, height: a.height, dot: !!a.dot };
+  }
 
-  // Rebuilds boxes/words/ink from the action log (undo). Box moves/resizes
-  // are deliberately not part of this log — same as pan/zoom not being
-  // undoable — so a box touched by Undo reverts to its authored position
-  // and auto-height.
+  // Rebuilds the words/ink from the action log (undo).
   function rebuildFromActions() {
-    // Moves/resizes aren't in the action log, so carry each surviving box's
-    // current geometry across the rebuild (otherwise undoing a word would
-    // snap its box back to the size/position it was created with).
-    var oldGeo = {};
-    for (var oi = 0; oi < boxes.length; oi++) { var ob = boxes[oi]; oldGeo[ob.id] = ob; }
-    drawStrokes = {}; boxes = [];
+    drawStrokes = {}; box.words = [];
     for (var i = 0; i < actions.length; i++) {
       var a = actions[i];
       if (a.type === "add-stroke") drawStrokes[a.id] = { points: a.points, bbox: jtBBox(a.points) };
       else if (a.type === "erase-stroke") delete drawStrokes[a.targetId];
-      else if (a.type === "add-box") boxes.push({ id: a.id, x: a.x, y: a.y, wrapWidth: a.wrapWidth, minH: a.minH || 0, contentHeight: a.minH || JOT_BOX_MIN_HEIGHT, w: a.wrapWidth, h: a.minH || JOT_BOX_MIN_HEIGHT, stretched: false, words: [] });
-      else if (a.type === "add-word") { var b1 = findBox(a.boxId); if (b1) b1.words.push({ id: a.id, rawStrokes: a.rawStrokes, anchor: a.anchor, rotate: a.rotate, scale: a.scale, width: a.width, height: a.height, dot: !!a.dot }); }
-      else if (a.type === "add-break") { var b2 = findBox(a.boxId); if (b2) b2.words.push(jtBreakWord(a.id)); }
-      else if (a.type === "erase-word") { var b3 = findBox(a.boxId); if (b3) for (var j = 0; j < b3.words.length; j++) if (b3.words[j].id === a.targetId) { b3.words.splice(j, 1); break; } }
+      else if (a.type === "add-word") box.words.push(wordFromAction(a));
+      else if (a.type === "add-break") box.words.push(jtBreakWord(a.id));
+      else if (a.type === "erase-word") { for (var j = 0; j < box.words.length; j++) if (box.words[j].id === a.targetId) { box.words.splice(j, 1); break; } }
     }
-    for (var k = 0; k < boxes.length; k++) {
-      var og = oldGeo[boxes[k].id];
-      if (og) { var nb2 = boxes[k]; nb2.x = og.x; nb2.y = og.y; nb2.wrapWidth = og.wrapWidth; nb2.minH = og.minH; nb2.stretched = og.stretched; nb2.w = og.w; nb2.h = og.h; }
-      relayoutBox(boxes[k]);
-    }
+    relayoutBox();
   }
 
   function toLogical(clientX, clientY) {
@@ -1999,53 +1959,48 @@ function createJot(hostEl, onChange, notesText) {
     return [sx / camera.scale + camera.x, sy / camera.scale + camera.y];
   }
 
-  // The rotation/scale to hand a short (1-2 stroke) word that's about to
-  // be finalized — the last real (non-break, non-period) committed word's own (within
-  // the active box), so a single letter follows the size and slant of the
-  // line it's sitting on instead of leveling/sizing itself off too little
-  // ink to do that reliably.
+  // The rotation/scale to hand a short (1-2 stroke) word that's about to be
+  // finalized — the last real (non-break, non-period) word's own, so a single
+  // letter follows the size and slant of the line it's sitting on instead of
+  // leveling/sizing itself off too little ink to do that reliably.
   function jtLastWordRef() {
-    var b = activeBox();
-    if (!b) return null;
-    for (var i = b.words.length - 1; i >= 0; i--) if (!b.words[i].isBreak && !b.words[i].dot) return b.words[i];
+    for (var i = box.words.length - 1; i >= 0; i--) if (!box.words[i].isBreak && !box.words[i].dot) return box.words[i];
     return null;
   }
 
   function finalizeWord() {
     if (wordPauseTimer) { clearTimeout(wordPauseTimer); wordPauseTimer = null; }
-    commitWritingWord();
+    var added = commitWritingWord();
     writingWord = null;
     redraw();
-    notifyChange();
+    if (added) notifyChange();
   }
-  // Adds writingWord to the active box as a laid-out word (without clearing
-  // writingWord); returns the box, or null if there was nothing to add.
+  // Adds writingWord to the box as a laid-out word (without clearing
+  // writingWord); returns true if there was something to add.
   function commitWritingWord() {
-    if (!writingWord || !writingWord.strokes.length) return null;
-    var b = activeBox();
-    if (!b) return null;
+    if (!writingWord || !writingWord.strokes.length) return false;
     var lastWord = jtLastWordRef();
     var t = jtMakeWord(writingWord.strokes, lastWord ? lastWord.rotate : null, lastWord ? lastWord.scale : null);
-    var id = nextId++;
-    var action = { type: "add-word", id: id, boxId: b.id, rawStrokes: t.rawStrokes, anchor: t.anchor, rotate: t.rotate, scale: t.scale, width: t.width, height: t.height };
+    var action = { type: "add-word", id: nextId++, rawStrokes: t.rawStrokes, anchor: t.anchor, rotate: t.rotate, scale: t.scale, width: t.width, height: t.height };
     if (t.dot) action.dot = true;
     actions.push(action);
-    b.words.push({ id: id, rawStrokes: action.rawStrokes, anchor: action.anchor, rotate: action.rotate, scale: action.scale, width: action.width, height: action.height, dot: !!action.dot });
-    relayoutBox(b);
-    return b;
+    box.words.push(wordFromAction(action));
+    relayoutBox();
+    return true;
   }
   // Runs fn with the in-progress word temporarily laid out, so a save
   // captures it — then takes it back out. Autosave must never end a word:
   // it runs ~1s after every stroke, so finalizing here split words at any
   // pause between strokes (e.g. a T's stem committed before its crossbar).
   function withPendingWord(fn) {
-    var b = commitWritingWord();
+    var added = commitWritingWord();
     try { return fn(); }
-    finally { if (b) { actions.pop(); b.words.pop(); relayoutBox(b); } }
+    finally { if (added) { actions.pop(); box.words.pop(); relayoutBox(); } }
   }
 
   // Takes back the last committed action. Callers deal with an in-progress word first (see jtGestureBackspace).
   function doUndo() {
+    if (!actions.length) return;
     actions.pop();
     rebuildFromActions();
     writingWord = null;
@@ -2053,51 +2008,43 @@ function createJot(hostEl, onChange, notesText) {
     notifyChange();
   }
 
-  // A single-stroke "L" gesture (see jtClassifyGesture) is recognized and
-  // consumed entirely on its own completed stroke — it never touches
-  // writingWord, so there's nothing to undo there first.
-  // Backspace (path set in Parameters): if there's an in-progress (not yet
-  // paused/finalized) word, that's what gets discarded — same as
-  // backspacing while mid-word in a text editor. Otherwise it's a real Undo
-  // of the last committed action (word, stroke, erase, or even a previous
-  // Return).
+  // Backspace (path set in Parameters): an in-progress (not yet settled)
+  // word is discarded first — same as backspacing mid-word in a text editor.
+  // Otherwise it's a real Undo of the last committed action.
   function jtGestureBackspace() {
     if (wordPauseTimer) { clearTimeout(wordPauseTimer); wordPauseTimer = null; }
     if (writingWord) { writingWord = null; redraw(); notifyChange(); return; }
     doUndo();
   }
-  // Return (path set in Parameters): commits whatever preceded the gesture
-  // normally, then inserts a hidden line-break marker (see jtBreakWord)
-  // immediately — not a flag deferred onto the next word — so it survives a
-  // save even if nothing else is written afterward.
+  // Return (path set in Parameters): commits whatever preceded the gesture,
+  // then inserts a hidden marker (see jtBreakWord) that starts a new box. The
+  // finished box is read straight away in the background while writing
+  // carries on in the new one.
   function jtGestureReturn() {
     finalizeWord();
-    var b = activeBox();
-    if (!b) return;
     var id = nextId++;
-    actions.push({ type: "add-break", id: id, boxId: b.id });
-    b.words.push(jtBreakWord(id));
-    relayoutBox(b);
+    actions.push({ type: "add-break", id: id });
+    box.words.push(jtBreakWord(id));
+    relayoutBox();
+    // Keep the new box on screen.
+    var last = box.segs[box.segs.length - 1];
+    var bottom = last.top + last.h + JOT_BOX_GAP;
+    if ((bottom - camera.y) * camera.scale > viewportH) camera.y = bottom - viewportH / camera.scale;
+    redraw();
     notifyChange();
+    convertText();
   }
 
   function hitTest(lx, ly) {
     var pad = PV.jotHitPad;
-    var id;
-    for (id in drawStrokes) {
+    for (var id in drawStrokes) {
       var bx = drawStrokes[id].bbox;
       if (lx >= bx.minX - pad && lx <= bx.maxX + pad && ly >= bx.minY - pad && ly <= bx.maxY + pad) return { kind: "stroke", id: id };
     }
-    for (var bi = boxes.length - 1; bi >= 0; bi--) {
-      var b = boxes[bi];
-      if (lx < b.x - pad || lx > b.x + b.w + pad || ly < b.y - pad || ly > b.y + b.h + pad) continue;
-      var sx = b.w / b.wrapWidth, sy = b.h / Math.max(b.contentHeight, 1);
-      var localX = (lx - b.x) / sx, localY = (ly - b.y) / sy;
-      for (var wi = b.words.length - 1; wi >= 0; wi--) {
-        var w = b.words[wi];
-        if (w.isBreak) continue;
-        if (localX >= w.x - pad && localX <= w.x + w.width + pad && localY >= w.y - w.height - pad && localY <= w.y + pad) return { kind: "word", boxId: b.id, id: w.id };
-      }
+    for (var wi = box.words.length - 1; wi >= 0; wi--) {
+      var w = box.words[wi];
+      if (w.isBreak) continue;
+      if (lx >= w.x - pad && lx <= w.x + w.width + pad && ly >= w.y - w.height - pad && ly <= w.y + pad) return { kind: "word", id: w.id };
     }
     return null;
   }
@@ -2107,9 +2054,9 @@ function createJot(hostEl, onChange, notesText) {
     if (!hit) return;
     if (hit.kind === "stroke") { delete drawStrokes[hit.id]; actions.push({ type: "erase-stroke", targetId: hit.id }); }
     else {
-      var b = findBox(hit.boxId);
-      if (b) { for (var j = 0; j < b.words.length; j++) if (b.words[j].id === hit.id) { b.words.splice(j, 1); break; } relayoutBox(b); }
-      actions.push({ type: "erase-word", boxId: hit.boxId, targetId: hit.id });
+      for (var j = 0; j < box.words.length; j++) if (box.words[j].id === hit.id) { box.words.splice(j, 1); break; }
+      relayoutBox();
+      actions.push({ type: "erase-word", targetId: hit.id });
     }
     redraw();
     notifyChange();
@@ -2119,57 +2066,20 @@ function createJot(hostEl, onChange, notesText) {
     activePointers[e.pointerId] = { x: e.clientX, y: e.clientY };
     var ids = pointerIds();
     // Two or more simultaneous touches are always a pinch/pan on the camera,
-    // no matter which tool is selected. Previously this pinch/pan handling
-    // only ran when no tool was active ("mode" falsy) — pinching while
-    // Draw/Jot was selected instead fed both fingers in as two independent,
-    // interleaved strokes: in Draw that showed up as a single garbled stroke
-    // sweeping the screen (looking like "the whole page zooms"), and in Jot,
-    // that stroke got picked up as a "word" whose huge/tiny bounding box
-    // then drove its rendered scale — the word-size-changes-and-rewraps bug.
-    // Reserving 2+ pointers for camera control fixes both: pinch always
-    // zooms the camera, ink is only ever drawn by a single active pointer.
+    // no matter which tool is selected — ink is only ever drawn by a single
+    // active pointer (two fingers fed in as strokes garbled words and their
+    // scale).
     if (ids.length >= 2) {
       if (current) { current = null; redraw(); }
       erasing = false;
-      panState = null; boxDragState = null; boxResizeState = null;
+      panState = null;
       var downIds = ids.slice(0, 2);
       var mid = pointerMidpoint(downIds);
       pinchState = { dist: pointerDistance(downIds), anchorDoc: toLogical(mid.x, mid.y) };
       return;
     }
-    if (placingBox) {
-      // + button armed: this tap only places the box (no ink), then the box is
-      // the active one in Jot mode so the next stroke is written into it.
-      finalizeWord();
-      var nb = createBoxAt(toLogical(e.clientX, e.clientY), true);
-      activeBoxId = nb.id;
-      placingBox = false;
-      mode = "jot";
-      syncToolbar();
-      redraw();
-      notifyChange();
-      return;
-    }
     if (!mode) {
-      // No tool selected: this is also the "arrange" state — a box's body
-      // moves it, its corner handle resizes it (text scales, no rewrap; see
-      // bakeBox() for what happens when Jot mode resumes editing it).
-      // Otherwise, single-finger panning of the camera, same as before.
-      var p0 = toLogical(e.clientX, e.clientY);
-      var handleBox = hitTestBoxHandle(p0);
-      if (handleBox) {
-        canvas.setPointerCapture(e.pointerId);
-        boxResizeState = { box: handleBox, startW: handleBox.w, startH: handleBox.h, startX: p0[0], startY: p0[1] };
-        pinchState = null;
-        return;
-      }
-      var bodyBox = hitTestBoxBody(p0);
-      if (bodyBox) {
-        canvas.setPointerCapture(e.pointerId);
-        boxDragState = { box: bodyBox, offsetX: p0[0] - bodyBox.x, offsetY: p0[1] - bodyBox.y };
-        pinchState = null;
-        return;
-      }
+      // No tool selected: single-finger panning of the camera.
       panState = { x: e.clientX, y: e.clientY };
       pinchState = null;
       return;
@@ -2179,41 +2089,11 @@ function createJot(hostEl, onChange, notesText) {
     var pressure = e.pointerType === "mouse" ? PV.jotDefaultPressure : (e.pressure || PV.jotDefaultPressure);
     if (mode === "erase") { erasing = true; eraseAt(p[0], p[1]); return; }
     if (mode === "jot") {
-      // Tapping inside an existing box continues writing into it (baking in
-      // any manual resize it picked up while Jot mode was off). Tapping empty
-      // canvas keeps writing into the selected box; boxes are only created
-      // with the + button.
-      var jotHandleBox = hitTestBoxHandle(p);
-      if (jotHandleBox) {
-        // Corner handle in Jot mode: resizing changes the box's wrap width
-        // (and minimum height), so the text re-wraps live as it's dragged.
-        finalizeWord();
-        activeBoxId = jotHandleBox.id;
-        if (jotHandleBox.stretched) bakeBox(jotHandleBox);
-        boxResizeState = { box: jotHandleBox, startW: jotHandleBox.w, startH: jotHandleBox.h, startX: p[0], startY: p[1], wrap: true };
-        return;
-      }
-      var target = hitTestBoxBody(p);
-      if (target) {
-        if (activeBoxId !== target.id) { finalizeWord(); activeBoxId = target.id; }
-        // Bake regardless of whether this was already the active box — it
-        // may have been stretched (outside Jot mode) since it was last
-        // written into, even without activeBoxId ever changing.
-        if (target.stretched) bakeBox(target);
-      } else if (!activeBox()) {
-        // No box selected: nothing to write into.
-        finalizeWord();
-        return;
-      }
-      // else: the selected box stays the write target even when the stroke
-      // lands outside its outline (a 1-line box is easy to write past) — the
-      // word is normalized into the box once it's finalized.
       // Starting a new stroke always cancels any pending "finalize the word
       // on pause" timer — otherwise a slightly-longer-than-usual pause
-      // before the next letter (very common right at the start of a word,
-      // while repositioning) can fire mid-stroke and split the word right as
-      // the user keeps writing it.
+      // before the next letter can fire mid-stroke and split the word.
       if (wordPauseTimer) { clearTimeout(wordPauseTimer); wordPauseTimer = null; }
+      if (convertTimer) { clearTimeout(convertTimer); convertTimer = null; }
     }
     strokeDownAt = performance.now();
     current = { points: [[p[0], p[1], pressure]] };
@@ -2242,32 +2122,6 @@ function createJot(hostEl, onChange, notesText) {
       e.preventDefault();
       return;
     }
-    if (boxResizeState) {
-      var pr = toLogical(e.clientX, e.clientY);
-      var rb = boxResizeState.box;
-      if (boxResizeState.wrap) {
-        rb.wrapWidth = Math.max(JOT_BOX_MIN_WIDTH, boxResizeState.startW + (pr[0] - boxResizeState.startX));
-        rb.minH = Math.max(JOT_BOX_MIN_HEIGHT, boxResizeState.startH + (pr[1] - boxResizeState.startY));
-        rb.stretched = false;
-        relayoutBox(rb);
-      } else {
-        rb.w = Math.max(JOT_BOX_MIN_WIDTH, boxResizeState.startW + (pr[0] - boxResizeState.startX));
-        rb.h = Math.max(JOT_BOX_MIN_HEIGHT, boxResizeState.startH + (pr[1] - boxResizeState.startY));
-        rb.stretched = true;
-      }
-      redraw();
-      e.preventDefault();
-      return;
-    }
-    if (boxDragState) {
-      var pd = toLogical(e.clientX, e.clientY);
-      var db = boxDragState.box;
-      db.x = pd[0] - boxDragState.offsetX;
-      db.y = pd[1] - boxDragState.offsetY;
-      redraw();
-      e.preventDefault();
-      return;
-    }
     if (!mode) {
       if (ids.length === 1 && panState) {
         var dx = e.clientX - panState.x, dy = e.clientY - panState.y;
@@ -2290,8 +2144,6 @@ function createJot(hostEl, onChange, notesText) {
     delete activePointers[e.pointerId];
     var ids = pointerIds();
     if (ids.length < 2) pinchState = null;
-    if (boxResizeState) { boxResizeState = null; notifyChange(); return; }
-    if (boxDragState) { boxDragState = null; notifyChange(); return; }
     panState = (!mode && ids.length === 1) ? { x: activePointers[ids[0]].x, y: activePointers[ids[0]].y } : null;
     if (!mode) return;
     if (pinchState) return; // still mid-pinch (a 3rd+ finger lifted) — not the end of a stroke
@@ -2312,9 +2164,10 @@ function createJot(hostEl, onChange, notesText) {
       var pauseMs = lastStrokeUpAt ? Math.max(0, strokeDownAt - lastStrokeUpAt) : Infinity;
       lastStrokeUpAt = performance.now();
       var gapMm = writingWord ? jtWordGap(writingWord.bbox, bbox) * camera.scale / JOT_PX_PER_MM : Infinity;
-      var joins = !!writingWord && !jtStartsNewWord(pauseMs, gapMm);
+      var newLine = !!writingWord && jtOnNewLine(writingWord.bbox, bbox, camera.scale);
+      var joins = !!writingWord && !newLine && !jtStartsNewWord(pauseMs, gapMm);
       toolbar.querySelector(".jt-wordinfo").textContent = writingWord
-        ? (pauseMs / 1000).toFixed(2) + "s · " + gapMm.toFixed(1) + "mm · " + (joins ? "same word" : "NEW word")
+        ? (pauseMs / 1000).toFixed(2) + "s · " + gapMm.toFixed(1) + "mm · " + (joins ? "same word" : newLine ? "NEW line" : "NEW word")
         : "new word";
       if (joins) {
         writingWord.strokes.push(stroke.points);
@@ -2326,7 +2179,7 @@ function createJot(hostEl, onChange, notesText) {
       if (wordPauseTimer) clearTimeout(wordPauseTimer);
       wordPauseTimer = setTimeout(finalizeWord, PV.jotWordSettleMs);
       redraw();
-      notifyChange();
+      if (onChange) onChange();
     } else {
       var id = nextId++;
       drawStrokes[id] = { points: stroke.points, bbox: jtBBox(stroke.points) };
@@ -2362,47 +2215,113 @@ function createJot(hostEl, onChange, notesText) {
   function syncToolbar() {
     var btns = toolbar.querySelectorAll(".jt-mode");
     for (var i = 0; i < btns.length; i++) btns[i].classList.toggle("active", btns[i].getAttribute("data-mode") === mode);
-    var nbBtn = toolbar.querySelector('[data-act="newbox"]');
-    if (nbBtn) nbBtn.classList.toggle("armed", placingBox);
-    canvas.style.outline = placingBox ? "2px dashed #2563eb" : "";
-    canvas.style.outlineOffset = "-2px";
   }
 
-  // Aa: swap the ink for an AI reading of it (Workers AI), and back again.
-  // The reading is cached until the jot changes.
+  // ── automatic handwriting → text (Workers AI), saved into the notes ──
+  function setConvInfo(msg) { convInfo.textContent = msg; }
+  function scheduleAutoConvert() {
+    if (!notesText) return;
+    if (convertTimer) clearTimeout(convertTimer);
+    convertTimer = setTimeout(autoConvert, PV.jotAutoConvertMs);
+  }
+  function autoConvert() {
+    convertTimer = null;
+    // Mid-word: wait for it to settle (finalizeWord schedules us again).
+    if (writingWord || current) return;
+    if (textSig() !== convertedSig) convertText();
+  }
+  function segSig(seg) {
+    var ids = [];
+    for (var i = 0; i < seg.words.length; i++) ids.push(seg.words[i].id);
+    return ids.join(",");
+  }
+  // One box's words (not the freehand drawing), on their own.
+  function segSVG(seg) {
+    var wSvg = Math.ceil(Math.max(DOC_WIDTH, box.wrapWidth)), h = Math.ceil(seg.h + 10);
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + wSvg + ' ' + h + '" width="' + wSvg + '" height="' + h + '"><rect width="100%" height="100%" fill="#1e1e1e"/>';
+    for (var wi = 0; wi < seg.words.length; wi++) {
+      var w = seg.words[wi];
+      var deg = (-w.rotate * 180 / Math.PI).toFixed(2);
+      svg += '<g transform="translate(' + w.x.toFixed(2) + ',' + (w.y - seg.top).toFixed(2) + ') rotate(' + deg + ') scale(' + w.scale.toFixed(4) + ') translate(' + (-w.anchor[0]).toFixed(2) + ',' + (-w.anchor[1]).toFixed(2) + ')">';
+      for (var s = 0; s < w.rawStrokes.length; s++) svg += jtOutlineToPath(jtOutline(w.rawStrokes[s]));
+      svg += '</g>';
+    }
+    return svg + '</svg>';
+  }
+  // The recogniser breaks lines where the box wrapped them: those go, so a
+  // box is one line of text, and only the Return that closed it is kept.
+  function jtOneLine(text) {
+    return String(text || "").split(String.fromCharCode(10)).map(function(l) { return l.trim(); }).filter(Boolean).join(" ");
+  }
+  // Sends every box not read yet (in the background — writing carries on);
+  // once all are in, joins them into the notes' text.
+  function convertText() {
+    if (convertTimer) { clearTimeout(convertTimer); convertTimer = null; }
+    var gen = convertSeq, missing = false;
+    box.segs.forEach(function(seg) {
+      if (!seg.words.length) return;
+      var sig = segSig(seg);
+      if (sig in segTexts) return;
+      missing = true;
+      if (segReading[sig]) return;
+      segReading[sig] = true;
+      jotToImage(segSVG(seg)).then(function(image) {
+        return fetch(API + "/jot-to-text", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: image }) });
+      }).then(function(r) { return r.json(); }).then(function(d) {
+        if (gen !== convertSeq) return;
+        delete segReading[sig];
+        if (d.error) throw new Error(d.error);
+        segTexts[sig] = jtOneLine(d.text);
+        convertText();
+      }).catch(function(err) {
+        if (gen !== convertSeq) return;
+        delete segReading[sig];
+        setConvInfo("Read failed");
+        if (jotTextMode) textView.innerHTML = '<span class="jt-text-note">Conversion failed: ' + esc(err.message) + '</span>';
+      });
+    });
+    if (missing) { setConvInfo("Reading…"); return; }
+    var text = "";
+    box.segs.forEach(function(seg) {
+      if (seg.words.length) text += segTexts[segSig(seg)] + (seg.closed ? String.fromCharCode(10) : "");
+    });
+    var sig = textSig();
+    if (sig === convertedSig && text === jotTextCache) return;
+    convertedSig = sig;
+    jotTextCache = text;
+    if (notesText) notesText.save(jotTextCache);
+    setConvInfo(jotTextCache ? "In Notes ✓" : "");
+    if (jotTextMode) renderJotTextEditor(jotTextCache ? "Saved to Notes ✓" : "");
+  }
+  // Seeds segTexts from text already in the notes, when it still splits
+  // into exactly one line per box (it won't after an Aa edit added lines).
+  function seedSegTexts(text) {
+    var lines = String(text || "").split(String.fromCharCode(10)), withWords = [];
+    box.segs.forEach(function(seg) { if (seg.words.length) withWords.push(seg); });
+    var lastClosed = withWords.length && withWords[withWords.length - 1].closed;
+    if (lastClosed) { if (lines[lines.length - 1] !== "") return; lines.pop(); }
+    if (lines.length !== withWords.length) return;
+    withWords.forEach(function(seg, i) { segTexts[segSig(seg)] = lines[i]; });
+  }
+
+  // Aa: swap the ink for the text that's in the notes, editable.
   function setTextMode(on) {
     if (!on) flushJotTextSave();
     jotTextMode = on;
-    jotTextSeq++;
     canvasWrap.classList.toggle("hidden", on);
     textView.classList.toggle("hidden", !on);
     toolbar.querySelector('[data-act="totext"]').classList.toggle("armed", on);
     if (on) showJotText();
   }
   function showJotText() {
-    if (api.isEmpty()) { textView.innerHTML = '<span class="jt-text-note">Nothing written yet</span>'; return; }
-    // Ink untouched since it was loaded: reuse the (possibly hand-edited)
-    // text already in the notes rather than re-reading it.
-    if (jotTextCache === null && !inkChanged && notesText) {
-      var prev = notesText.saved();
-      if (prev) jotTextCache = prev;
-    }
-    if (jotTextCache !== null) { renderJotTextEditor(""); return; }
-    var seq = jotTextSeq;
+    finalizeWord();
+    if (!hasText()) { textView.innerHTML = '<span class="jt-text-note">Nothing written yet</span>'; return; }
+    if (textSig() === convertedSig && jotTextCache !== null) { renderJotTextEditor(""); return; }
     textView.innerHTML = '<span class="jt-text-note">Converting handwriting…</span>';
-    jotToImage(api.getSVG()).then(function(image) {
-      return fetch(API + "/jot-to-text", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: image }) });
-    }).then(function(r) { return r.json(); }).then(function(d) {
-      if (seq !== jotTextSeq) return;
-      if (d.error) { textView.innerHTML = '<span class="jt-text-note">Conversion failed: ' + esc(d.error) + '</span>'; return; }
-      jotTextCache = d.text || "";
-      if (jotTextCache && notesText) notesText.save(jotTextCache);
-      renderJotTextEditor(jotTextCache ? "Added to Notes ✓" : "");
-    }).catch(function(err) {
-      if (seq === jotTextSeq) textView.innerHTML = '<span class="jt-text-note">Conversion failed: ' + esc(err.message) + '</span>';
-    });
+    convertText();
   }
-  // Editable text; changes autosave into the notes (debounced).
+  // Editable text; changes autosave into the notes (debounced). The next
+  // handwriting change re-reads the page and replaces the text.
   function renderJotTextEditor(status) {
     textView.innerHTML = '<textarea class="jt-text-edit" placeholder="(no text recognised)"></textarea><div class="jt-text-note jt-text-saved"></div>';
     var ta = textView.querySelector("textarea"), st = textView.querySelector(".jt-text-saved");
@@ -2427,6 +2346,15 @@ function createJot(hostEl, onChange, notesText) {
     if (notesText) notesText.save(jotTextCache || "");
   }
 
+  function resetAll() {
+    if (wordPauseTimer) { clearTimeout(wordPauseTimer); wordPauseTimer = null; }
+    writingWord = null; current = null;
+    actions = []; drawStrokes = {}; box.words = [];
+    segTexts = {}; segReading = {};
+    relayoutBox();
+    camera.x = 0; camera.y = 0;
+  }
+
   toolbar.addEventListener("click", function(e) {
     var btn = e.target.closest(".jt-btn");
     if (!btn) return;
@@ -2437,71 +2365,56 @@ function createJot(hostEl, onChange, notesText) {
     if (m) {
       finalizeWord();
       mode = (mode === m) ? null : m;
-      // The selected box lasts exactly as long as Jot mode: leaving it (to
-      // Draw/Erase/none) deselects, so re-entering means picking a box again.
-      if (mode !== "jot") activeBoxId = null;
-      placingBox = false;
       syncToolbar();
       redraw();
       return;
     }
     var act = btn.getAttribute("data-act");
-    if (act === "newbox") {
-      // Arm placement (tap again to cancel). Jot mode is switched on so the
-      // new box can be written into straight away.
-      finalizeWord();
-      placingBox = !placingBox;
-      if (placingBox) mode = "jot";
-      syncToolbar();
-      redraw();
-      return;
-    }
     // Same rule as the Backspace gesture: a word still being written goes first;
     // only when there is none does Undo take back the last committed action.
     if (act === "undo") jtGestureBackspace();
     else if (act === "zoomin") setZoom(camera.scale * PV.jotZoomStep);
     else if (act === "zoomout") setZoom(camera.scale / PV.jotZoomStep);
     else if (act === "zoomreset") setZoom(1);
-    else if (act === "clear") { finalizeWord(); actions = []; drawStrokes = {}; boxes = []; activeBoxId = null; camera.x = 0; camera.y = 0; setZoom(1); redraw(); notifyChange(); }
+    else if (act === "clear") { resetAll(); setZoom(1); notifyChange(); }
   });
 
+  relayoutBox();
   redraw();
 
   var api = {
-    clear: function() { finalizeWord(); actions = []; drawStrokes = {}; boxes = []; activeBoxId = null; camera.x = 0; camera.y = 0; camera.scale = 1; updateZoomLabel(); updateDocWidth(); redraw(); },
+    // Reset for a new call: nothing is written back to the notes.
+    clear: function() {
+      convertSeq++;
+      if (convertTimer) { clearTimeout(convertTimer); convertTimer = null; }
+      resetAll();
+      convertedSig = ""; jotTextCache = null; setConvInfo("");
+      camera.scale = 1; updateZoomLabel(); updateDocWidth(); redraw();
+    },
     isEmpty: function() { return actions.length === 0 && !writingWord; },
     getJSON: function() { return withPendingWord(function() {
       var ds = [], id;
       for (id in drawStrokes) ds.push({ id: id, points: drawStrokes[id].points });
-      var bs = boxes.map(function(b) {
-        return {
-          id: b.id, x: b.x, y: b.y, wrapWidth: b.wrapWidth, minH: b.minH || 0, w: b.w, h: b.h, stretched: b.stretched,
-          words: b.words.map(function(w) { return w.isBreak ? { id: w.id, isBreak: true } : { id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height, dot: !!w.dot }; })
-        };
-      });
-      return { v: 2, canvasWidth: DOC_WIDTH, drawStrokes: ds, boxes: bs };
+      var words = box.words.map(function(w) { return w.isBreak ? { id: w.id, isBreak: true } : { id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height, dot: !!w.dot }; });
+      // textSig: which words the notes' text was read from, so a reload
+      // knows whether it's stale (e.g. the page closed mid-conversion).
+      return { v: 3, canvasWidth: DOC_WIDTH, textSig: convertedSig, drawStrokes: ds, boxes: [{ id: 0, x: 0, y: 0, wrapWidth: box.wrapWidth, words: words }] };
     }); },
-    getSVG: function() { return withPendingWord(function() {
-      var maxY = JOT_PARA_TOP, maxX = DOC_WIDTH;
+    // textOnly: just the box's words, for reading the handwriting.
+    getSVG: function(textOnly) { return withPendingWord(function() {
+      var maxY = box.h + 10, maxX = Math.max(DOC_WIDTH, box.wrapWidth);
       var id;
-      for (id in drawStrokes) { maxY = Math.max(maxY, drawStrokes[id].bbox.maxY); maxX = Math.max(maxX, drawStrokes[id].bbox.maxX); }
-      for (var i = 0; i < boxes.length; i++) { var bx = boxes[i]; maxY = Math.max(maxY, bx.y + bx.h + 10); maxX = Math.max(maxX, bx.x + bx.w + 10); }
+      if (!textOnly) for (id in drawStrokes) { maxY = Math.max(maxY, drawStrokes[id].bbox.maxY); maxX = Math.max(maxX, drawStrokes[id].bbox.maxX); }
       var h = Math.ceil(maxY + 20);
       var wSvg = Math.ceil(maxX);
       var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + wSvg + ' ' + h + '" width="' + wSvg + '" height="' + h + '"><rect width="100%" height="100%" fill="#1e1e1e"/>';
-      for (id in drawStrokes) svg += jtOutlineToPath(jtOutline(drawStrokes[id].points));
-      for (i = 0; i < boxes.length; i++) {
-        var b = boxes[i];
-        var sx = b.w / b.wrapWidth, sy = b.h / Math.max(b.contentHeight, 1);
-        svg += '<g transform="translate(' + b.x.toFixed(2) + ',' + b.y.toFixed(2) + ') scale(' + sx.toFixed(4) + ',' + sy.toFixed(4) + ')">';
-        for (var wi = 0; wi < b.words.length; wi++) {
-          var w = b.words[wi];
-          if (w.isBreak) continue;
-          var deg = (-w.rotate * 180 / Math.PI).toFixed(2);
-          svg += '<g transform="translate(' + w.x.toFixed(2) + ',' + w.y.toFixed(2) + ') rotate(' + deg + ') scale(' + w.scale.toFixed(4) + ') translate(' + (-w.anchor[0]).toFixed(2) + ',' + (-w.anchor[1]).toFixed(2) + ')">';
-          for (var s = 0; s < w.rawStrokes.length; s++) svg += jtOutlineToPath(jtOutline(w.rawStrokes[s]));
-          svg += '</g>';
-        }
+      if (!textOnly) for (id in drawStrokes) svg += jtOutlineToPath(jtOutline(drawStrokes[id].points));
+      for (var wi = 0; wi < box.words.length; wi++) {
+        var w = box.words[wi];
+        if (w.isBreak) continue;
+        var deg = (-w.rotate * 180 / Math.PI).toFixed(2);
+        svg += '<g transform="translate(' + w.x.toFixed(2) + ',' + w.y.toFixed(2) + ') rotate(' + deg + ') scale(' + w.scale.toFixed(4) + ') translate(' + (-w.anchor[0]).toFixed(2) + ',' + (-w.anchor[1]).toFixed(2) + ')">';
+        for (var s = 0; s < w.rawStrokes.length; s++) svg += jtOutlineToPath(jtOutline(w.rawStrokes[s]));
         svg += '</g>';
       }
       svg += '</svg>';
@@ -2512,61 +2425,55 @@ function createJot(hostEl, onChange, notesText) {
       // direct state) so it replays correctly through rebuildFromActions()
       // — otherwise the first Undo after loading would rebuild from an
       // empty log and wipe the loaded content instead of the last edit.
-      actions = [];
-      drawStrokes = {}; boxes = []; activeBoxId = null;
-      jotTextCache = null; inkChanged = false;
+      convertSeq++;
+      if (convertTimer) { clearTimeout(convertTimer); convertTimer = null; }
+      resetAll();
+      function seedId(id) { if (nextId <= Number(id)) nextId = Number(id) + 1; }
+      function seedWord(w) {
+        if (w.isBreak) { actions.push({ type: "add-break", id: w.id }); return; }
+        actions.push({ type: "add-word", id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height, dot: !!w.dot });
+      }
+      // nextId first goes past every saved id, so the breaks minted below
+      // to join old boxes can't collide with one.
+      var oldWords = [], bi, wi;
+      if (data && data.boxes) for (bi = 0; bi < data.boxes.length; bi++) oldWords = oldWords.concat(data.boxes[bi].words || []);
+      else if (data && data.words) oldWords = data.words;
+      for (wi = 0; wi < oldWords.length; wi++) seedId(oldWords[wi].id);
       if (data && data.drawStrokes) for (var i = 0; i < data.drawStrokes.length; i++) {
         var d = data.drawStrokes[i];
         actions.push({ type: "add-stroke", id: d.id, points: d.points });
-        drawStrokes[d.id] = { points: d.points, bbox: jtBBox(d.points) };
-        if (nextId <= Number(d.id)) nextId = Number(d.id) + 1;
+        seedId(d.id);
       }
       if (data && data.boxes) {
+        // Older saves could hold several boxes: they become one page, each
+        // old box starting on a new line.
         for (var j = 0; j < data.boxes.length; j++) {
-          var bd = data.boxes[j];
-          actions.push({ type: "add-box", id: bd.id, x: bd.x, y: bd.y, wrapWidth: bd.wrapWidth, minH: bd.minH || 0 });
-          var b = { id: bd.id, x: bd.x, y: bd.y, wrapWidth: bd.wrapWidth, minH: bd.minH || 0, contentHeight: bd.minH || JOT_BOX_MIN_HEIGHT, w: bd.w || bd.wrapWidth, h: bd.h || bd.minH || JOT_BOX_MIN_HEIGHT, stretched: !!bd.stretched, words: [] };
-          boxes.push(b);
-          if (nextId <= Number(bd.id)) nextId = Number(bd.id) + 1;
-          if (bd.words) for (var k = 0; k < bd.words.length; k++) {
-            var w = bd.words[k];
-            if (w.isBreak) {
-              actions.push({ type: "add-break", id: w.id, boxId: b.id });
-              b.words.push(jtBreakWord(w.id));
-            } else {
-              actions.push({ type: "add-word", id: w.id, boxId: b.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height, dot: !!w.dot });
-              b.words.push({ id: w.id, rawStrokes: w.rawStrokes, anchor: w.anchor, rotate: w.rotate, scale: w.scale, width: w.width, height: w.height, dot: !!w.dot });
-            }
-            if (nextId <= Number(w.id)) nextId = Number(w.id) + 1;
-          }
-          relayoutBox(b);
+          var bws = data.boxes[j].words || [];
+          if (j > 0 && bws.length) { var bid = nextId++; actions.push({ type: "add-break", id: bid }); }
+          for (var k = 0; k < bws.length; k++) seedWord(bws[k]);
         }
-      } else if (data && data.words && data.words.length) {
-        // Legacy (v1) content: a single flat page of handwritten words with
-        // no boxes — migrate it into one implicit box so old saved notes
-        // keep showing instead of disappearing.
-        for (var mi = 0; mi < data.words.length; mi++) if (nextId <= Number(data.words[mi].id)) nextId = Number(data.words[mi].id) + 1;
-        var legacyWidth = Math.max(jotDefaultBoxWidth(), data.canvasWidth || jotDefaultBoxWidth());
-        var lb = { id: nextId++, x: JOT_PARA_MARGIN, y: JOT_PARA_MARGIN, wrapWidth: legacyWidth, contentHeight: JOT_BOX_MIN_HEIGHT, w: legacyWidth, h: JOT_BOX_MIN_HEIGHT, stretched: false, words: [] };
-        boxes.push(lb);
-        actions.push({ type: "add-box", id: lb.id, x: lb.x, y: lb.y, wrapWidth: lb.wrapWidth });
-        for (var m = 0; m < data.words.length; m++) {
-          var lw = data.words[m];
-          if (lw.isBreak) {
-            actions.push({ type: "add-break", id: lw.id, boxId: lb.id });
-            lb.words.push(jtBreakWord(lw.id));
-          } else {
-            actions.push({ type: "add-word", id: lw.id, boxId: lb.id, rawStrokes: lw.rawStrokes, anchor: lw.anchor, rotate: lw.rotate, scale: lw.scale, width: lw.width, height: lw.height });
-            lb.words.push({ id: lw.id, rawStrokes: lw.rawStrokes, anchor: lw.anchor, rotate: lw.rotate, scale: lw.scale, width: lw.width, height: lw.height });
-          }
-        }
-        relayoutBox(lb);
+      } else if (data && data.words) {
+        // Legacy (v1): a single flat page of words.
+        for (var m = 0; m < data.words.length; m++) seedWord(data.words[m]);
       }
+      rebuildFromActions();
       redraw();
+      // Text already in the notes is current if it was read from exactly
+      // these words (or, for saves from before textSig, if there is any).
+      var prev = notesText ? notesText.saved() : "";
+      var sig = textSig();
+      var upToDate = data && typeof data.textSig === "string" ? data.textSig === sig : !!prev;
+      if (upToDate || !hasText()) { convertedSig = sig; jotTextCache = prev || ""; if (upToDate) seedSegTexts(prev); }
+      else { convertedSig = null; jotTextCache = null; scheduleAutoConvert(); }
     },
     destroy: function() {
       flushJotTextSave();
       finalizeWord();
+      // A conversion still pending or in flight is dropped (this page's
+      // notes may belong to another call by the time it lands); the stale
+      // textSig in the saved JSON makes the next open re-read it.
+      convertSeq++;
+      if (convertTimer) { clearTimeout(convertTimer); convertTimer = null; }
       canvas.removeEventListener("pointerdown", onDown);
       canvas.removeEventListener("pointermove", onMove);
       canvas.removeEventListener("pointerup", onUp);
@@ -4319,7 +4226,110 @@ function openSettings() {
   document.getElementById("set-dev").checked = settings.devMode;
   document.getElementById("set-quicktext").value = settings.quickText || "";
   renderAccountSelect();
+  renderStaffLocation();
   document.getElementById("settings-modal").classList.remove("hidden");
+}
+
+// ── Staff location tracking (Android app only) ─────────────────
+// Signs an employee in with their Odoo Attendances PIN; the native
+// StaffLocation plugin then sends a location every 15 minutes in the
+// background (see android/.../LocationWorker.java and src/staff.ts).
+function staffPlugin() {
+  var Cap = window.Capacitor;
+  if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform()) return null;
+  return (Cap.Plugins && Cap.Plugins.StaffLocation) || null;
+}
+function staffTime(ms) {
+  if (!ms) return "never";
+  var d = new Date(ms);
+  return d.toLocaleDateString([], { day: "numeric", month: "short" }) + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+function renderStaffLocation() {
+  var SL = staffPlugin();
+  var box = document.getElementById("loc-box");
+  if (!SL) { box.classList.add("hidden"); return; }
+  box.classList.remove("hidden");
+  SL.status().then(showStaffStatus).catch(function() {});
+}
+function showStaffStatus(s) {
+  document.getElementById("loc-signed-in").classList.toggle("hidden", !s.signedIn);
+  document.getElementById("loc-signed-out").classList.toggle("hidden", !!s.signedIn);
+  var st = document.getElementById("loc-status");
+  if (!s.signedIn) {
+    st.textContent = "Not tracking.";
+    loadStaffEmployees();
+    return;
+  }
+  document.getElementById("loc-name").textContent = s.name;
+  var warn = [];
+  if (s.location !== "granted") warn.push("location permission off");
+  else if (s.background !== "granted") warn.push("location not set to 'Allow all the time'");
+  if (!s.batteryUnrestricted) warn.push("battery saving on");
+  st.innerHTML = "";
+  var line = document.createElement("div");
+  line.textContent = "Last reading " + staffTime(s.lastFixAt) + ", last sent " + staffTime(s.lastSentAt) + (s.lastError ? " (" + s.lastError + ")" : "");
+  st.appendChild(line);
+  if (warn.length) {
+    var w = document.createElement("div");
+    w.className = "loc-warn";
+    w.textContent = "⚠ " + warn.join(", ") + ". Also allow Autostart.";
+    st.appendChild(w);
+  }
+}
+function loadStaffEmployees() {
+  var sel = document.getElementById("loc-employee");
+  fetch(API + "/staff/employees").then(function(r) { return r.json(); }).then(function(d) {
+    sel.innerHTML = "";
+    var list = d.employees || [];
+    if (!list.length) {
+      var o = document.createElement("option");
+      o.textContent = "No employees have a PIN";
+      sel.appendChild(o);
+      return;
+    }
+    list.forEach(function(e) {
+      var o = document.createElement("option");
+      o.value = e.id;
+      o.textContent = e.name;
+      sel.appendChild(o);
+    });
+  }).catch(function() {});
+}
+function staffSignIn() {
+  var SL = staffPlugin();
+  if (!SL) return;
+  var st = document.getElementById("loc-status");
+  var pinEl = document.getElementById("loc-pin");
+  var id = parseInt(document.getElementById("loc-employee").value, 10);
+  if (!id || !pinEl.value) { st.textContent = "Pick your name and enter your PIN."; return; }
+  st.textContent = "Signing in…";
+  fetch(API + "/staff/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ employee_id: id, pin: pinEl.value })
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    pinEl.value = "";
+    if (!d.token) { st.textContent = d.error || "Sign-in failed."; return; }
+    return SL.signIn({ token: d.token, name: d.employee.name, url: API }).then(function() {
+      return SL.requestLocation();
+    }).then(showStaffStatus);
+  }).catch(function() { st.textContent = "Sign-in failed (no connection?)."; });
+}
+function staffSignOut() {
+  var SL = staffPlugin();
+  if (SL) SL.signOut().then(showStaffStatus).catch(function() {});
+}
+function staffFixPermissions() {
+  var SL = staffPlugin();
+  if (SL) SL.requestLocation().then(showStaffStatus).catch(function() {});
+}
+function staffBattery() {
+  var SL = staffPlugin();
+  if (SL) SL.openBatterySettings();
+}
+function staffAutostart() {
+  var SL = staffPlugin();
+  if (SL) SL.openAutostartSettings();
 }
 function cancelSettings() {
   if (settingsBackup) activeAccountId = settingsBackup.activeAccountId;
