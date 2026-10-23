@@ -274,11 +274,12 @@ export async function lookupCaller(env: Env, number: string) {
 }
 
 /** New res.partner for a number nobody's saved yet, named "dd/mm/yy number"
- *  so it's easy to find and rename later. Written to Odoo and the D1 cache. */
-export async function createContactForNumber(env: Env, number: string, when = Date.now()): Promise<Contact | null> {
+ *  so it's easy to find and rename later (or knownName, when the caller gave
+ *  one, e.g. a website callback request). Written to Odoo and the D1 cache. */
+export async function createContactForNumber(env: Env, number: string, when = Date.now(), knownName?: string): Promise<Contact | null> {
   const phone = displayNumber(number);
   const date = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "2-digit", year: "2-digit", timeZone: "Europe/London" }).format(new Date(when));
-  const name = `${date} ${phone}`;
+  const name = knownName || `${date} ${phone}`;
   const uid = await odooAuth(env);
   if (!uid) return null;
   const r = await odooCall(env, uid, "res.partner", "create", [{ name, phone }]);
