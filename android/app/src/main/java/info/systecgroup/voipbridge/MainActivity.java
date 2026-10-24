@@ -1,6 +1,8 @@
 package info.systecgroup.voipbridge;
 
+import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.webkit.CookieManager;
 
@@ -8,7 +10,7 @@ import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
     // Must match server.url in capacitor.config.ts (the cookie is per-origin).
-    private static final String APP_ORIGIN = "https://voip-bridge.wandering-mode-c597.workers.dev";
+    private static final String APP_ORIGIN = "https://voip.ihpltd.co.uk";
     // A tap older than this is a stale intent (e.g. re-delivered after process death).
     private static final long TAP_FRESH_MS = 60_000;
 
@@ -17,6 +19,15 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(StaffLocationPlugin.class);
         super.onCreate(savedInstanceState);
         markAnswerRequested(getIntent());
+        // The WebView can't download files itself. Hand downloads (the app
+        // update on /app/) to the browser, which saves the APK and offers to
+        // install it.
+        getBridge().getWebView().setDownloadListener((url, userAgent, contentDisposition, mimeType, length) -> {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+            } catch (ActivityNotFoundException ignored) {
+            }
+        });
     }
 
     @Override

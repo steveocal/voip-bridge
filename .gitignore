@@ -4,3 +4,6 @@ dist/
 *.log
 .env
 .dev.vars
+# Release APK + its version file: built by scripts/android-release.sh, served from public/app
+public/app/voip-bridge.apk
+public/app/version.json

@@ -382,6 +382,11 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <button onclick="dismissInstallTip()" aria-label="Dismiss">✕</button>
   </div>
 
+  <div class="install-tip hidden" id="update-tip">
+    <span id="update-text"></span>
+    <button onclick="dismissAppUpdate()" aria-label="Dismiss">✕</button>
+  </div>
+
   <div class="call-banner hidden" id="call-banner">
     <div class="info">
       <div class="remote" id="banner-remote"></div>
@@ -3970,6 +3975,48 @@ function menuInstallApp() {
 function dismissInstallTip() {
   document.getElementById("install-tip").classList.add("hidden");
 }
+
+// ── Android app update prompt ──────────────────────────────────
+// The native shell rarely changes (the UI is this page), but when a new APK
+// is published to /app/ (scripts/android-release.sh), tell the app's users.
+// Builds 2+ hand the download to the browser (MainActivity's download
+// listener); build 1 was a debug build that can't, and needs a reinstall.
+var appUpdateCode = 0;
+function checkAppUpdate() {
+  var Cap = window.Capacitor;
+  if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform()) return;
+  var AppPlugin = Cap.Plugins && Cap.Plugins.App;
+  if (!AppPlugin || !AppPlugin.getInfo) return;
+  Promise.all([
+    AppPlugin.getInfo(),
+    fetch(API + "/app/version.json", { cache: "no-store" }).then(function(r) { return r.ok ? r.json() : null; })
+  ]).then(function(res) {
+    var installed = parseInt(res[0].build, 10) || 0;
+    var latest = res[1];
+    if (!latest || !(latest.versionCode > installed)) return;
+    if (localStorage.getItem("vb_update_dismissed") === String(latest.versionCode)) return;
+    appUpdateCode = latest.versionCode;
+    var text = document.getElementById("update-text");
+    text.textContent = "";
+    if (installed >= 2) {
+      text.append("VoIP Bridge " + latest.versionName + " is available. ");
+      var a = document.createElement("a");
+      a.href = API + "/app/";
+      a.textContent = "Update";
+      a.style.color = "#60a5fa";
+      a.style.fontWeight = "700";
+      text.append(a);
+    } else {
+      text.append("A new version of the app is out. Open " + API.replace("https://", "") + "/app/ in Chrome to install it.");
+    }
+    document.getElementById("update-tip").classList.remove("hidden");
+  }).catch(function() {});
+}
+function dismissAppUpdate() {
+  if (appUpdateCode) localStorage.setItem("vb_update_dismissed", String(appUpdateCode));
+  document.getElementById("update-tip").classList.add("hidden");
+}
+document.addEventListener("visibilitychange", function() { if (!document.hidden) checkAppUpdate(); });
 (function() {
   var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
   if (isIOS && !isStandalone()) showInstallButtons();
@@ -4703,6 +4750,7 @@ function boot() {
   }).catch(function() {});
 }
 document.addEventListener("DOMContentLoaded", boot);
+document.addEventListener("DOMContentLoaded", checkAppUpdate);
 </script>
 </body>
 </html>`;

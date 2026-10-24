@@ -24,6 +24,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- App Link: voip.ihpltd.co.uk opens the app (verified by the
+                 worker's /.well-known/assetlinks.json). Not /app/, so the
+                 install page's APK download still goes to the browser. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="voip.ihpltd.co.uk" />
+                <data android:path="/" />
+                <data android:pathPrefix="/dashboard" />
+            </intent-filter>
+
         </activity>
 
         <provider

@@ -42,6 +42,38 @@ Studio: `npx cap open android`, then Build → Build APK(s). Or from a shell:
 APK lands in `android/app/build/outputs/apk/debug/`. After changing
 `capacitor.config.ts` or plugins, run `npx cap sync android` first.
 
+### Releasing to phones
+Phones install from **https://voip.ihpltd.co.uk/app/**
+(download page with QR code and install steps). To publish a new APK:
+
+    scripts/android-release.sh "what changed"   # bumps versionCode, signed release build → public/app
+    npm run deploy
+    git commit android/app/version.properties
+
+Users of build 2+ then see "VoIP Bridge 1.x is available. Update" in the
+dashboard; downloads tapped inside the app are handed to Chrome
+(`MainActivity`'s download listener). The APK and `version.json` are
+gitignored, so deploying from a fresh checkout drops them until the next
+release build.
+
+The release key is `~/Android/keys/voip-bridge-release.jks`, and its passwords
+are in `~/Android/keys/voip-bridge-keystore.properties` (or set
+`$VOIP_BRIDGE_KEYSTORE`). **Back both up.** Without them no update will
+install over the existing app. Every phone would have to uninstall and
+reinstall. Certificate SHA-256: `E9:D6:3F:AF:…:4D:7C:36:34`.
+
+The app loads `https://voip.ihpltd.co.uk/dashboard`, a custom domain on the
+same worker. `/` redirects to `/dashboard`. Links to `voip.ihpltd.co.uk/` and
+`/dashboard*` open the app (an Android App Link: the intent filter in
+`AndroidManifest.xml`, verified by the worker's
+`/.well-known/assetlinks.json`, which must list the release key's
+fingerprint). `/app/` is deliberately not claimed, so APK downloads stay in
+the browser. Check verification with Google's
+`digitalassetlinks.googleapis.com/v1/statements:list?source.web.site=https://voip.ihpltd.co.uk&relation=delegate_permission/common.handle_all_urls`.
+
+Capacitor's `webDir` is `app-shell/` (an offline page), not `public/`, so the
+hosted APK never gets packaged into the next one.
+
 ### Phone
 - Allow the mic and notification prompts on first launch.
 - Android 14+: Settings → Apps → VoIP Bridge → allow **full-screen

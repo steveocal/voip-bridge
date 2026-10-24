@@ -700,6 +700,19 @@ async function handleJotToText(request: Request, env: Env): Promise<Response> {
   }
 }
 
+// ── Android App Links ──────────────────────────────────────────
+// Lets the app open voip.ihpltd.co.uk links (the intent filter in
+// AndroidManifest.xml). The fingerprint is the release signing key's; see
+// docs/android.md.
+const ANDROID_ASSET_LINKS = [{
+  relation: ["delegate_permission/common.handle_all_urls"],
+  target: {
+    namespace: "android_app",
+    package_name: "info.systecgroup.voipbridge",
+    sha256_cert_fingerprints: ["E9:D6:3F:AF:5D:EB:43:7D:CD:A8:AD:23:A1:3F:44:7C:A7:3B:F8:27:9A:8D:78:80:23:B6:DF:E3:4D:7C:36:34"],
+  },
+}];
+
 // ── CORS ───────────────────────────────────────────────────────
 
 function corsHeaders(): Record<string, string> {
@@ -768,7 +781,8 @@ export default {
     else if (request.method === "GET" && url.pathname === "/contacts/cache") response = await handleContactsCache(request, env);
     else if (request.method === "GET" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleContactDetail(env, parseInt(url.pathname.split("/")[2]), url.searchParams.get("cached") === "1");
     else if (request.method === "POST" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleRenameContact(request, env, parseInt(url.pathname.split("/")[2]));
-    else if (url.pathname === "/") response = Response.json({ service: "voip-bridge", routes: ["/call-event", "/click2call", "/caller-lookup", "/active-calls", "/answer", "/hangup-call", "/call-history", "/call-notes", "/quotations", "/contacts", "/contacts/:id"] });
+    else if (url.pathname === "/") response = Response.redirect(new URL("/dashboard", url).toString(), 302);
+    else if (url.pathname === "/.well-known/assetlinks.json") response = Response.json(ANDROID_ASSET_LINKS);
     else if (url.pathname === "/dashboard") response = serveDashboard();
     else response = new Response("Not found", { status: 404 });
 

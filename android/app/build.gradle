@@ -1,5 +1,16 @@
 apply plugin: 'com.android.application'
 
+// Version: bumped by scripts/android-release.sh, which also publishes the APK
+// to public/app for the install page and the dashboard's update prompt.
+def versionProps = new Properties()
+file('version.properties').withInputStream { versionProps.load(it) }
+
+// Release signing key, kept outside the repo. Every release must be signed
+// with this same key or Android refuses to install it over the old app.
+def keystoreProps = new Properties()
+def keystorePropsFile = file(System.getenv('VOIP_BRIDGE_KEYSTORE') ?: "${System.getProperty('user.home')}/Android/keys/voip-bridge-keystore.properties")
+if (keystorePropsFile.exists()) keystorePropsFile.withInputStream { keystoreProps.load(it) }
+
 android {
     namespace = "info.systecgroup.voipbridge"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +18,8 @@ android {
         applicationId "info.systecgroup.voipbridge"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode versionProps['versionCode'].toInteger()
+        versionName versionProps['versionName']
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +27,19 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (keystoreProps['storeFile']) {
+                storeFile file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
+            signingConfig keystoreProps['storeFile'] ? signingConfigs.release : null
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
