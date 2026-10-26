@@ -17,6 +17,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(StaffLocationPlugin.class);
+        registerPlugin(PhoneNativePlugin.class);
         super.onCreate(savedInstanceState);
         markAnswerRequested(getIntent());
         // The WebView can't download files itself. Hand downloads (the app

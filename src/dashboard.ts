@@ -134,6 +134,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .msg-row .meta{margin-left:auto;font-size:12px;color:#999;flex-shrink:0}
 /* bottom menu */
 .bottom-menu{display:flex;border-top:1px solid #222;background:#0a0a0a;padding:6px 0 env(safe-area-inset-bottom)}
+.via-btn{flex-shrink:0;border:1px solid #333;background:#1a1a1a;color:#ddd;border-radius:14px;padding:4px 9px;font-size:12px;cursor:pointer;white-space:nowrap}
+.via-btn.sim{border-color:#f59e0b;color:#fbbf24}
+.priv-num{display:flex;align-items:center;gap:8px;margin-top:4px}
+.priv-num .sub{flex:1}
 .act-row .sub.overdue{color:#f87171}
 .act-row .sub.today{color:#fbbf24}
 .act-row .act-done{width:38px;height:38px;border-radius:50%;border:1px solid #333;background:#1a1a1a;color:#ddd;font-size:16px;cursor:pointer;flex-shrink:0}
@@ -463,6 +467,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       <div class="dial-bottom" id="dial-bottom">
         <div class="entry" id="dial-entry">
           <input id="dial-input" type="text" placeholder="Number or name (T9)" autocomplete="off" autocapitalize="off">
+          <button class="via-btn hidden" id="call-via-btn" onclick="toggleCallVia()" title="Call over the internet (VoIP) or the phone's SIM">☁ VoIP</button>
           <button class="hist-tx-btn" id="hist-tx-btn" onclick="toggleTranscriptSearch()" title="Search call transcripts">💬</button>
           <button class="backspace" onclick="backspace()">⌫</button>
         </div>
@@ -587,10 +592,11 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <div class="view hidden" id="view-contacts">
       <h2>👥 Contacts</h2>
       <div class="cp-tabs" id="contacts-tabs">
-        <button class="cp-tab active" data-tab="all" onclick="switchContactsTab('all')">All</button>
         <button class="cp-tab" data-tab="favourites" onclick="switchContactsTab('favourites')">★ Favourites</button>
+        <button class="cp-tab active" data-tab="odoo" onclick="switchContactsTab('odoo')">Odoo</button>
+        <button class="cp-tab" data-tab="private" onclick="switchContactsTab('private')">Private</button>
       </div>
-      <div id="ct-tab-all">
+      <div id="ct-tab-odoo">
         <div class="entry">
           <input id="contact-search" type="text" placeholder="Search contacts" autocomplete="off">
         </div>
@@ -598,6 +604,12 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       </div>
       <div id="ct-tab-favourites" class="hidden">
         <div id="fav-list"><div class="empty">No favourites yet</div></div>
+      </div>
+      <div id="ct-tab-private" class="hidden">
+        <div class="entry">
+          <input id="private-search" type="text" placeholder="Search this phone's contacts" autocomplete="off">
+        </div>
+        <div id="private-list"><div class="empty">Loading…</div></div>
       </div>
     </div>
 
@@ -2910,6 +2922,7 @@ function dialOut(num) {
   // numbers are this long — short internal extensions (200/201/202) and
   // feature codes are never mistaken for one.
   else if (!num.startsWith("+") && num.length > 6) num = "+" + num;
+  if (callVia === "sim" && num.length > 6 && simDial(num)) return;
   if (!sipUA) { setStatus("❌ Not registered", true); return; }
   var acc = activeAccount();
   var domain = (acc && acc.domain) || PV.defaultDomain;
@@ -3335,17 +3348,109 @@ document.getElementById("activities-list").addEventListener("click", function(e)
 });
 
 // ── favourites (the Contacts view's second tab) ─────────────────
-var contactsTab = "all";
-try { if (localStorage.getItem("vb_contactsTab") === "favourites") contactsTab = "favourites"; } catch (e) {}
+// Contacts has three tabs: Favourites, Odoo (the D1 cache of Odoo
+// contacts) and Private (this phone's own address book, Android app only).
+var CONTACT_TABS = ["favourites", "odoo", "private"];
+var contactsTab = "odoo";
+try {
+  var savedTab = localStorage.getItem("vb_contactsTab");
+  if (CONTACT_TABS.indexOf(savedTab) >= 0) contactsTab = savedTab;
+} catch (e) {}
 function switchContactsTab(tab) {
-  contactsTab = tab === "favourites" ? "favourites" : "all";
+  contactsTab = CONTACT_TABS.indexOf(tab) >= 0 ? tab : "odoo";
   try { localStorage.setItem("vb_contactsTab", contactsTab); } catch (e) {}
   var tabs = document.querySelectorAll("#contacts-tabs .cp-tab");
   for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle("active", tabs[i].getAttribute("data-tab") === contactsTab);
-  document.getElementById("ct-tab-all").classList.toggle("hidden", contactsTab !== "all");
-  document.getElementById("ct-tab-favourites").classList.toggle("hidden", contactsTab !== "favourites");
+  for (var j = 0; j < CONTACT_TABS.length; j++) {
+    document.getElementById("ct-tab-" + CONTACT_TABS[j]).classList.toggle("hidden", contactsTab !== CONTACT_TABS[j]);
+  }
   if (contactsTab === "favourites") renderFavourites();
+  else if (contactsTab === "private") loadPrivateContacts(document.getElementById("private-search").value);
   else loadContacts(document.getElementById("contact-search").value);
+}
+
+// ── Android app: the phone's own contacts and SIM calls (PhoneNativePlugin) ──
+function phoneNative() {
+  var Cap = window.Capacitor;
+  if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform()) return null;
+  return (Cap.Plugins && Cap.Plugins.PhoneNative) || null;
+}
+var privateContacts = [];
+var privateTimer = null;
+function loadPrivateContacts(q) {
+  var el = document.getElementById("private-list");
+  var PN = phoneNative();
+  if (!PN) { el.innerHTML = '<div class="empty">Your phone contacts show here in the VoIP Bridge Android app.</div>'; return; }
+  PN.contacts({ query: (q || "").trim() }).then(function(r) {
+    privateContacts = r.contacts || [];
+    renderPrivateContacts();
+  }).catch(function(err) {
+    el.innerHTML = '<div class="empty">' + (String(err && err.message || err).indexOf("permission") >= 0
+      ? "Allow VoIP Bridge to read your contacts (Android settings, Apps, VoIP Bridge, Permissions)."
+      : "Couldn't read this phone's contacts.") + '</div>';
+  });
+}
+function renderPrivateContacts() {
+  var el = document.getElementById("private-list");
+  if (!privateContacts.length) { el.innerHTML = '<div class="empty">No contacts found on this phone.</div>'; return; }
+  el.innerHTML = privateContacts.map(function(c) {
+    var id = "p:" + c.id;
+    var nums = (c.numbers || []).map(function(n) {
+      return '<div class="priv-num"><span class="sub">' + esc(n.label ? n.label + " · " : "") + esc(n.number) + '</span>'
+        + '<button class="mini-call" data-num="' + esc(n.number) + '" title="Call">📞</button></div>';
+    }).join("");
+    return '<div class="contact-row" data-id="' + esc(id) + '"><div style="flex:1;min-width:0"><div class="cname">' + esc(c.name || "") + '</div>' + nums + '</div>'
+      + '<button class="fav-star' + (isFav(id) ? " on" : "") + '" data-id="' + esc(id) + '">★</button></div>';
+  }).join("");
+}
+document.getElementById("private-search").addEventListener("input", function(e) {
+  clearTimeout(privateTimer);
+  var q = e.target.value;
+  privateTimer = setTimeout(function() { loadPrivateContacts(q); }, 250);
+});
+document.getElementById("private-list").addEventListener("click", function(e) {
+  var fav = e.target.closest(".fav-star");
+  if (fav) {
+    var id = fav.getAttribute("data-id");
+    var c = privateContacts.filter(function(x) { return "p:" + x.id === id; })[0];
+    if (c) {
+      toggleFav({ id: id, name: c.name, mobile: (c.numbers && c.numbers[0] && c.numbers[0].number) || "" });
+      fav.classList.toggle("on", isFav(id));
+    }
+    return;
+  }
+  var mini = e.target.closest(".mini-call");
+  if (mini) prepareDial(mini.getAttribute("data-num"));
+});
+
+// Calling over VoIP (Asterisk) or the phone's SIM. Only offered in the app;
+// extensions and short codes always go over VoIP, since the SIM can't reach them.
+var callVia = "voip";
+try { if (localStorage.getItem("vb_callVia") === "sim") callVia = "sim"; } catch (e) {}
+function renderCallVia() {
+  var b = document.getElementById("call-via-btn");
+  if (!b) return;
+  b.classList.toggle("hidden", !phoneNative());
+  b.classList.toggle("sim", callVia === "sim");
+  b.textContent = callVia === "sim" ? "📶 SIM" : "☁ VoIP";
+}
+function toggleCallVia() {
+  callVia = callVia === "sim" ? "voip" : "sim";
+  try { localStorage.setItem("vb_callVia", callVia); } catch (e) {}
+  renderCallVia();
+}
+function simDial(num) {
+  var PN = phoneNative();
+  if (!PN) return false;
+  PN.simCall({ number: num }).then(function() {
+    // Logged in the call history as an outgoing SIM call (no duration: the
+    // phone's own dialer has the call from here on).
+    var body = new URLSearchParams();
+    body.set("event", "sim"); body.set("callId", "sim-" + Date.now()); body.set("caller", num); body.set("direction", "outgoing");
+    fetch(API + "/call-event", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() })
+      .then(refreshCallLists).catch(function() {});
+  }).catch(function(err) { setStatus("❌ SIM call: " + (err && err.message || err), true); });
+  return true;
 }
 function renderFavourites() {
   var el = document.getElementById("fav-list");
@@ -4835,6 +4940,7 @@ function applyBoot() {
   loadHistory();
   loadT9Corpus();
   loadActivities();
+  renderCallVia();
   if (settings.devMode) { setStatus("🛠 Dev mode", false); return; }
   loadSipJs().then(initSoftphone).catch(function(e) { setStatus("❌ " + e.message, true); });
 }

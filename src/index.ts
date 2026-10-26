@@ -57,6 +57,21 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
     return Response.json({ action: "answered" });
   }
 
+  // The Android app placed this call over the phone's SIM (PhoneNativePlugin):
+  // log it as an outgoing call with did "SIM". The phone's own dialer has
+  // the call from then on, so there is no answer/hangup or duration.
+  if (event === "sim") {
+    const now = Date.now();
+    await env.DB.prepare(
+      `INSERT INTO call_log (call_id, phone_number, did, direction, state, start_date, end_date)
+       VALUES (?1, ?2, 'SIM', 'outgoing', 'terminated', ?3, ?3) ON CONFLICT(call_id) DO NOTHING`
+    ).bind(callId, caller, now).run();
+    let partner: Contact | null = null;
+    try { partner = await ensureCallContact(env, callId, caller); } catch (e) { console.error("ensureCallContact failed:", e); }
+    ctx.waitUntil(pushCallToOdoo(env, callId).catch((e) => console.error("pushCallToOdoo failed:", e)));
+    return Response.json({ action: "sim", partner: partner?.name ?? null });
+  }
+
   // Posted by [voicemail] in extensions.conf as it starts the greeting. The
   // message itself arrives later as an ordinary event=recording.
   if (event === "voicemail") {
