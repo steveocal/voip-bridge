@@ -134,7 +134,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .msg-row .meta{margin-left:auto;font-size:12px;color:#999;flex-shrink:0}
 /* bottom menu */
 .bottom-menu{display:flex;border-top:1px solid #222;background:#0a0a0a;padding:6px 0 env(safe-area-inset-bottom)}
-.menu-btn{flex:1;background:none;border:none;color:#888;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;font-size:10px}
+.act-row .sub.overdue{color:#f87171}
+.act-row .sub.today{color:#fbbf24}
+.act-row .act-done{width:38px;height:38px;border-radius:50%;border:1px solid #333;background:#1a1a1a;color:#ddd;font-size:16px;cursor:pointer;flex-shrink:0}
+.act-row .act-main{flex:1;min-width:0;cursor:pointer}
+.menu-badge{position:absolute;top:0;margin-left:16px;background:#ef4444;color:#fff;font-size:9px;font-weight:700;border-radius:8px;padding:0 5px}
+#view-activities h2{color:#fbbf24;border-left-color:#fbbf24}
+.menu-btn{position:relative;flex:1;background:none;border:none;color:#888;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;font-size:10px}
 .menu-btn .ico{font-size:20px}
 .menu-btn.active{color:#4db8ff}
 /* big green handset button in the bottom bar: dials a typed number, otherwise opens the keypad; red during a call = hang up */
@@ -571,6 +577,12 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       </div>
     </div>
 
+    <!-- ACTIVITIES VIEW: Odoo "Call" activities, as in Odoo Enterprise's phone -->
+    <div class="view hidden" id="view-activities">
+      <h2>📋 Calls to make</h2>
+      <div id="activities-list"><div class="empty">Loading…</div></div>
+    </div>
+
     <!-- CONTACTS VIEW (All / Favourites tabs) -->
     <div class="view hidden" id="view-contacts">
       <h2>👥 Contacts</h2>
@@ -598,8 +610,9 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 
   <nav class="bottom-menu">
     <button class="menu-btn active" data-view="dial" onclick="switchView('dial')"><span class="ico">🕐</span><span>History</span></button>
-    <button class="menu-btn" data-view="contacts" onclick="switchView('contacts')"><span class="ico">👥</span><span>Contacts</span></button>
+    <button class="menu-btn" data-view="activities" onclick="switchView('activities')"><span class="ico">📋</span><span>Activities</span><b class="menu-badge hidden" id="act-badge"></b></button>
     <button class="dial-fab" id="nav-dial" onclick="navDialAction()" aria-label="Dial"><span class="fab">📞</span></button>
+    <button class="menu-btn" data-view="contacts" onclick="switchView('contacts')"><span class="ico">👥</span><span>Contacts</span></button>
     <button class="menu-btn" data-view="messages" onclick="switchView('messages')"><span class="ico">💬</span><span>Messages</span></button>
   </nav>
   <div class="action-bar hidden" id="action-bar"></div>
@@ -1278,6 +1291,7 @@ function switchView(name) {
   if (b) b.classList.add("active");
   if (name === "dial") { loadHistory(); loadT9Corpus(); }
   if (name === "contacts") switchContactsTab(contactsTab);
+  if (name === "activities") loadActivities();
   if (name === "messages") loadMessages();
 }
 
@@ -3261,6 +3275,65 @@ function fmtTime(ts) {
   return sameDay ? hh + ":" + mm : d.toLocaleDateString(undefined, { day: "numeric", month: "short" }) + " " + hh + ":" + mm;
 }
 
+// ── activities: Odoo "Call" activities (src/odoo.ts fetchCallActivities) ──
+// The list shows the last copy at once (localStorage), then refreshes.
+// Tap a row to open the contact, 📞 to put the number in the dialer, ✓ to
+// mark the activity done in Odoo. The bottom-bar badge counts them.
+var activities = [];
+try { activities = JSON.parse(localStorage.getItem("vb_activities") || "[]"); } catch (e) { activities = []; }
+function updateActivityBadge() {
+  var b = document.getElementById("act-badge");
+  if (!b) return;
+  b.textContent = activities.length ? String(activities.length) : "";
+  b.classList.toggle("hidden", !activities.length);
+}
+function renderActivities() {
+  var el = document.getElementById("activities-list");
+  if (!activities.length) { el.innerHTML = '<div class="empty">No calls to make. Plan a "Call" activity on any record in Odoo.</div>'; return; }
+  el.innerHTML = activities.map(function(a) {
+    var who = a.partner_name || a.record_name || "";
+    var when = a.state === "overdue" ? "Overdue · " + a.deadline : (a.state === "today" ? "Today" : a.deadline);
+    var also = a.record_name && a.record_name !== who ? '<div class="sub">' + esc(a.record_name) + '</div>' : '';
+    return '<div class="contact-row act-row" data-id="' + a.id + '">'
+      + '<div class="act-main" data-partner="' + (a.partner_id || "") + '"><div class="cname">' + esc(who) + '</div>'
+      + '<div class="sub ' + esc(a.state) + '">' + esc(a.summary) + ' · ' + esc(when) + '</div>' + also + '</div>'
+      + '<button class="act-done" data-id="' + a.id + '" title="Mark done">✓</button>'
+      + (a.phone ? '<button class="mini-call" data-num="' + esc(a.phone) + '" title="Call">📞</button>' : '')
+      + '</div>';
+  }).join("");
+}
+function loadActivities() {
+  if (document.getElementById("activities-list")) renderActivities();
+  updateActivityBadge();
+  fetch(API + "/activities").then(function(r) { return r.json(); }).then(function(d) {
+    if (!d.activities) return;
+    activities = d.activities;
+    try { localStorage.setItem("vb_activities", JSON.stringify(activities)); } catch (e) {}
+    renderActivities();
+    updateActivityBadge();
+  }).catch(function() {});
+}
+document.getElementById("activities-list").addEventListener("click", function(e) {
+  var done = e.target.closest(".act-done");
+  if (done) {
+    var id = done.getAttribute("data-id");
+    done.disabled = true;
+    fetch(API + "/activities/" + id + "/done", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+      .then(function(r) { return r.json(); }).then(function(d) {
+        if (!d.ok) { done.disabled = false; return; }
+        activities = activities.filter(function(a) { return String(a.id) !== String(id); });
+        try { localStorage.setItem("vb_activities", JSON.stringify(activities)); } catch (e) {}
+        renderActivities();
+        updateActivityBadge();
+      }).catch(function() { done.disabled = false; });
+    return;
+  }
+  var mini = e.target.closest(".mini-call");
+  if (mini) { prepareDial(mini.getAttribute("data-num")); return; }
+  var main = e.target.closest(".act-main");
+  if (main && main.getAttribute("data-partner")) openContactById(Number(main.getAttribute("data-partner")));
+});
+
 // ── favourites (the Contacts view's second tab) ─────────────────
 var contactsTab = "all";
 try { if (localStorage.getItem("vb_contactsTab") === "favourites") contactsTab = "favourites"; } catch (e) {}
@@ -4761,6 +4834,7 @@ function applyBoot() {
   updateAccountHeader();
   loadHistory();
   loadT9Corpus();
+  loadActivities();
   if (settings.devMode) { setStatus("🛠 Dev mode", false); return; }
   loadSipJs().then(initSoftphone).catch(function(e) { setStatus("❌ " + e.message, true); });
 }

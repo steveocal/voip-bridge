@@ -1,5 +1,5 @@
 import type { Env, ExecutionContext, D1PreparedStatement } from "./types";
-import { lookupCaller, pushCallToOdoo, pushCallHistory, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages, searchQuotations, contactTotals, phoneKey, createContactForNumber, renameContact } from "./odoo";
+import { lookupCaller, fetchCallActivities, markActivityDone, pushCallToOdoo, pushCallHistory, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages, searchQuotations, contactTotals, phoneKey, createContactForNumber, renameContact } from "./odoo";
 import { searchGmailMessages, searchRecentGmailMessages, getGmailBody, sendGmailMessage } from "./gmail";
 import { ariRequest } from "./asterisk";
 import { playbackResponse } from "./recording";
@@ -496,6 +496,22 @@ async function handleRecentMessages(request: Request, env: Env): Promise<Respons
   return Response.json({ days, gmailOk, messages });
 }
 
+// Odoo "Call" activities for the Activities tab, and marking one done.
+async function handleActivities(env: Env): Promise<Response> {
+  try {
+    return Response.json({ activities: await fetchCallActivities(env) });
+  } catch (e) {
+    return Response.json({ error: String((e as Error).message || e) }, { status: 502 });
+  }
+}
+
+async function handleActivityDone(request: Request, env: Env, id: number): Promise<Response> {
+  let body: { feedback?: string } = {};
+  try { body = await request.json(); } catch { /* no feedback */ }
+  const ok = await markActivityDone(env, id, String(body.feedback || ""));
+  return ok ? Response.json({ ok: true }) : Response.json({ error: "Odoo update failed" }, { status: 502 });
+}
+
 async function handleQuotations(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const contactId = parseInt(url.searchParams.get("contact") ?? "0");
@@ -772,6 +788,8 @@ export default {
     else if (request.method === "DELETE" && /^\/greetings\/\d+$/.test(url.pathname)) response = await handleDeleteGreeting(env, parseInt(url.pathname.split("/")[2]));
     else if (request.method === "GET" && /^\/greetings\/\d+\/audio$/.test(url.pathname)) response = await handleGreetingAudio(env, parseInt(url.pathname.split("/")[2]));
     else if (request.method === "GET" && url.pathname === "/quotations") response = await handleQuotations(request, env);
+    else if (request.method === "GET" && url.pathname === "/activities") response = await handleActivities(env);
+    else if (request.method === "POST" && /^\/activities\/\d+\/done$/.test(url.pathname)) response = await handleActivityDone(request, env, parseInt(url.pathname.split("/")[2]));
     else if (request.method === "GET" && url.pathname === "/messages") response = await handleMessages(request, env);
     else if (request.method === "GET" && url.pathname === "/messages/recent") response = await handleRecentMessages(request, env);
     else if (request.method === "GET" && url.pathname === "/message") response = await handleMessageDetail(request, env);

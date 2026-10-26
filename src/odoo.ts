@@ -785,6 +785,91 @@ async function sumField(env: Env, uid: number, model: string, domain: unknown[],
   }
 }
 
+// ── Call activities (↔ Odoo mail.activity, "Call" type) ───────
+// The "Calls to make" list, as in Odoo Enterprise's phone: open activities
+// of the phonecall category assigned to the worker's Odoo user, each with
+// the number to ring taken from the record or its contact.
+
+export interface CallActivity {
+  id: number;
+  summary: string;
+  note: string;
+  deadline: string;          // YYYY-MM-DD
+  state: string;             // overdue | today | planned
+  res_model: string;
+  res_id: number;
+  record_name: string;
+  partner_id: number | null;
+  partner_name: string;
+  phone: string;
+}
+
+const PHONE_FIELDS = ["phone", "mobile", "partner_phone"];
+
+export async function fetchCallActivities(env: Env, limit = 50): Promise<CallActivity[]> {
+  const uid = await odooAuth(env);
+  if (!uid) throw new Error("Odoo login failed");
+  const r = await odooCall(env, uid, "mail.activity", "search_read",
+    [[["user_id", "=", uid], ["activity_type_id.category", "=", "phonecall"]]],
+    { fields: ["summary", "note", "date_deadline", "state", "res_model", "res_id", "res_name", "activity_type_id"], limit, order: "date_deadline, id" });
+  if (r.fault) throw new Error(r.fault);
+  const acts = (r.parsed ?? []) as Array<Record<string, unknown>>;
+
+  // One read per model involved: whichever phone fields and partner_id it has.
+  const byModel = new Map<string, number[]>();
+  for (const a of acts) byModel.set(s(a.res_model), [...(byModel.get(s(a.res_model)) ?? []), a.res_id as number]);
+  const records = new Map<string, Record<string, unknown>>();
+  const partnerIds = new Set<number>();
+  for (const [model, ids] of byModel) {
+    const fg = await odooCall(env, uid, model, "fields_get", [[...PHONE_FIELDS, "partner_id"]], { attributes: ["type"] });
+    const have = Object.keys((fg.parsed ?? {}) as object);
+    const fields = [...PHONE_FIELDS, "partner_id"].filter((f) => have.includes(f));
+    if (!fields.length) continue;
+    const rr = await odooCall(env, uid, model, "read", [ids], { fields });
+    for (const rec of (rr.parsed ?? []) as Array<Record<string, unknown>>) {
+      records.set(`${model},${rec.id}`, rec);
+      const pid = idOrNull(rec.partner_id);
+      if (pid) partnerIds.add(pid);
+    }
+  }
+  const partners = new Map<number, Record<string, unknown>>();
+  if (partnerIds.size) {
+    const pr = await odooCall(env, uid, "res.partner", "read", [[...partnerIds]], { fields: ["name", "phone", "mobile"] });
+    for (const p of (pr.parsed ?? []) as Array<Record<string, unknown>>) partners.set(p.id as number, p);
+  }
+
+  return acts.map((a) => {
+    const model = s(a.res_model);
+    const rec = records.get(`${model},${a.res_id}`) ?? {};
+    const pid = model === "res.partner" ? (a.res_id as number) : idOrNull(rec.partner_id);
+    const partner = pid ? partners.get(pid) ?? (model === "res.partner" ? rec : undefined) : undefined;
+    const phone = PHONE_FIELDS.map((f) => s(rec[f])).find(Boolean) || s(partner?.phone) || s(partner?.mobile);
+    const type = Array.isArray(a.activity_type_id) ? s(a.activity_type_id[1]) : "Call";
+    return {
+      id: a.id as number,
+      summary: s(a.summary) || type,
+      note: s(a.note).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 140),
+      deadline: s(a.date_deadline),
+      state: s(a.state),
+      res_model: model,
+      res_id: a.res_id as number,
+      record_name: s(a.res_name),
+      partner_id: pid ?? null,
+      partner_name: s(partner?.name) || (model === "res.partner" ? s(a.res_name) : ""),
+      phone,
+    };
+  });
+}
+
+/** Mark an activity done (Odoo's "Done" button), with optional feedback. */
+export async function markActivityDone(env: Env, id: number, feedback = ""): Promise<boolean> {
+  const uid = await odooAuth(env);
+  if (!uid) return false;
+  const r = await odooCall(env, uid, "mail.activity", "action_feedback", [[id]], feedback ? { feedback } : {});
+  if (r.fault) { console.error("Odoo activity done failed:", r.fault); return false; }
+  return true;
+}
+
 /** Confirmed sales orders and posted invoices (net of credit notes) for a
  *  partner and its child contacts. */
 export async function contactTotals(env: Env, partnerId: number): Promise<ContactTotals> {
