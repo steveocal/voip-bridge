@@ -144,7 +144,20 @@ function extractText(payload: unknown): string {
   return "";
 }
 
-/** Fetch the full decoded body of a Gmail message (format=full). */
+// The first part of this MIME type anywhere in the message tree.
+function findPart(payload: unknown, mimeType: string): string {
+  const p = payload as { body?: { data?: string }; mimeType?: string; parts?: unknown[] } | undefined;
+  if (!p) return "";
+  if (p.mimeType === mimeType && p.body && p.body.data) return b64urlToUtf8(p.body.data);
+  for (const part of p.parts ?? []) {
+    const r = findPart(part, mimeType);
+    if (r) return r;
+  }
+  return "";
+}
+
+/** Fetch the full decoded body of a Gmail message (format=full): its HTML
+ *  version when it has one, so the viewer can show it as sent. */
 export async function getGmailBody(env: Env, gmailId: string): Promise<string> {
   const token = await getAccessToken(env);
   if (!token) return "";
@@ -152,7 +165,7 @@ export async function getGmailBody(env: Env, gmailId: string): Promise<string> {
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) return "";
   const d = await res.json() as { payload?: unknown };
-  return extractText(d.payload);
+  return findPart(d.payload, "text/html") || extractText(d.payload);
 }
 
 async function getThreadContext(token: string, gmailId: string): Promise<{ threadId?: string; messageId?: string; references?: string } | null> {

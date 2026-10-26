@@ -84,4 +84,5 @@ export interface Env {
   PUSH_SECRET: string; // shared secret Asterisk sends to /push/wake (secret)
   STAFF_TOKEN_SECRET: string; // signs staff location-tracking tokens (secret, src/staff.ts)
   AI: { run(model: string, inputs: Record<string, unknown>): Promise<unknown> }; // Workers AI binding
+  AI_EMAIL_MODEL?: string; // Workers AI model for the compose window's AI help (src/aiemail.ts); DeepSeek R1 distill by default
 }

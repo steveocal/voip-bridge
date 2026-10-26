@@ -12,6 +12,7 @@ import { jotToText } from "./jottext";
 import { groupCallLegs } from "./calllegs";
 import { handleStaffEmployees, handleStaffLogin, handleStaffLocation } from "./staff";
 import { handleWebCallback, handleWebCallbackConfig, handleWebCallbackStatus, handleWebCallbackEvent } from "./webcallback";
+import { handleAiEmail } from "./aiemail";
 
 // Durable Object class must be exported from the entrypoint module.
 export { CallState } from "./callstate";
@@ -809,6 +810,7 @@ export default {
     else if (request.method === "GET" && url.pathname === "/messages/recent") response = await handleRecentMessages(request, env);
     else if (request.method === "GET" && url.pathname === "/message") response = await handleMessageDetail(request, env);
     else if (request.method === "POST" && url.pathname === "/send-message") response = await handleSendMessage(request, env);
+    else if (request.method === "POST" && url.pathname === "/ai/email") response = await handleAiEmail(request, env);
     else if (request.method === "GET" && url.pathname === "/contacts") response = await handleContacts(request, env);
     else if (request.method === "GET" && url.pathname === "/contacts/t9") response = await handleContactsT9(env);
     else if (request.method === "GET" && url.pathname === "/contacts/cache") response = await handleContactsCache(request, env);

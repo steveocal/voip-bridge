@@ -275,6 +275,12 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 .detail-row{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid #222;font-size:14px}
 .detail-row .k{color:#999;flex-shrink:0}
 .detail-row .v{text-align:right;word-break:break-word}
+.msg-frame{display:block;width:100%;height:62vh;margin-top:14px;border:0;border-radius:10px;background:#fff}
+.comp-ai-bar{display:flex;align-items:center;gap:10px;padding:8px 20px 0;font-size:12px;color:#9aa0a6}
+.comp-ai-bar b{color:#fbbf24}
+.comp-ai-bar.busy{color:#fbbf24}
+.comp-ai-bar.err{color:#f87171}
+.detail-foot button.ai{background:linear-gradient(135deg,#f59e0b,#d97706);color:#1a1000}
 .msg-body{margin-top:14px;font-size:15px;color:#ececec;white-space:pre-wrap;word-break:break-word}
 .compose-card{background:#161616;border:1px solid #2c2c2c;border-radius:16px;margin:auto;width:100%;max-width:640px;display:flex;flex-direction:column;overflow:hidden;max-height:92vh}
 .compose-field{padding:12px 20px;border-bottom:1px solid #222}
@@ -719,8 +725,10 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <div class="compose-field"><label>To</label><input id="comp-to" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
     <div class="compose-field"><label>Subject</label><input id="comp-subject" type="text" autocomplete="off"></div>
     <div class="compose-field"><label>Message</label><textarea id="comp-body"></textarea></div>
+    <div class="comp-ai-bar" id="comp-ai-status">Start a line with <b>!!</b> to tell the AI what you want, then press <b>Ctrl+1</b> (or ✨ AI). Repeat to refine.</div>
     <div class="detail-foot">
       <button class="primary" id="comp-send" onclick="sendCompose()">Send</button>
+      <button class="ai" id="comp-ai" onclick="aiAssist()" title="Ctrl+1">✨ AI</button>
       <button onclick="closeCompose()">Cancel</button>
     </div>
   </div>
@@ -1135,7 +1143,11 @@ function initComposeEditor() {
     height: 320,
     branding: false,
     skin: "oxide-dark",
-    content_css: "dark"
+    content_css: "dark",
+    setup: function(editor) {
+      editor.addShortcut("ctrl+1", "Ask the AI to write the email", aiAssist);
+      editor.on("keydown", function(e) { if (e.ctrlKey && e.key === "1") { e.preventDefault(); aiAssist(); } });
+    }
   });
 }
 
@@ -4028,30 +4040,81 @@ function fetchMessageFull(m) {
     renderMessageFull(m);
   }).catch(function(){ renderMessageFull(m); });
 }
+// An email body is HTML if it parses into at least one element.
+function looksHtml(s) {
+  s = String(s || "");
+  if (s.indexOf("<") < 0) return false;
+  try { return new DOMParser().parseFromString(s, "text/html").body.children.length > 0; } catch (e) { return false; }
+}
+// HTML → text with a line break after each block, for quoting and the AI.
+var TEXT_BLOCKS = ["P", "DIV", "LI", "H1", "H2", "H3", "H4", "H5", "H6", "BLOCKQUOTE", "TR", "TABLE", "UL", "OL"];
+function nodeText(root) {
+  var out = [];
+  (function walk(n) {
+    for (var c = n.firstChild; c; c = c.nextSibling) {
+      if (c.nodeType === 3) out.push(c.nodeValue);
+      else if (c.nodeType === 1) {
+        if (c.tagName === "BR") { out.push(NL); continue; }
+        if (c.tagName === "STYLE" || c.tagName === "SCRIPT" || c.tagName === "HEAD") continue;
+        walk(c);
+        if (TEXT_BLOCKS.indexOf(c.tagName) >= 0) out.push(NL);
+        else if (c.tagName === "TD" || c.tagName === "TH") out.push("  ");
+      }
+    }
+  })(root);
+  // At most one blank line in a row; trim each line.
+  var lines = out.join("").split(NL).map(function(l) { return l.trim(); });
+  var kept = [];
+  for (var i = 0; i < lines.length; i++) if (lines[i] || (kept.length && kept[kept.length - 1])) kept.push(lines[i]);
+  return kept.join(NL).trim();
+}
+function bodyText(body) {
+  return looksHtml(body) ? nodeText(new DOMParser().parseFromString(String(body), "text/html").body) : String(body || "").trim();
+}
+// HTML bodies go in a sandboxed frame: no scripts, links open in a new tab.
+var FRAME_HEAD = '<meta charset="utf-8"><base target="_blank"><style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.5;margin:14px;color:#111;background:#fff;overflow-wrap:anywhere}img{max-width:100%;height:auto}table{max-width:100%}blockquote{margin:0 0 0 8px;padding-left:10px;border-left:3px solid #ccc;color:#555}</style>';
 function renderMessageFull(m) {
-  var body = String(m.body || "").replace(/<[^>]*>/g, " ");
+  var html = looksHtml(m.body);
   var rows = '<div class="detail-row"><span class="k">From</span><span class="v">' + esc(m.email_from || "—") + '</span></div>'
     + '<div class="detail-row"><span class="k">Subject</span><span class="v">' + esc(m.subject || "(no subject)") + '</span></div>'
     + '<div class="detail-row"><span class="k">When</span><span class="v">' + esc(m.date ? new Date(m.date).toLocaleString() : "—") + '</span></div>'
-    + '<div class="msg-body">' + esc(body) + '</div>';
-  var foot = '<button onclick="replyMessage()">↩ Reply</button><button class="primary" onclick="newMessage()">✉️ New Message</button>';
+    + (html ? '<iframe class="msg-frame" id="msg-frame" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>'
+            : '<div class="msg-body">' + esc(String(m.body || "")) + '</div>');
+  var foot = '<button onclick="replyMessage()">↩ Reply</button><button onclick="forwardMessage()">↪ Forward</button><button class="primary" onclick="newMessage()">✉️ New</button>';
   setDetail("✉️ " + (m.subject || "Message"), rows, foot);
+  if (html) document.getElementById("msg-frame").srcdoc = FRAME_HEAD + String(m.body);
 }
 function extractEmail(s) {
   var m = String(s || "").match(/[A-Za-z0-9_.+-]+@[A-Za-z0-9_.-]+[.][A-Za-z]+/);
   return m ? m[0] : "";
+}
+// The original goes below the draft in a div.vb-quote, which the AI leaves alone.
+var composeOriginal = "";
+function quotedOriginal(m, intro) {
+  var inner = looksHtml(m.body) ? String(m.body) : esc(String(m.body || "")).split(NL).join("<br>");
+  return '<p></p><p></p><div class="vb-quote"><p>' + esc(intro) + '</p><blockquote>' + inner + '</blockquote></div>';
 }
 function replyMessage() {
   var m = selected && selected.data;
   if (!m) return;
   var to = extractEmail(m.email_from) || (activeContact && activeContact.email) || "";
   var subject = (m.subject || "").replace(/^Re:[ ]*/i, "");
-  var quote = String(m.body || "").replace(/<[^>]*>/g, " ").replace(/ +/g, " ").trim();
-  var body = NL + NL + (m.date ? "On " + new Date(m.date).toLocaleString() + ", " + (m.email_from || "") + " wrote:" + NL : "") + "> " + quote.split(NL).join(NL + "> ");
-  openCompose(to, "Re: " + subject, body);
+  var intro = (m.date ? "On " + new Date(m.date).toLocaleString() + ", " : "") + (m.email_from || "") + " wrote:";
+  openCompose(to, "Re: " + subject, quotedOriginal(m, intro));
+  composeOriginal = bodyText(m.body);
+  closeDetail();
+}
+function forwardMessage() {
+  var m = selected && selected.data;
+  if (!m) return;
+  var subject = (m.subject || "").replace(/^Fwd:[ ]*/i, "");
+  var intro = "Forwarded message from " + (m.email_from || "") + (m.date ? ", " + new Date(m.date).toLocaleString() : "") + ":";
+  openCompose("", "Fwd: " + subject, quotedOriginal(m, intro));
+  composeOriginal = bodyText(m.body);
   closeDetail();
 }
 function newMessage() {
+  composeOriginal = "";
   var to = (activeContact && activeContact.email) || "";
   if (!to && selected && selected.type === "message") to = extractEmail(selected.data.email_from);
   openCompose(to, "", "");
@@ -4063,9 +4126,52 @@ function openCompose(to, subject, body) {
   document.getElementById("comp-body").value = body || "";
   document.getElementById("compose-title").textContent = "✉️ " + (subject && subject.indexOf("Re:") === 0 ? "Reply" : "New Message");
   document.getElementById("compose-modal").classList.remove("hidden");
+  aiStatus("Start a line with <b>!!</b> to tell the AI what you want, then press <b>Ctrl+1</b> (or ✨ AI). Repeat to refine.");
   loadTinyMce().then(initComposeEditor).catch(function() {});
 }
 function closeCompose() { document.getElementById("compose-modal").classList.add("hidden"); }
+var aiBusy = false;
+function aiStatus(html, cls) {
+  var el = document.getElementById("comp-ai-status");
+  el.innerHTML = html;
+  el.className = "comp-ai-bar" + (cls ? " " + cls : "");
+}
+function aiAssist() {
+  if (aiBusy || document.getElementById("compose-modal").classList.contains("hidden")) return;
+  var ed = (typeof tinymce !== "undefined") ? tinymce.get("comp-body") : null;
+  var holder = document.createElement("div");
+  holder.innerHTML = ed ? ed.getContent() : esc(document.getElementById("comp-body").value).split(NL).join("<br>");
+  var quote = holder.querySelector(".vb-quote");
+  var quoteHtml = quote ? quote.outerHTML : "";
+  if (quote) quote.remove();
+  var draft = nodeText(holder);
+  if (!draft) { aiStatus("Write a draft, or a line starting with <b>!!</b> saying what you want, first.", "err"); return; }
+  aiBusy = true;
+  document.getElementById("comp-ai").disabled = true;
+  aiStatus("✨ Writing with the AI… (about 20 seconds)", "busy");
+  fetch(API + "/ai/email", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ draft: draft, subject: document.getElementById("comp-subject").value, to: document.getElementById("comp-to").value, original: composeOriginal })
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (!d.html) { aiStatus(esc(d.error || "The AI didn't answer."), "err"); return; }
+    if (ed) {
+      ed.undoManager.transact(function() { ed.setContent(d.html + quoteHtml); });
+      ed.focus();
+    } else {
+      document.getElementById("comp-body").value = d.text;
+    }
+    aiStatus("✨ Done. Ctrl+Z undoes it; add more <b>!!</b> lines and press <b>Ctrl+1</b> again to refine.");
+  }).catch(function(e) {
+    aiStatus("AI request failed: " + esc(e.message || String(e)), "err");
+  }).then(function() {
+    aiBusy = false;
+    document.getElementById("comp-ai").disabled = false;
+  });
+}
+// Ctrl+1 anywhere in the compose window (To/Subject too, not just the editor).
+document.addEventListener("keydown", function(e) {
+  if (e.ctrlKey && e.key === "1" && !document.getElementById("compose-modal").classList.contains("hidden")) { e.preventDefault(); aiAssist(); }
+});
 function sendCompose() {
   var to = document.getElementById("comp-to").value.trim();
   var subject = document.getElementById("comp-subject").value.trim();
