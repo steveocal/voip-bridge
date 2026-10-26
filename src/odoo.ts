@@ -448,16 +448,17 @@ export async function syncContacts(env: Env): Promise<{ total: number; synced: n
   return { total: synced, synced };
 }
 
-/** Sync the most recent N voip.call rows into the D1 call_log cache. */
+/** Sync the most recent N phone_bridge.call rows made in Odoo itself (not
+ *  pushed from here) into the D1 call_log cache. */
 export async function syncCallLog(env: Env, limit = 100): Promise<number> {
   const uid = await odooAuth(env);
   if (!uid) return 0;
   const fields = ["id", "phone_number", "direction", "state", "partner_id", "user_id", "start_date", "end_date", "create_date", "write_date"];
   // Calls the worker pushed itself (bridge_call_id set) are already in
   // call_log as their Asterisk legs.
-  const domain = await hasBridgeModule(env, uid) ? [["bridge_call_id", "=", false]] : [];
-  const r = await odooCall(env, uid, "voip.call", "search_read",
-    [domain], { fields, limit, order: "create_date desc" });
+  const r = await odooCall(env, uid, CALL_MODEL, "search_read",
+    [[["bridge_call_id", "=", false]]], { fields, limit, order: "create_date desc" });
+  if (r.fault) return 0;
   const calls = ((r.parsed ?? []) as unknown as Array<Record<string, unknown>>);
   const statements: D1PreparedStatement[] = [];
   for (const c of calls) {
@@ -479,19 +480,19 @@ export async function syncCallLog(env: Env, limit = 100): Promise<number> {
   return calls.length;
 }
 
-// ── Call history → Odoo voip.call ─────────────────────────────
-// Every call the worker logs (call_id set) is mirrored into voip.call, so it
-// shows in Odoo's own call history. Rows pulled *from* Odoo (call_id NULL,
-// e.g. the Odoo softphone on ext 203) are never pushed back.
-// The bridge_* / notes / transcript / recording fields come from the
-// voip_bridge Odoo module (odoo/voip_bridge); until it is installed only the
-// standard voip.call fields are written.
+// ── Call history → Odoo phone_bridge.call ─────────────────────
+// Every call the worker logs (call_id set) goes to Odoo's Phone → Calls
+// through phone_bridge.call.bridge_upsert (the phone_bridge module), with
+// the extension it was made or taken on. Rows pulled *from* Odoo (call_id
+// NULL) are never pushed back.
+
+const CALL_MODEL = "phone_bridge.call";
 
 interface CallRow {
   call_id: string; odoo_id: number | null; phone_number: string | null; did: string | null;
   direction: string | null; state: string | null; partner_id: number | null;
   start_date: number | null; end_date: number | null; notes_html: string | null;
-  transcript: string | null; recording: string | null; voicemail: number;
+  transcript: string | null; recording: string | null; voicemail: number; extension: string | null;
 }
 
 // Recordings are ~1 MB a minute (8 kHz 16-bit WAV). uploadRecording streams
@@ -512,13 +513,13 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(bin);
 }
 
-/** voip.call.write of the recording, streamed straight from Asterisk's
+/** phone_bridge.call.write of the recording, streamed straight from Asterisk's
  *  response (`size` bytes) into the XML-RPC body as base64. Building the body
  *  as one string ran a 12-minute call out of Worker memory, and even holding
  *  the raw audio failed at 23 MB. */
 async function uploadRecording(env: Env, uid: number, odooId: number, audio: ReadableStream<Uint8Array>, size: number, filename: string): Promise<void> {
   const MARK = "@@RECORDING@@";
-  const body = executeKwRequest(env.ODOO_DB, String(uid), env.ODOO_PASS, "voip.call", "write",
+  const body = executeKwRequest(env.ODOO_DB, String(uid), env.ODOO_PASS, CALL_MODEL, "write",
     [[odooId], { recording: MARK, recording_filename: filename }]);
   const enc = new TextEncoder();
   const [head, tail] = body.split(MARK).map(part => enc.encode(part));
@@ -551,11 +552,6 @@ async function uploadRecording(env: Env, uid: number, odooId: number, audio: Rea
   try { parseXmlrpcResponse(text); } catch (e) { throw new Error(`recording upload failed: ${e}`); }
 }
 
-async function hasBridgeModule(env: Env, uid: number): Promise<boolean> {
-  const r = await odooCall(env, uid, "voip.call", "fields_get", [["bridge_call_id"]], { attributes: ["type"] });
-  return !!(r.parsed && typeof r.parsed === "object" && "bridge_call_id" in (r.parsed as object));
-}
-
 // Legs of a call are logged within seconds of each other, so an hour either
 // side is plenty to find them all.
 const LEG_WINDOW_MS = 60 * 60 * 1000;
@@ -576,7 +572,7 @@ async function callLegs(env: Env, callId: string): Promise<CallRow[]> {
   return groupCallLegs(near).find(g => g.some(l => l.call_id === callId)) ?? [row];
 }
 
-/** Create or update the voip.call for one logged call (all its legs as one
+/** Create or update the Odoo call for one logged call (all its legs as one
  *  record). `withRecording` uploads the audio too, which is only worth it
  *  once the recording event has come. */
 export async function pushCallToOdoo(env: Env, callId: string, withRecording = false): Promise<number | null> {
@@ -584,7 +580,6 @@ export async function pushCallToOdoo(env: Env, callId: string, withRecording = f
   if (!legs.length) return null;
   const uid = await odooAuth(env);
   if (!uid) return null;
-  const bridge = await hasBridgeModule(env, uid);
 
   // Same choice of leg per field as mergeCallLegs in index.ts.
   const first = legs[0];  // oldest leg: its call_id identifies the call in Odoo
@@ -593,53 +588,54 @@ export async function pushCallToOdoo(env: Env, callId: string, withRecording = f
   const outcome = answered ?? trunk ?? first;
   const noted = legs.find(l => l.notes_html);
   const rec = legs.find(l => l.recording) ?? legs.find(l => l.transcript);
+  const voicemail = legs.some(l => l.voicemail);
+  // The extension that made or took the call: the answering leg's, else any
+  // leg that knows (an outgoing call has just the one).
+  const extension = answered?.extension || legs.find(l => l.extension)?.extension || false;
+  // Voicemail left for an extension (an internal call: the number dialled is
+  // the extension) or for the main number (a call to one of our DIDs).
+  const dialled = (first.phone_number || "").replace(/\D/g, "");
+  const voicemailBox = !voicemail ? false
+    : (first.direction === "outgoing" && dialled.length >= 2 && dialled.length <= 6 ? dialled : "main");
 
   const vals: Record<string, unknown> = {
-    // voip.call requires a number; a blank one is a withheld caller ID.
+    bridge_call_id: first.call_id,
+    // A blank number is a withheld caller ID.
     phone_number: first.phone_number || "Withheld",
     direction: first.direction === "outgoing" ? "outgoing" : "incoming",
     state: outcome.state || "calling",
     start_date: odooDatetime(Math.min(...legs.map(l => l.start_date || Infinity))),
     end_date: odooDatetime(outcome.end_date),
     partner_id: legs.find(l => l.partner_id)?.partner_id || false,
+    did: trunk?.did || first.did || false,
+    extension,
+    voicemail,
+    voicemail_box: voicemailBox,
+    notes: noted?.notes_html || false,
+    transcript: rec?.transcript || false,
   };
-  if (bridge) {
-    Object.assign(vals, {
-      bridge_call_id: first.call_id,
-      bridge_did: trunk?.did || first.did || false,
-      voicemail: legs.some(l => l.voicemail),
-      notes: noted?.notes_html || false,
-      transcript: rec?.transcript || false,
-    });
-  }
-
-  // odoo_id is unique in call_log, so only the oldest leg holds it.
-  let odooId = legs.find(l => l.odoo_id)?.odoo_id ?? null;
-  // Two events (hangup, recording) can both get here before either has
-  // stored odoo_id, so look the call up by its Asterisk id before creating.
-  if (!odooId && bridge) {
-    const found = await odooCall(env, uid, "voip.call", "search", [[["bridge_call_id", "=", first.call_id]]], { limit: 1 });
-    odooId = (found.parsed as number[] | null)?.[0] ?? null;
-  }
-  if (odooId) {
-    const r = await odooCall(env, uid, "voip.call", "write", [[odooId], vals]);
-    if (r.fault) throw new Error(`voip.call write failed: ${r.fault}`);
-  } else {
-    const r = await odooCall(env, uid, "voip.call", "create", [vals]);
-    if (r.fault || typeof r.parsed !== "number") throw new Error(`voip.call create failed: ${r.fault ?? r._xml}`);
-    odooId = r.parsed;
-  }
-  if (bridge && withRecording && rec?.recording) {
+  // Upsert by bridge_call_id on the Odoo side, so two events (hangup,
+  // recording) racing here both land on one record.
+  const r = await odooCall(env, uid, CALL_MODEL, "bridge_upsert", [vals]);
+  if (r.fault || typeof r.parsed !== "number") throw new Error(`${CALL_MODEL}.bridge_upsert failed: ${r.fault ?? r._xml}`);
+  const odooId = r.parsed;
+  if (withRecording && rec?.recording) {
     const res = await ariRecordingFile(env, rec.recording);
     const size = Number(res.headers.get("Content-Length")) || 0;
     if (!res.ok) console.error(`pushCallToOdoo: recording ${rec.recording}: Asterisk returned ${res.status}`);
     else if (size > MAX_RECORDING_BYTES) { console.error(`pushCallToOdoo: recording ${rec.recording} is ${size} bytes, not uploaded`); await res.body?.cancel(); }
     else if (!size || !res.body) console.error(`pushCallToOdoo: recording ${rec.recording}: no Content-Length`);
     else await uploadRecording(env, uid, odooId, res.body, size, `${rec.recording}.wav`);
+    // A voicemail is complete once its audio is in: Odoo emails it and
+    // alerts the box's owner (once; it keeps track).
+    if (voicemail) {
+      const n = await odooCall(env, uid, CALL_MODEL, "bridge_notify_voicemail", [[odooId]]);
+      if (n.fault) console.error(`${CALL_MODEL}.bridge_notify_voicemail failed: ${n.fault}`);
+    }
   }
   const now = Date.now();
   await env.DB.batch([
-    // syncCallLog may already have pulled the new voip.call in as its own
+    // syncCallLog may already have pulled the new call in as its own
     // row; drop that copy so odoo_id stays unique.
     env.DB.prepare("DELETE FROM call_log WHERE odoo_id = ?1 AND call_id IS NULL").bind(odooId),
     env.DB.prepare("UPDATE call_log SET odoo_id = NULL WHERE odoo_id = ?1 AND call_id != ?2").bind(odooId, first.call_id),

@@ -30,6 +30,10 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
   // inbound DID rings, so default to 'incoming'. The browser softphone
   // passes 'outgoing' for calls it originates itself.
   const direction = params.get("direction") === "outgoing" ? "outgoing" : "incoming";
+  // The extension the softphone/app is signed in as (dashboard, Odoo panel),
+  // so each call lands under that extension in Odoo. Asterisk's own events
+  // (the trunk leg) have none.
+  const ext = /^\d{2,6}$/.test(params.get("ext") ?? "") ? params.get("ext")! : null;
 
   const doId = env.CALL_STATE.idFromName("global");
   const stub = env.CALL_STATE.get(doId);
@@ -42,10 +46,11 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
     }));
     // Log the call in D1 as soon as it rings (so missed calls are captured too).
     await env.DB.prepare(
-      `INSERT INTO call_log (call_id, phone_number, did, direction, state, start_date, partner_id)
-       VALUES (?1, ?2, ?3, ?4, 'calling', ?5, ?6)
-       ON CONFLICT(call_id) DO UPDATE SET phone_number=excluded.phone_number, did=excluded.did, direction=excluded.direction, partner_id=excluded.partner_id`
-    ).bind(callId, caller, did, direction, Date.now(), (partner as any)?.id ?? null).run();
+      `INSERT INTO call_log (call_id, phone_number, did, direction, state, start_date, partner_id, extension)
+       VALUES (?1, ?2, ?3, ?4, 'calling', ?5, ?6, ?7)
+       ON CONFLICT(call_id) DO UPDATE SET phone_number=excluded.phone_number, did=excluded.did, direction=excluded.direction,
+         partner_id=excluded.partner_id, extension=COALESCE(excluded.extension, call_log.extension)`
+    ).bind(callId, caller, did, direction, Date.now(), (partner as any)?.id ?? null, ext).run();
     return Response.json({ action: "ring", caller, partner: (partner as any)?.name ?? null });
   }
 
@@ -54,7 +59,7 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
       method: "POST",
       body: JSON.stringify({ callId, status: "answered", answerTime: Date.now() }),
     }));
-    await env.DB.prepare("UPDATE call_log SET state='ongoing' WHERE call_id=?1").bind(callId).run();
+    await env.DB.prepare("UPDATE call_log SET state='ongoing', extension=COALESCE(?2, extension) WHERE call_id=?1").bind(callId, ext).run();
     return Response.json({ action: "answered" });
   }
 
@@ -64,9 +69,9 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
   if (event === "sim") {
     const now = Date.now();
     await env.DB.prepare(
-      `INSERT INTO call_log (call_id, phone_number, did, direction, state, start_date, end_date)
-       VALUES (?1, ?2, 'SIM', 'outgoing', 'terminated', ?3, ?3) ON CONFLICT(call_id) DO NOTHING`
-    ).bind(callId, caller, now).run();
+      `INSERT INTO call_log (call_id, phone_number, did, direction, state, start_date, end_date, extension)
+       VALUES (?1, ?2, 'SIM', 'outgoing', 'terminated', ?3, ?3, ?4) ON CONFLICT(call_id) DO NOTHING`
+    ).bind(callId, caller, now, ext).run();
     let partner: Contact | null = null;
     try { partner = await ensureCallContact(env, callId, caller); } catch (e) { console.error("ensureCallContact failed:", e); }
     ctx.waitUntil(pushCallToOdoo(env, callId).catch((e) => console.error("pushCallToOdoo failed:", e)));

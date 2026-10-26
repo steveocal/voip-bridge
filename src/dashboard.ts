@@ -2900,6 +2900,9 @@ function logCallEvent(event, extra) {
   body.set("caller", currentCall.remote || "unknown");
   body.set("did", "");
   body.set("direction", currentCall.dir === "out" ? "outgoing" : "incoming");
+  // Which extension this softphone is, so the call shows under it in Odoo.
+  var acc = activeAccount();
+  if (acc && acc.username) body.set("ext", String(acc.username));
   if (extra) { for (var k in extra) body.set(k, String(extra[k])); }
   return fetch(API + "/call-event", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() }).catch(function() {});
 }
@@ -3459,6 +3462,8 @@ function simDial(num) {
     // phone's own dialer has the call from here on).
     var body = new URLSearchParams();
     body.set("event", "sim"); body.set("callId", "sim-" + Date.now()); body.set("caller", num); body.set("direction", "outgoing");
+    var acc = activeAccount();
+    if (acc && acc.username) body.set("ext", String(acc.username));
     fetch(API + "/call-event", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() })
       .then(refreshCallLists).catch(function() {});
   }).catch(function(err) { setStatus("❌ SIM call: " + (err && err.message || err), true); });
