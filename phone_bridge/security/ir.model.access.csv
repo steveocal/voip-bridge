@@ -1,0 +1,6 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_phone_bridge_call_user,phone_bridge.call user,model_phone_bridge_call,base.group_user,1,1,1,0
+access_phone_bridge_call_admin,phone_bridge.call admin,model_phone_bridge_call,base.group_system,1,1,1,1
+access_phone_bridge_installation_admin,phone_bridge.installation admin,model_phone_bridge_installation,base.group_system,1,1,1,0
+access_phone_bridge_extension_user,phone_bridge.extension user,model_phone_bridge_extension,base.group_user,1,0,0,0
+access_phone_bridge_extension_admin,phone_bridge.extension admin,model_phone_bridge_extension,base.group_system,1,1,1,1

@@ -1,0 +1,40 @@
+<?xml version="1.0"?>
+<odoo>
+    <record id="res_users_view_form_preferences_phone_bridge" model="ir.ui.view">
+        <field name="name">res.users.preferences.form.phone_bridge</field>
+        <field name="model">res.users</field>
+        <field name="inherit_id" ref="base.view_users_form_simple_modif"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="Phone" name="phone_bridge" invisible="not phone_bridge_extension_ids">
+                    <group>
+                        <field name="phone_bridge_extension_ids" invisible="1"/>
+                        <field name="phone_bridge_extension_id" readonly="0" options="{'no_create': True, 'no_open': True}"/>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="res_users_view_form_phone_bridge" model="ir.ui.view">
+        <field name="name">res.users.form.phone_bridge</field>
+        <field name="model">res.users</field>
+        <field name="inherit_id" ref="base.view_users_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="Phone" name="phone_bridge">
+                    <field name="phone_bridge_extension_ids" context="{'default_user_id': id}">
+                        <list editable="bottom">
+                            <field name="number"/>
+                            <field name="name"/>
+                            <field name="voicemail_enabled"/>
+                        </list>
+                    </field>
+                    <group>
+                        <field name="phone_bridge_extension_id" options="{'no_create': True}"/>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+</odoo>

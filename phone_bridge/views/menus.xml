@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<odoo>
+    <menuitem id="menu_phone_bridge_root" name="Phone"
+        web_icon="phone_bridge,static/description/icon.png" sequence="45"/>
+    <menuitem id="menu_phone_bridge_calls" name="Calls" parent="menu_phone_bridge_root"
+        action="action_phone_bridge_call" sequence="10"/>
+    <menuitem id="menu_phone_bridge_config" name="Configuration" parent="menu_phone_bridge_root"
+        sequence="90" groups="base.group_system"/>
+    <menuitem id="menu_phone_bridge_setup" name="Setup" parent="menu_phone_bridge_config"
+        action="action_phone_bridge_installation" sequence="10"/>
+    <menuitem id="menu_phone_bridge_extensions" name="Extensions" parent="menu_phone_bridge_config"
+        action="action_phone_bridge_extension" sequence="20"/>
+</odoo>

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Install VoIP Bridge</title>
+<!-- Install page for the Android app. The APK and version.json beside this
+     file come from scripts/android-release.sh; the dashboard's update prompt
+     links here. -->
+<style>
+:root{--bg:#f4f6f9;--card:#fff;--text:#1b2230;--muted:#5d6676;--line:#e2e6ec;--accent:#2563eb;--warn-bg:#fff7e6;--warn-line:#f3d79a}
+@media (prefers-color-scheme:dark){:root{--bg:#111;--card:#1a1a1a;--text:#ececec;--muted:#a0a7b4;--line:#2c2c2c;--accent:#3b82f6;--warn-bg:#2a2212;--warn-line:#5c4a1e}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;padding:24px 16px 48px}
+main{max-width:560px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 20px;margin-bottom:16px}
+.top{display:flex;align-items:center;gap:14px}
+.top img{width:56px;height:56px;border-radius:14px;flex:none}
+h1{font-size:22px;margin:0}
+.ver{color:var(--muted);font-size:14px;margin:2px 0 0}
+.notes{margin:14px 0 0;font-size:14px;color:var(--muted)}
+.dl{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:18px;background:var(--accent);color:#fff;text-decoration:none;font-weight:700;font-size:17px;padding:14px;border-radius:10px}
+.dl[aria-disabled=true]{opacity:.5;pointer-events:none}
+.qr{display:none;gap:18px;align-items:center}
+.qr #qr{background:#fff;padding:10px;border-radius:8px;flex:none}
+@media (min-width:700px) and (pointer:fine){.qr{display:flex}}
+h2{font-size:17px;margin:0 0 10px}
+ol{margin:0;padding-left:22px}
+li{margin-bottom:8px}
+.warn{background:var(--warn-bg);border-color:var(--warn-line)}
+.small{font-size:14px;color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <div class="top">
+      <img src="/icons/icon-192.png" alt="">
+      <div><h1>VoIP Bridge for Android</h1><p class="ver" id="ver">Checking the latest version…</p></div>
+    </div>
+    <p class="notes" id="notes" hidden></p>
+    <a class="dl" id="dl" href="voip-bridge.apk" download="voip-bridge.apk" aria-disabled="true">Download the app</a>
+  </div>
+
+  <div class="card qr">
+    <div id="qr"></div>
+    <p class="small">On a computer? Scan this with your Android phone's camera to open this page there, then tap <b>Download the app</b>.</p>
+  </div>
+
+  <div class="card">
+    <h2>Installing</h2>
+    <ol>
+      <li>Tap <b>Download the app</b>. If Chrome warns the file might be harmful, tap <b>Download anyway</b>.</li>
+      <li>When it's finished, tap <b>Open</b> (or open <i>voip-bridge.apk</i> from your notifications or Downloads).</li>
+      <li>If Android says Chrome isn't allowed to install apps, tap <b>Settings</b>, turn on <b>Allow from this source</b>, then go back.</li>
+      <li>Tap <b>Install</b>. On Xiaomi/Redmi phones a security scan may run first; wait for it, then tap <b>Install</b> or <b>Continue</b>.</li>
+    </ol>
+  </div>
+
+  <div class="card warn">
+    <h2>Already have an older VoIP Bridge?</h2>
+    <p class="small" style="margin:0">If it says <b>App not installed</b> or that the package <b>conflicts with an existing package</b>, uninstall the old VoIP Bridge first (press and hold its icon, then <b>Uninstall</b>), and install again. You only need to do this once. After that, updates install over the top.</p>
+  </div>
+
+  <div class="card">
+    <h2>After installing</h2>
+    <ol>
+      <li>Open VoIP Bridge and allow the <b>microphone</b> and <b>notifications</b>.</li>
+      <li>So calls can ring when the phone is locked: Settings → Apps → VoIP Bridge → allow <b>full-screen notifications</b>, and set Battery to <b>Unrestricted</b>.</li>
+      <li>In the app's Settings, enter your extension and password.</li>
+    </ol>
+  </div>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+(function () {
+  var dl = document.getElementById("dl");
+  fetch("version.json", { cache: "no-store" }).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (v) {
+    var mb = (v.size / 1048576).toFixed(1);
+    var when = new Date(v.builtAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    document.getElementById("ver").textContent = "Version " + v.versionName + " · " + mb + " MB · " + when;
+    if (v.notes) { var n = document.getElementById("notes"); n.textContent = v.notes; n.hidden = false; }
+    // Versioned URL so no cache can hand out an older APK.
+    dl.href = "voip-bridge.apk?v=" + v.versionCode;
+    dl.removeAttribute("aria-disabled");
+  }).catch(function () {
+    document.getElementById("ver").textContent = "The app isn't available to download right now.";
+  });
+  try { if (window.QRCode) new QRCode(document.getElementById("qr"), { text: location.href.split("#")[0], width: 140, height: 140 }); } catch (e) {}
+})();
+</script>
+</body>
+</html>

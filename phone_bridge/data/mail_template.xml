@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<odoo>
+    <record id="mail_template_voicemail" model="mail.template">
+        <field name="name">Phone Bridge: new voicemail</field>
+        <field name="model_id" ref="model_phone_bridge_call"/>
+        <field name="subject">Voicemail from {{ object.partner_id.name or object.phone_number }} for {{ object._voicemail_box_label() }}</field>
+        <field name="email_from">{{ (object.env.company.email_formatted or user.email_formatted) }}</field>
+        <field name="auto_delete" eval="True"/>
+        <field name="body_html" type="html">
+<div style="font-family: sans-serif; font-size: 14px;">
+    <p>
+        New voicemail for <strong t-out="object._voicemail_box_label()"/>
+        from <strong t-out="object.partner_id.name or object.phone_number"/>
+        <t t-if="object.partner_id"> (<t t-out="object.phone_number"/>)</t>,
+        <t t-out="format_datetime(object.start_date, dt_format='short')"/>.
+    </p>
+    <t t-if="object.transcript">
+        <p style="margin-bottom: 4px;"><strong>Transcript</strong></p>
+        <pre style="white-space: pre-wrap; font-family: inherit; background: #f6f6f6; padding: 10px; border-radius: 6px;" t-out="object.transcript"/>
+    </t>
+    <t t-else=""><p><em>No transcript (nothing was said, or transcription failed).</em></p></t>
+    <p>The recording is attached.
+        <a t-att-href="'%s/odoo/action-phone_bridge.action_phone_bridge_call/%s' % (object.get_base_url(), object.id)">Open the call in Odoo</a>
+    </p>
+</div>
+        </field>
+    </record>
+</odoo>

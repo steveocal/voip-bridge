@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="phone_bridge.PhonePanel">
+        <div class="o_pb_phone">
+            <header class="o_pb_head">
+                <span class="o_pb_dot" t-att-class="'o_pb_dot_' + state.status"/>
+                <span class="o_pb_title">Phone</span>
+                <span class="o_pb_status" t-esc="state.error ? statusLabel + ': ' + state.error : statusLabel"/>
+                <button class="o_pb_close" t-on-click="() => phone.toggle()" title="Close"><i class="fa fa-times"/></button>
+            </header>
+
+            <t t-if="!state.enabled">
+                <div class="o_pb_empty">
+                    <i class="fa fa-phone fa-3x mb-3"/>
+                    <p>Choose your extension in <b>Preferences → Phone</b>.</p>
+                    <p class="small">No extension yet? Ask your administrator to add one under Phone → Configuration → Extensions.</p>
+                </div>
+            </t>
+
+            <!-- In-call screen -->
+            <t t-elif="state.call">
+                <div class="o_pb_incall">
+                    <div class="o_pb_avatar"><i class="fa fa-user"/></div>
+                    <div class="o_pb_who">
+                        <a t-if="state.call.partner and state.call.partner.id" href="#" t-on-click.prevent="() => this.openPartner(state.call.partner.id)" t-esc="state.call.partner.name"/>
+                        <span t-else="" t-esc="state.call.partner ? state.call.partner.name : state.call.number"/>
+                    </div>
+                    <div class="o_pb_number" t-if="state.call.partner" t-esc="state.call.number"/>
+                    <div class="o_pb_callstatus" t-esc="callStatus"/>
+                    <div t-if="state.call.activity" class="o_pb_callact"><i class="fa fa-tasks"/> <t t-esc="state.call.activity.summary"/></div>
+
+                    <div t-if="ui.dtmf" class="o_pb_keys o_pb_keys_small">
+                        <button t-foreach="keys" t-as="k" t-key="k[0]" class="o_pb_key" t-on-click="() => this.pressKey(k[0])">
+                            <span t-esc="k[0]"/>
+                        </button>
+                    </div>
+
+                    <div class="o_pb_callbtns">
+                        <t t-if="state.call.dir === 'in' and state.call.state === 'ringing'">
+                            <button class="o_pb_round o_pb_red" t-on-click="() => phone.hangup()" title="Decline"><i class="fa fa-phone fa-rotate-135"/></button>
+                            <button class="o_pb_round o_pb_green" t-on-click="() => phone.answer()" title="Answer"><i class="fa fa-phone"/></button>
+                        </t>
+                        <t t-else="">
+                            <button class="o_pb_round o_pb_grey" t-att-class="{'o_pb_on': state.call.muted}" t-on-click="() => phone.toggleMute()"
+                                    t-att-disabled="state.call.state !== 'active'" title="Mute">
+                                <i t-att-class="state.call.muted ? 'fa fa-microphone-slash' : 'fa fa-microphone'"/>
+                            </button>
+                            <button class="o_pb_round o_pb_red" t-on-click="() => phone.hangup()" title="Hang up"><i class="fa fa-phone fa-rotate-135"/></button>
+                            <button class="o_pb_round o_pb_grey" t-att-class="{'o_pb_on': ui.dtmf}" t-on-click="() => this.ui.dtmf = !this.ui.dtmf"
+                                    t-att-disabled="state.call.state !== 'active'" title="Keypad">
+                                <i class="fa fa-th"/>
+                            </button>
+                        </t>
+                    </div>
+                </div>
+            </t>
+
+            <t t-else="">
+                <div t-if="state.finishedActivity" class="o_pb_banner">
+                    <div>Call finished: <b t-esc="state.finishedActivity.summary"/></div>
+                    <div class="d-flex gap-2 mt-2">
+                        <button class="btn btn-sm btn-primary" t-on-click="markFinishedDone">Mark done</button>
+                        <button class="btn btn-sm btn-secondary" t-on-click="() => phone.dismissActivity()">Keep</button>
+                    </div>
+                </div>
+
+                <div class="o_pb_body">
+                    <!-- Activities: calls to make -->
+                    <t t-if="ui.tab === 'activities'">
+                        <div class="o_pb_h2">Calls to make</div>
+                        <div t-if="!ui.activities.length and !ui.loading" class="o_pb_none">No call activities. Plan one with the "Call" activity type on any record.</div>
+                        <div t-foreach="ui.activities" t-as="act" t-key="act.id" class="o_pb_row" t-att-class="'o_pb_act_' + act.state">
+                            <div class="o_pb_main" t-on-click="() => this.openRecord(act.res_model, act.res_id)">
+                                <div class="o_pb_name" t-esc="act.partner ? act.partner.name : act.record_name"/>
+                                <div class="o_pb_sub o_pb_when"><t t-esc="act.summary"/> · <t t-esc="act.deadline"/></div>
+                                <div class="o_pb_sub" t-if="act.partner and act.partner.name !== act.record_name" t-esc="act.record_name"/>
+                            </div>
+                            <button class="o_pb_icon" t-on-click="() => this.activityDone(act)" title="Mark done"><i class="fa fa-check"/></button>
+                            <button class="o_pb_icon o_pb_callicon" t-att-disabled="!act.phone" t-on-click="() => this.callActivity(act)"
+                                    t-att-title="act.phone || 'No number'"><i class="fa fa-phone"/></button>
+                        </div>
+                    </t>
+
+                    <!-- Recent calls -->
+                    <t t-elif="ui.tab === 'recent'">
+                        <div t-if="!ui.recent.length and !ui.loading" class="o_pb_none">No calls yet.</div>
+                        <t t-foreach="recentGroups" t-as="group" t-key="group.key">
+                            <div class="o_pb_day" t-esc="group.label"/>
+                            <div t-foreach="group.calls" t-as="call" t-key="call.id" class="o_pb_row"
+                                 t-att-class="{'o_pb_unheard': call.voicemail and !call.voicemail_heard, 'o_pb_missed': call.state === 'missed'}">
+                                <i class="fa o_pb_dir" t-att-class="callIcon(call)"/>
+                                <div class="o_pb_main" t-on-click="() => this.openCall(call.id)">
+                                    <div class="o_pb_name" t-esc="call.partner_id ? call.partner_id[1] : call.phone_number"/>
+                                    <div class="o_pb_sub"><t t-esc="call.time"/><t t-if="call.voicemail"> · voicemail</t><t t-elif="call.duration"> · <t t-esc="Math.floor(call.duration / 60)"/>m <t t-esc="call.duration % 60"/>s</t></div>
+                                </div>
+                                <button class="o_pb_icon o_pb_callicon" t-on-click="() => this.callRecent(call)" title="Call back"><i class="fa fa-phone"/></button>
+                            </div>
+                        </t>
+                    </t>
+
+                    <!-- Contacts, with Favourites -->
+                    <t t-elif="ui.tab === 'contacts'">
+                        <div class="o_pb_subtabs">
+                            <button t-att-class="{'active': ui.contactsTab === 'all'}" t-on-click="() => this.setContactsTab('all')">All</button>
+                            <button t-att-class="{'active': ui.contactsTab === 'favourites'}" t-on-click="() => this.setContactsTab('favourites')">★ Favourites</button>
+                        </div>
+                        <input t-if="ui.contactsTab === 'all'" class="form-control o_pb_search" placeholder="Search contacts" t-att-value="ui.search" t-on-input="onSearch"/>
+                        <div t-if="!ui.contacts.length and !ui.loading" class="o_pb_none" t-esc="ui.contactsTab === 'favourites' ? 'No favourites yet: tap ☆ on a contact.' : 'No contacts with a phone number.'"/>
+                        <div t-foreach="ui.contacts" t-as="p" t-key="p.id" class="o_pb_row">
+                            <div class="o_pb_main" t-on-click="() => this.openPartner(p.id)">
+                                <div class="o_pb_name" t-esc="p.display_name"/>
+                                <div class="o_pb_sub" t-esc="p.mobile || p.phone"/>
+                            </div>
+                            <button class="o_pb_icon o_pb_star" t-on-click="() => this.toggleFavourite(p)" title="Favourite">
+                                <i t-att-class="ui.favouriteIds.includes(p.id) ? 'fa fa-star' : 'fa fa-star-o'"/>
+                            </button>
+                            <button class="o_pb_icon o_pb_callicon" t-on-click="() => this.callContact(p, p.mobile || p.phone)" title="Call"><i class="fa fa-phone"/></button>
+                        </div>
+                    </t>
+
+                    <!-- Emails -->
+                    <t t-elif="ui.tab === 'emails'">
+                        <div class="o_pb_h2">
+                            Emails · last 7 days
+                            <span t-if="ui.emailsUpdating" class="o_pb_muted"> · updating…</span>
+                            <span t-elif="ui.emailsError" class="o_pb_muted"> · offline copy</span>
+                        </div>
+                        <div t-if="!ui.emails.length and !ui.emailsUpdating" class="o_pb_none"
+                             t-esc="ui.emailsError ? 'Could not load emails.' : 'No emails in the last week.'"/>
+                        <div t-foreach="ui.emails" t-as="m" t-key="m.id" class="o_pb_row o_pb_email" t-on-click="() => this.openEmail(m)">
+                            <i class="fa o_pb_dir" t-att-class="m.outgoing ? 'fa-arrow-up' : 'fa-envelope-o'"/>
+                            <div class="o_pb_main">
+                                <div class="d-flex gap-2">
+                                    <div class="o_pb_name flex-fill" t-esc="m.from"/>
+                                    <div class="o_pb_sub flex-none" t-esc="emailWhen(m)"/>
+                                </div>
+                                <div class="o_pb_subject" t-esc="m.subject"/>
+                                <div class="o_pb_sub" t-if="m.preview" t-esc="m.preview"/>
+                            </div>
+                        </div>
+                    </t>
+
+                    <!-- Keypad -->
+                    <t t-elif="ui.tab === 'keypad'">
+                        <div class="o_pb_dialrow">
+                            <input class="o_pb_dialinput" type="tel" placeholder="Number" t-att-value="ui.number"
+                                   t-on-input="onKeypadInput" t-on-keydown="onKeypadKeydown"/>
+                            <button class="o_pb_icon" t-if="ui.number" t-on-click="backspace" title="Delete"><i class="fa fa-long-arrow-left"/></button>
+                        </div>
+                        <div class="o_pb_keys">
+                            <button t-foreach="keys" t-as="k" t-key="k[0]" class="o_pb_key" t-on-click="() => this.pressKey(k[0])">
+                                <span t-esc="k[0]"/><small t-esc="k[1]"/>
+                            </button>
+                        </div>
+                        <div class="text-center mt-2">
+                            <button class="o_pb_round o_pb_green" t-on-click="dialTyped" t-att-disabled="!ui.number or state.status !== 'registered'" title="Call">
+                                <i class="fa fa-phone"/>
+                            </button>
+                        </div>
+                    </t>
+                </div>
+
+                <nav class="o_pb_nav">
+                    <button t-att-class="{'active': ui.tab === 'activities'}" t-on-click="() => this.setTab('activities')">
+                        <i class="fa fa-tasks"/><span>Activities</span>
+                        <b t-if="ui.activities.length" class="o_pb_badge" t-esc="ui.activities.length"/>
+                    </button>
+                    <button t-att-class="{'active': ui.tab === 'recent'}" t-on-click="() => this.setTab('recent')"><i class="fa fa-history"/><span>Recent</span></button>
+                    <button class="o_pb_fab" t-att-class="{'active': ui.tab === 'keypad'}" t-on-click="() => this.setTab('keypad')" title="Keypad"><i class="fa fa-th"/></button>
+                    <button t-att-class="{'active': ui.tab === 'contacts'}" t-on-click="() => this.setTab('contacts')"><i class="fa fa-users"/><span>Contacts</span></button>
+                    <button t-att-class="{'active': ui.tab === 'emails'}" t-on-click="() => this.setTab('emails')"><i class="fa fa-envelope-o"/><span>Emails</span></button>
+                </nav>
+            </t>
+        </div>
+    </t>
+</templates>

@@ -1,0 +1,327 @@
+{
+  "name": "odoo-phone-bridge",
+  "version": "0.2.0",
+  "built_at": "2026-10-26T08:16:48.841Z",
+  "compatibility_date": "2025-08-08",
+  "main_module": "index.js",
+  "main_module_sha256": "4553920cd9a7c514ab0fdfc3c977a4369e4333b8eecf6e864164a3d77b4667f0",
+  "bindings": [
+    {
+      "type": "durable_object_namespace",
+      "name": "CALL_STATE",
+      "class_name": "CallState"
+    },
+    {
+      "type": "d1",
+      "name": "DB",
+      "database_id": "{{D1_DATABASE_ID}}"
+    },
+    {
+      "type": "ai",
+      "name": "AI"
+    }
+  ],
+  "durable_object_migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "CallState"
+      ]
+    }
+  ],
+  "settings": [
+    {
+      "name": "API_TOKEN",
+      "kind": "secret",
+      "required": true,
+      "generate": true,
+      "group": "Security",
+      "label": "API token",
+      "help": "Odoo and the dashboard send this as a Bearer token. The provisioner generates it."
+    },
+    {
+      "name": "PBX_SECRET",
+      "kind": "secret",
+      "required": true,
+      "generate": true,
+      "group": "Security",
+      "label": "PBX secret",
+      "help": "Shared with the phone system for its calls into the worker."
+    },
+    {
+      "name": "ODOO_URL",
+      "kind": "var",
+      "required": true,
+      "group": "Odoo",
+      "label": "Odoo URL"
+    },
+    {
+      "name": "ODOO_DB",
+      "kind": "var",
+      "required": true,
+      "group": "Odoo",
+      "label": "Database"
+    },
+    {
+      "name": "ODOO_USER",
+      "kind": "var",
+      "required": true,
+      "group": "Odoo",
+      "label": "User login"
+    },
+    {
+      "name": "ODOO_PASS",
+      "kind": "secret",
+      "required": true,
+      "group": "Odoo",
+      "label": "API key"
+    },
+    {
+      "name": "PBX_PROVIDER",
+      "kind": "var",
+      "required": true,
+      "group": "Phone system",
+      "label": "Provider",
+      "choices": [
+        "asterisk"
+      ],
+      "default": "asterisk"
+    },
+    {
+      "name": "ASTERISK_URL",
+      "kind": "var",
+      "required": true,
+      "provider": "asterisk",
+      "group": "Phone system",
+      "label": "ARI URL",
+      "help": "e.g. https://pbx.example.com:8089"
+    },
+    {
+      "name": "ASTERISK_USER",
+      "kind": "var",
+      "required": true,
+      "provider": "asterisk",
+      "group": "Phone system",
+      "label": "ARI user"
+    },
+    {
+      "name": "ASTERISK_PASS",
+      "kind": "secret",
+      "required": true,
+      "provider": "asterisk",
+      "group": "Phone system",
+      "label": "ARI password"
+    },
+    {
+      "name": "ASTERISK_ORIGINATE_URL",
+      "kind": "var",
+      "required": false,
+      "provider": "asterisk",
+      "group": "Phone system",
+      "label": "Click-to-call bridge URL",
+      "help": "AMI originate bridge on the PBX host; click-to-call is off without it."
+    },
+    {
+      "name": "COUNTRY_CODE",
+      "kind": "var",
+      "required": true,
+      "group": "Region",
+      "label": "Country calling code",
+      "default": "44"
+    },
+    {
+      "name": "TIMEZONE",
+      "kind": "var",
+      "required": true,
+      "group": "Region",
+      "label": "Time zone",
+      "default": "Europe/London"
+    },
+    {
+      "name": "LOCALE",
+      "kind": "var",
+      "required": true,
+      "group": "Region",
+      "label": "Locale",
+      "default": "en-GB"
+    },
+    {
+      "name": "DEFAULT_CALLER_ID",
+      "kind": "var",
+      "required": false,
+      "group": "Calls",
+      "label": "Default caller ID"
+    },
+    {
+      "name": "SIP_WS_URL",
+      "kind": "var",
+      "required": false,
+      "group": "Calls",
+      "label": "SIP WebSocket URL",
+      "help": "Softphone default, e.g. wss://pbx.example.com:8089/ws"
+    },
+    {
+      "name": "SIP_DOMAIN",
+      "kind": "var",
+      "required": false,
+      "group": "Calls",
+      "label": "SIP domain"
+    },
+    {
+      "name": "CALLBACK_DID",
+      "kind": "var",
+      "required": false,
+      "group": "Website callback",
+      "label": "Callback number",
+      "help": "The number callback requests are logged against and visitors are called from. The widget is off until this is set."
+    },
+    {
+      "name": "CALLBACK_OPEN_DAYS",
+      "kind": "var",
+      "required": false,
+      "group": "Website callback",
+      "label": "Open days",
+      "default": "1,2,3,4,5",
+      "help": "0 = Sunday"
+    },
+    {
+      "name": "CALLBACK_OPEN_FROM",
+      "kind": "var",
+      "required": false,
+      "group": "Website callback",
+      "label": "Opens",
+      "default": "09:00"
+    },
+    {
+      "name": "CALLBACK_OPEN_UNTIL",
+      "kind": "var",
+      "required": false,
+      "group": "Website callback",
+      "label": "Closes",
+      "default": "17:30"
+    },
+    {
+      "name": "OWN_EMAIL_DOMAINS",
+      "kind": "var",
+      "required": false,
+      "group": "Messages",
+      "label": "Our email domains",
+      "help": "Comma-separated; mail from these counts as outgoing."
+    },
+    {
+      "name": "MAIL_FROM",
+      "kind": "var",
+      "required": false,
+      "group": "Messages",
+      "label": "Gmail From header"
+    },
+    {
+      "name": "GOOGLE_CLIENT_ID",
+      "kind": "secret",
+      "required": false,
+      "group": "Messages",
+      "label": "Gmail OAuth client id"
+    },
+    {
+      "name": "GOOGLE_CLIENT_SECRET",
+      "kind": "secret",
+      "required": false,
+      "group": "Messages",
+      "label": "Gmail OAuth client secret"
+    },
+    {
+      "name": "GOOGLE_REFRESH_TOKEN",
+      "kind": "secret",
+      "required": false,
+      "group": "Messages",
+      "label": "Gmail refresh token"
+    },
+    {
+      "name": "FCM_SERVICE_ACCOUNT",
+      "kind": "secret",
+      "required": false,
+      "group": "Android app",
+      "label": "Firebase service account (JSON)"
+    },
+    {
+      "name": "ANDROID_PACKAGE",
+      "kind": "var",
+      "required": false,
+      "group": "Android app",
+      "label": "App package name"
+    },
+    {
+      "name": "ANDROID_CERT_SHA256",
+      "kind": "var",
+      "required": false,
+      "group": "Android app",
+      "label": "Signing key SHA-256 fingerprint(s)"
+    }
+  ],
+  "d1_migrations": [
+    {
+      "name": "0001_initial.sql",
+      "sql": "-- Initial schema. The Odoo addon's provisioner applies migrations/*.sql in\n-- order through the D1 API and records each in d1_migrations, the same table\n-- `wrangler d1 migrations apply` uses, so either tool can carry on from the other.\n--\n-- Tables mirror Odoo models so the D1 cache maps 1:1 to Odoo fields.\n--   contacts  ↔  res.partner   (basic fields)\n--   call_log  ↔  voip.call     (all stored fields + local PBX keys)\n-- Datetimes are stored as epoch milliseconds (INTEGER), matching Odoo datetime.\n-- ── Contacts (↔ Odoo res.partner) ─────────────────────────────\nCREATE TABLE IF NOT EXISTS contacts (\n  id INTEGER PRIMARY KEY,          -- res.partner.id\n  name TEXT NOT NULL,              -- res.partner.name\n  company_type TEXT,               -- res.partner.company_type ('person' | 'company')\n  is_company INTEGER DEFAULT 0,    -- res.partner.is_company\n  phone TEXT,                      -- res.partner.phone\n  mobile TEXT,                     -- res.partner.mobile\n  email TEXT,                      -- res.partner.email\n  website TEXT,                    -- res.partner.website\n  vat TEXT,                        -- res.partner.vat\n  function TEXT,                   -- res.partner.function (job position)\n  city TEXT,                       -- res.partner.city\n  active INTEGER DEFAULT 1,        -- res.partner.active\n  updated_at INTEGER               -- last sync (epoch ms)\n);\nCREATE INDEX IF NOT EXISTS idx_contacts_name ON contacts(name);\nCREATE INDEX IF NOT EXISTS idx_contacts_phone ON contacts(phone);\nCREATE INDEX IF NOT EXISTS idx_contacts_mobile ON contacts(mobile);\n\n-- ── Call log (↔ Odoo voip.call) ───────────────────────────────\n-- voip.call fields mapped; extra local-only columns (call_id, did, odoo_id)\n-- are PBX/dedup keys that voip.call does not have.\n-- Computed voip.call fields (display_name, activity_name) are omitted.\nCREATE TABLE IF NOT EXISTS call_log (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,  -- local D1 row id\n  odoo_id INTEGER,                       -- voip.call.id (set when synced back to Odoo)\n  call_id TEXT UNIQUE,                   -- PBX call id (local dedup key; not in voip.call)\n  did TEXT,                              -- our DID (local; voip.call has no \"our number\" field)\n  phone_number TEXT,                     -- voip.call.phone_number (the other party)\n  direction TEXT,                        -- voip.call.direction ('incoming' | 'outgoing')\n  state TEXT,                            -- voip.call.state ('aborted'|'calling'|'missed'|'ongoing'|'rejected'|'terminated')\n  partner_id INTEGER,                    -- voip.call.partner_id → contacts.id\n  user_id INTEGER,                       -- voip.call.user_id → res.users.id\n  start_date INTEGER,                    -- voip.call.start_date (epoch ms)\n  end_date INTEGER,                      -- voip.call.end_date (epoch ms)\n  create_date INTEGER,                   -- voip.call.create_date (epoch ms)\n  create_uid INTEGER,                    -- voip.call.create_uid → res.users.id\n  write_date INTEGER,                    -- voip.call.write_date (epoch ms)\n  write_uid INTEGER,                     -- voip.call.write_uid → res.users.id\n  notes_html TEXT,                       -- local-only: combined call-notes editor + jot sketch (HTML)\n  jot_svg TEXT,                          -- local-only: jot sketch, rendered SVG (display)\n  jot_json TEXT,                         -- local-only: jot sketch, Excalidraw scene (elements+appState, re-editable)\n  recording TEXT,                        -- local-only: PBX stored-recording name\n  transcript TEXT,                       -- local-only: Whisper transcript, one \"[m:ss] text\" line per segment (NULL = not transcribed)\n  voicemail INTEGER NOT NULL DEFAULT 0,  -- local-only: 1 = went to voicemail; the message is in recording\n  odoo_synced_at INTEGER                 -- local-only: when pushCallToOdoo last sent this leg's call\n);\nCREATE INDEX IF NOT EXISTS idx_call_log_phone ON call_log(phone_number);\nCREATE INDEX IF NOT EXISTS idx_call_log_start ON call_log(start_date);\nCREATE INDEX IF NOT EXISTS idx_call_log_partner ON call_log(partner_id);\nCREATE UNIQUE INDEX IF NOT EXISTS idx_call_log_odoo ON call_log(odoo_id);\n\n-- ── App settings (key-value) ──────────────────────────────────\n-- Server-side persistence for dashboard settings (connection URL, Dev Mode, …)\n-- so they survive across browsers/devices, not just localStorage.\nCREATE TABLE IF NOT EXISTS settings (\n  key TEXT PRIMARY KEY,\n  value TEXT,\n  updated_at INTEGER\n);\n\n-- ── Voicemail greetings ──\nCREATE TABLE IF NOT EXISTS greetings (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  name TEXT NOT NULL,\n  audio BLOB NOT NULL,                   -- 8 kHz mono 16-bit WAV\n  duration_ms INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n);\n\n-- ── Phone lookup bookkeeping ──\nCREATE TABLE IF NOT EXISTS phone_lookup (\n  key TEXT PRIMARY KEY,\n  at INTEGER NOT NULL\n);\n\n-- ── Messages (↔ Odoo mail.message + Gmail) ──────────────────\n-- Mirrors Odoo mail.message fields; also stores Gmail-thread messages.\n--   source = 'odoo' | 'gmail'; odoo_id / gmail_id are the external keys.\nCREATE TABLE IF NOT EXISTS messages (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,  -- local D1 row id\n  odoo_id INTEGER,                       -- mail.message.id (set when source='odoo')\n  gmail_id TEXT,                         -- Gmail message id (set when source='gmail')\n  contact_id INTEGER NOT NULL,           -- res.partner.id this thread belongs to\n  res_model TEXT,                        -- mail.message.model\n  res_id INTEGER,                        -- mail.message.res_id\n  subject TEXT,                          -- mail.message.subject\n  body TEXT,                             -- mail.message.body (HTML) / Gmail snippet\n  email_from TEXT,                       -- mail.message.email_from / Gmail From header\n  author_id INTEGER,                     -- mail.message.author_id → res.partner.id\n  message_type TEXT,                     -- 'email'|'comment'|'notification'|'sms'\n  direction TEXT,                        -- 'incoming' | 'outgoing'\n  source TEXT NOT NULL DEFAULT 'odoo',   -- 'odoo' | 'gmail'\n  date INTEGER,                          -- epoch ms\n  updated_at INTEGER\n);\nCREATE INDEX IF NOT EXISTS idx_messages_contact ON messages(contact_id);\nCREATE UNIQUE INDEX IF NOT EXISTS idx_messages_odoo ON messages(odoo_id);\nCREATE UNIQUE INDEX IF NOT EXISTS idx_messages_gmail ON messages(gmail_id);\n\n-- ── Website callback requests ──\nCREATE TABLE IF NOT EXISTS web_callbacks (\n  id TEXT PRIMARY KEY,\n  name TEXT NOT NULL,\n  phone TEXT NOT NULL,          -- E.164\n  mode TEXT NOT NULL,           -- 'now' | 'later'\n  preferred_at INTEGER,         -- epoch ms, 'later' only\n  page TEXT,\n  ip TEXT,\n  state TEXT NOT NULL,          -- calling | connecting | connected | no-answer | missed | scheduled | failed\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL\n);\nCREATE INDEX IF NOT EXISTS idx_web_callbacks_created ON web_callbacks(created_at);\n\n-- ── Android push (FCM device tokens, keyed by the SIP extension the device registers as) ──\nCREATE TABLE IF NOT EXISTS push_tokens (\n  token TEXT PRIMARY KEY,\n  extension TEXT NOT NULL,\n  updated_at TEXT NOT NULL DEFAULT (datetime('now'))\n);\nCREATE INDEX IF NOT EXISTS idx_push_tokens_extension ON push_tokens(extension);\n"
+    },
+    {
+      "name": "0002_voicemail_boxes.sql",
+      "sql": "-- Voicemail boxes: one per extension plus \"main\" (src/voicemail.ts). Replaces\n-- the single shared greeting library, whose settings now live in Odoo.\nCREATE TABLE IF NOT EXISTS voicemail_boxes (\n  box TEXT PRIMARY KEY,           -- \"main\" or an extension number\n  enabled INTEGER NOT NULL DEFAULT 1,\n  greeting BLOB,                  -- 8 kHz mono 16-bit WAV, NULL = the stock prompt\n  greeting_version INTEGER,       -- changes whenever the greeting does\n  duration_ms INTEGER,\n  updated_at INTEGER NOT NULL\n);\nDROP TABLE IF EXISTS greetings;\n-- Which box a voicemail was left in (NULL = not a voicemail, or before boxes).\nALTER TABLE call_log ADD COLUMN voicemail_box TEXT;\n"
+    }
+  ],
+  "assets": {
+    "directory": "assets",
+    "headers": "# Workers static-assets headers (not served itself).\n/app/*\n  X-Robots-Tag: noindex\n  Cache-Control: no-cache\n/app/voip-bridge.apk\n  Content-Type: application/vnd.android.package-archive\n  Content-Disposition: attachment; filename=\"voip-bridge.apk\"\n",
+    "files": [
+      {
+        "path": "/app/index.html",
+        "size": 5079,
+        "sha256": "3a8c87b11f2de839bc3893367d8596474ddd95cfa9abbbf02e9b400294ab1c9f"
+      },
+      {
+        "path": "/callback-widget.js",
+        "size": 15812,
+        "sha256": "6486a51f43a632ad6d8b9340b20a533a464c9d4ab2ce04537f9e60005b9faddb"
+      },
+      {
+        "path": "/icons/apple-touch-icon.png",
+        "size": 7015,
+        "sha256": "cff4d93ea9d6eafd47de1ad02066277201a6600e89a56d92983c038b07396045"
+      },
+      {
+        "path": "/icons/icon-192.png",
+        "size": 7347,
+        "sha256": "217596dd0c52dae5d158538666fc00433022be6e55a781ca95069597328b1e69"
+      },
+      {
+        "path": "/icons/icon-512.png",
+        "size": 26347,
+        "sha256": "f953646ddf6c29677f37a1708aad7b2b39bd7ee9953d71b7563e1493d06f06ed"
+      },
+      {
+        "path": "/icons/icon-maskable-192.png",
+        "size": 4629,
+        "sha256": "1a34eb84d7fbf4afa246c4d7b8b130a3485d522dc7b30bc296a5cf40a009187a"
+      },
+      {
+        "path": "/icons/icon-maskable-512.png",
+        "size": 14641,
+        "sha256": "32fd169d42fccb58367f5cc47a2ae83b281f5ea467a1eae1e727f4862974a7e7"
+      },
+      {
+        "path": "/manifest.webmanifest",
+        "size": 722,
+        "sha256": "af48e05f4608a5a1cb358230320d38976ef449fd42674f447255a94cdca37ecc"
+      },
+      {
+        "path": "/sip.min.js",
+        "size": 283863,
+        "sha256": "63161ec06ab50cac608ff8507d9f36d4cc42de0e2b38b7b7c96eba7b8539c7f6"
+      },
+      {
+        "path": "/sw.js",
+        "size": 347,
+        "sha256": "c6e2324fd4d6026387fd59236e18c43e3719bab6c13f2ea05036ceb6ef94e8ab"
+      }
+    ]
+  }
+}

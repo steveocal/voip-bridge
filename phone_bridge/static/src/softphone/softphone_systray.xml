@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="phone_bridge.SoftphoneSystray">
+        <div class="o_phone_bridge_systray position-relative">
+            <button class="btn btn-link o-navbar-icon position-relative" t-on-click="() => phone.toggle()" title="Phone">
+                <i class="fa fa-phone fa-lg" t-att-class="{'text-success': state.call}"/>
+                <span t-if="state.enabled" class="position-absolute rounded-circle" t-att-class="dotClass"
+                      style="width: 8px; height: 8px; right: 4px; bottom: 6px;"/>
+            </button>
+            <PhonePanel t-if="state.open"/>
+        </div>
+    </t>
+</templates>

@@ -1,0 +1,159 @@
+<?xml version="1.0"?>
+<odoo>
+    <record id="phone_bridge_installation_form" model="ir.ui.view">
+        <field name="name">phone_bridge.installation.form</field>
+        <field name="model">phone_bridge.installation</field>
+        <field name="arch" type="xml">
+            <form string="Phone Bridge" create="false" delete="false">
+                <header>
+                    <button name="action_provision" type="object" class="btn-primary"
+                            string="Deploy" invisible="state != 'draft'"/>
+                    <button name="action_provision" type="object" class="btn-primary"
+                            string="Redeploy" invisible="state == 'draft'"/>
+                    <button name="action_check" type="object" string="Check worker" invisible="not worker_url"/>
+                    <button name="action_open_dashboard" type="object" string="Open dashboard" invisible="not worker_url"/>
+                    <field name="state" widget="statusbar"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name"/></h1>
+                    </div>
+                    <div class="alert alert-warning" role="alert"
+                         invisible="state == 'draft' or not bundle_version or bundle_version == deployed_version">
+                        The worker runs version <field name="deployed_version" class="oe_inline"/>; this module carries
+                        <field name="bundle_version" class="oe_inline"/>. Redeploy to update it.
+                    </div>
+                    <notebook>
+                        <page string="Cloudflare" name="cloudflare">
+                            <group>
+                                <group string="Account">
+                                    <field name="cloudflare_account_id"/>
+                                    <field name="cloudflare_api_token" password="True"/>
+                                    <field name="worker_name"/>
+                                    <div colspan="2" class="text-muted">
+                                        Create an API token in Cloudflare (Manage Account → API Tokens) with
+                                        Account permissions <b>Workers Scripts: Edit</b> and <b>D1: Edit</b>.
+                                    </div>
+                                </group>
+                                <group string="Deployment">
+                                    <field name="worker_url" widget="url"/>
+                                    <field name="deployed_version"/>
+                                    <field name="bundle_version"/>
+                                    <field name="last_provisioned"/>
+                                    <field name="d1_database_id"/>
+                                </group>
+                            </group>
+                            <field name="provision_log" class="font-monospace" invisible="not provision_log"/>
+                        </page>
+                        <page string="Phone System" name="pbx">
+                            <group>
+                                <group string="Provider">
+                                    <field name="pbx_provider"/>
+                                    <field name="asterisk_url" invisible="pbx_provider != 'asterisk'"/>
+                                    <field name="asterisk_user" invisible="pbx_provider != 'asterisk'"/>
+                                    <field name="asterisk_pass" password="True" invisible="pbx_provider != 'asterisk'"/>
+                                    <field name="asterisk_originate_url" invisible="pbx_provider != 'asterisk'"/>
+                                </group>
+                                <group string="Softphones">
+                                    <field name="sip_ws_url"/>
+                                    <field name="sip_domain"/>
+                                    <field name="default_caller_id"/>
+                                </group>
+                                <group string="Secrets for the phone system" invisible="not pbx_secret">
+                                    <field name="pbx_secret" password="True"/>
+                                    <div colspan="2" class="text-muted">
+                                        The PBX sends this with every event it posts to the worker
+                                        (X-Pbx-Secret header or a <code>secret</code> field).
+                                    </div>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Voicemail" name="voicemail">
+                            <group>
+                                <group string="Main number">
+                                    <field name="main_voicemail_enabled"/>
+                                    <field name="main_voicemail_direct" invisible="not main_voicemail_enabled"/>
+                                    <field name="main_greeting_filename" invisible="1"/>
+                                    <field name="main_greeting" filename="main_greeting_filename" invisible="not main_voicemail_enabled"/>
+                                    <field name="main_voicemail_email" invisible="not main_voicemail_enabled"/>
+                                    <field name="main_voicemail_user_id" invisible="not main_voicemail_enabled"/>
+                                </group>
+                                <group string="Phone system">
+                                    <field name="voicemail_synced"/>
+                                    <button name="action_check_voicemail_sync" type="object" string="Check" class="btn-link"
+                                            colspan="2" invisible="not worker_url"/>
+                                </group>
+                            </group>
+                            <p class="text-muted">Each extension has its own box: Phone → Configuration → Extensions.</p>
+                            <field name="extension_ids">
+                                <list create="false" delete="false">
+                                    <field name="number"/>
+                                    <field name="name"/>
+                                    <field name="user_id"/>
+                                    <field name="voicemail_enabled"/>
+                                    <field name="voicemail_email"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Region" name="region">
+                            <group>
+                                <field name="country_code"/>
+                                <field name="timezone"/>
+                                <field name="locale"/>
+                            </group>
+                        </page>
+                        <page string="Website Callback" name="callback">
+                            <group>
+                                <field name="callback_did"/>
+                                <field name="callback_open_days"/>
+                                <field name="callback_open_from"/>
+                                <field name="callback_open_until"/>
+                            </group>
+                            <div class="text-muted" invisible="not worker_url">
+                                Embed on your website:
+                                <code>&lt;script src="<field name="worker_url" class="oe_inline" readonly="1"/>/callback-widget.js" async&gt;&lt;/script&gt;</code>
+                            </div>
+                        </page>
+                        <page string="Access" name="access">
+                            <group>
+                                <group string="Worker → Odoo">
+                                    <field name="odoo_url"/>
+                                    <field name="odoo_user_id"/>
+                                    <field name="odoo_api_key" password="True" invisible="not odoo_api_key"/>
+                                </group>
+                                <group string="Odoo → Worker">
+                                    <field name="api_token" password="True" invisible="not api_token"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Optional" name="optional">
+                            <group>
+                                <group string="Gmail in Messages">
+                                    <field name="own_email_domains"/>
+                                    <field name="mail_from"/>
+                                    <field name="google_client_id"/>
+                                    <field name="google_client_secret" password="True"/>
+                                    <field name="google_refresh_token" password="True"/>
+                                </group>
+                                <group string="Android app">
+                                    <field name="android_package"/>
+                                    <field name="android_cert_sha256"/>
+                                    <field name="fcm_service_account"/>
+                                </group>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_phone_bridge_installation" model="ir.actions.server">
+        <field name="name">Phone Bridge Setup</field>
+        <field name="model_id" ref="model_phone_bridge_installation"/>
+        <field name="state">code</field>
+        <field name="code">action = model.action_open_installation()</field>
+        <field name="groups_id" eval="[Command.link(ref('base.group_system'))]"/>
+    </record>
+</odoo>

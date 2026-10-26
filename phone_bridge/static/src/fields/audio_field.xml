@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="phone_bridge.AudioField">
+        <audio t-if="props.record.resId and props.record.data[props.name]"
+               controls="controls" preload="none" t-att-src="src"
+               style="height: 32px; max-width: 100%;"/>
+    </t>
+</templates>
