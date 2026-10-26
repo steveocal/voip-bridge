@@ -124,7 +124,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .hist-transcript button{background:#2c2c2c;border:none;color:#ececec;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer}
 .contact-row .mini-call{width:38px;height:38px;border-radius:50%;border:none;background:#10b981;color:#fff;font-size:16px;cursor:pointer;flex-shrink:0}
 .empty{color:#666;text-align:center;padding:28px 0;font-size:14px}
-.day-head{font-size:11px;font-weight:700;letter-spacing:.5px;color:#888;text-transform:uppercase;padding:14px 4px 6px;position:sticky;top:0;background:transparent}
+.day-head{font-size:11px;font-weight:700;letter-spacing:.5px;color:#888;text-transform:uppercase;padding:14px 4px 6px}
 .contact-row.selected{background:#262626;border-radius:10px;padding-left:8px;padding-right:8px}
 .msg-row{display:flex;align-items:flex-start;gap:12px;padding:12px 4px;border-bottom:1px solid #222}
 .msg-row .ic{font-size:18px}
@@ -279,7 +279,6 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 .view h2{color:#f0a33c;border-left:3px solid #f0a33c;padding-left:8px}
 #view-contacts h2{color:#4db8ff;border-left-color:#4db8ff}
 #view-messages h2{color:#34d399;border-left-color:#34d399}
-#view-favourites h2{color:#f7c948;border-left-color:#f7c948}
 .msg-row .subj{color:#e6e6e6}
 /* favourites star */
 .fav-star{flex-shrink:0;background:none;border:none;font-size:24px;line-height:1;cursor:pointer;padding:2px 4px;color:#555;width:38px;margin-left:auto}
@@ -572,19 +571,22 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       </div>
     </div>
 
-    <!-- FAVOURITES VIEW -->
-    <div class="view hidden" id="view-favourites">
-      <h2>⭐ Favourites</h2>
-      <div id="fav-list"><div class="empty">No favourites yet</div></div>
-    </div>
-
-    <!-- CONTACTS VIEW -->
+    <!-- CONTACTS VIEW (All / Favourites tabs) -->
     <div class="view hidden" id="view-contacts">
       <h2>👥 Contacts</h2>
-      <div class="entry">
-        <input id="contact-search" type="text" placeholder="Search contacts" autocomplete="off">
+      <div class="cp-tabs" id="contacts-tabs">
+        <button class="cp-tab active" data-tab="all" onclick="switchContactsTab('all')">All</button>
+        <button class="cp-tab" data-tab="favourites" onclick="switchContactsTab('favourites')">★ Favourites</button>
       </div>
-      <div id="contacts-list"><div class="empty">Type to search</div></div>
+      <div id="ct-tab-all">
+        <div class="entry">
+          <input id="contact-search" type="text" placeholder="Search contacts" autocomplete="off">
+        </div>
+        <div id="contacts-list"><div class="empty">Type to search</div></div>
+      </div>
+      <div id="ct-tab-favourites" class="hidden">
+        <div id="fav-list"><div class="empty">No favourites yet</div></div>
+      </div>
     </div>
 
     <!-- MESSAGES VIEW -->
@@ -596,9 +598,8 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 
   <nav class="bottom-menu">
     <button class="menu-btn active" data-view="dial" onclick="switchView('dial')"><span class="ico">🕐</span><span>History</span></button>
-    <button class="menu-btn" data-view="favourites" onclick="switchView('favourites')"><span class="ico">⭐</span><span>Favourites</span></button>
-    <button class="dial-fab" id="nav-dial" onclick="navDialAction()" aria-label="Dial"><span class="fab">📞</span></button>
     <button class="menu-btn" data-view="contacts" onclick="switchView('contacts')"><span class="ico">👥</span><span>Contacts</span></button>
+    <button class="dial-fab" id="nav-dial" onclick="navDialAction()" aria-label="Dial"><span class="fab">📞</span></button>
     <button class="menu-btn" data-view="messages" onclick="switchView('messages')"><span class="ico">💬</span><span>Messages</span></button>
   </nav>
   <div class="action-bar hidden" id="action-bar"></div>
@@ -1267,6 +1268,7 @@ document.addEventListener("DOMContentLoaded", updateDialBottomVisibility);
 
 function switchView(name) {
   if (name === "history") name = "dial"; // History and the dialpad are one screen now
+  if (name === "favourites") { contactsTab = "favourites"; name = "contacts"; } // Favourites is a Contacts tab now
   var views = document.querySelectorAll(".view");
   for (var i = 0; i < views.length; i++) views[i].classList.add("hidden");
   document.getElementById("view-" + name).classList.remove("hidden");
@@ -1275,8 +1277,7 @@ function switchView(name) {
   var b = document.querySelector('.menu-btn[data-view="' + name + '"]');
   if (b) b.classList.add("active");
   if (name === "dial") { loadHistory(); loadT9Corpus(); }
-  if (name === "favourites") renderFavourites();
-  if (name === "contacts") loadContacts(document.getElementById("contact-search").value);
+  if (name === "contacts") switchContactsTab(contactsTab);
   if (name === "messages") loadMessages();
 }
 
@@ -3260,7 +3261,19 @@ function fmtTime(ts) {
   return sameDay ? hh + ":" + mm : d.toLocaleDateString(undefined, { day: "numeric", month: "short" }) + " " + hh + ":" + mm;
 }
 
-// ── favourites ─────────────────────────────────────────────────
+// ── favourites (the Contacts view's second tab) ─────────────────
+var contactsTab = "all";
+try { if (localStorage.getItem("vb_contactsTab") === "favourites") contactsTab = "favourites"; } catch (e) {}
+function switchContactsTab(tab) {
+  contactsTab = tab === "favourites" ? "favourites" : "all";
+  try { localStorage.setItem("vb_contactsTab", contactsTab); } catch (e) {}
+  var tabs = document.querySelectorAll("#contacts-tabs .cp-tab");
+  for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle("active", tabs[i].getAttribute("data-tab") === contactsTab);
+  document.getElementById("ct-tab-all").classList.toggle("hidden", contactsTab !== "all");
+  document.getElementById("ct-tab-favourites").classList.toggle("hidden", contactsTab !== "favourites");
+  if (contactsTab === "favourites") renderFavourites();
+  else loadContacts(document.getElementById("contact-search").value);
+}
 function renderFavourites() {
   var el = document.getElementById("fav-list");
   if (!favourites.length) { el.innerHTML = '<div class="empty">No favourites yet — tap ★ on a contact</div>'; return; }
@@ -3895,14 +3908,31 @@ function sendCompose() {
 function loadMessages() {
   var el = document.getElementById("messages-list");
   if (!activeContact) {
-    document.getElementById("msg-title").textContent = "📥 Recent emails (7 days)";
-    el.innerHTML = '<div class="empty">Downloading recent emails…</div>';
+    // Show the last list straight away (kept in localStorage), then fetch a
+    // fresh one in the background and swap it in if this view is still open.
+    var title = document.getElementById("msg-title");
+    var cached = loadRecentEmailsCache();
     messagesCache = {};
+    if (cached) {
+      title.textContent = "📥 Recent emails (7 days) · updating…";
+      renderRecentEmails(el, cached.messages);
+    } else {
+      title.textContent = "📥 Recent emails (7 days)";
+      el.innerHTML = '<div class="empty">Downloading recent emails…</div>';
+    }
     fetch(API + "/messages/recent?days=" + PV.recentMessagesDays + "&limit=" + PV.recentMessagesLimit).then(function(r){return r.json();}).then(function(d){
+      if (activeContact) return; // moved on to a contact meanwhile
+      title.textContent = "📥 Recent emails (7 days)";
+      if (!d.gmailOk && cached) return; // keep what we had rather than blank it
       var msgs = d.messages || [];
-      if (!msgs.length) { el.innerHTML = '<div class="empty">No emails in the last week</div>'; return; }
-      el.innerHTML = msgs.map(function(m) { return renderMessageRow(m); }).join("");
-    }).catch(function(){ el.innerHTML = '<div class="empty">Error loading emails</div>'; });
+      saveRecentEmailsCache(msgs);
+      messagesCache = {};
+      renderRecentEmails(el, msgs);
+    }).catch(function(){
+      if (activeContact) return;
+      title.textContent = "📥 Recent emails (7 days)" + (cached ? " · offline copy" : "");
+      if (!cached) el.innerHTML = '<div class="empty">Error loading emails</div>';
+    });
     return;
   }
   document.getElementById("msg-title").textContent = "💬 " + activeContact.name;
@@ -3913,6 +3943,20 @@ function loadMessages() {
     if (!msgs.length) { el.innerHTML = '<div class="empty">No messages found</div>'; return; }
     el.innerHTML = msgs.map(function(m) { return renderMessageRow(m); }).join("");
   }).catch(function(){ el.innerHTML = '<div class="empty">Error loading messages</div>'; });
+}
+function renderRecentEmails(el, msgs) {
+  if (!msgs.length) { el.innerHTML = '<div class="empty">No emails in the last week</div>'; return; }
+  el.innerHTML = msgs.map(function(m) { return renderMessageRow(m); }).join("");
+}
+var RECENT_EMAILS_KEY = "vb_recentEmails";
+function loadRecentEmailsCache() {
+  try {
+    var c = JSON.parse(localStorage.getItem(RECENT_EMAILS_KEY) || "null");
+    return c && Array.isArray(c.messages) ? c : null;
+  } catch (e) { return null; }
+}
+function saveRecentEmailsCache(msgs) {
+  try { localStorage.setItem(RECENT_EMAILS_KEY, JSON.stringify({ at: Date.now(), messages: msgs })); } catch (e) {}
 }
 function renderMessageRow(m) {
   var dir = m.direction === "outgoing" ? "⬆" : "⬇";
