@@ -8,6 +8,7 @@
                   decoration-bf="voicemail and not voicemail_heard">
                 <field name="voicemail_heard" column_invisible="1"/>
                 <field name="start_date"/>
+                <field name="extension" optional="show"/>
                 <field name="direction"/>
                 <field name="partner_id"/>
                 <field name="phone_number"/>
@@ -16,7 +17,7 @@
                 <field name="voicemail_box" optional="hide"/>
                 <field name="duration" optional="show"/>
                 <field name="did" optional="hide"/>
-                <field name="user_id" optional="hide"/>
+                <field name="user_id" optional="show"/>
                 <field name="recording_filename" column_invisible="1"/>
                 <field name="recording" widget="phone_bridge_audio" optional="show"/>
             </list>
@@ -52,6 +53,7 @@
                             <field name="end_date"/>
                             <field name="duration"/>
                             <field name="did"/>
+                            <field name="extension"/>
                             <field name="user_id"/>
                         </group>
                     </group>
@@ -81,6 +83,10 @@
                 <field name="partner_id"/>
                 <field name="phone_number"/>
                 <field name="transcript"/>
+                <field name="extension"/>
+                <field name="user_id"/>
+                <filter name="my_calls" string="My calls" domain="[('user_id', '=', uid)]"/>
+                <separator/>
                 <filter name="incoming" string="Incoming" domain="[('direction', '=', 'incoming')]"/>
                 <filter name="outgoing" string="Outgoing" domain="[('direction', '=', 'outgoing')]"/>
                 <separator/>
@@ -89,6 +95,7 @@
                 <filter name="unheard" string="Unheard voicemail" domain="[('voicemail', '=', True), ('voicemail_heard', '=', False)]"/>
                 <filter name="recorded" string="Recorded" domain="[('recording', '!=', False)]"/>
                 <group expand="0" string="Group By">
+                    <filter name="group_extension" string="Extension" context="{'group_by': 'extension'}"/>
                     <filter name="group_partner" string="Contact" context="{'group_by': 'partner_id'}"/>
                     <filter name="group_box" string="Mailbox" context="{'group_by': 'voicemail_box'}"/>
                     <filter name="group_day" string="Day" context="{'group_by': 'start_date:day'}"/>

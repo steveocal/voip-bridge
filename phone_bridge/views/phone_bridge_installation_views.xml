@@ -58,6 +58,7 @@
                                     <field name="sip_ws_url"/>
                                     <field name="sip_domain"/>
                                     <field name="default_caller_id"/>
+                                    <field name="park_extension"/>
                                 </group>
                                 <group string="Secrets for the phone system" invisible="not pbx_secret">
                                     <field name="pbx_secret" password="True"/>

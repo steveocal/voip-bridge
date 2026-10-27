@@ -69,6 +69,8 @@ class PhoneBridgeInstallation(models.Model):
     sip_ws_url = fields.Char("SIP WebSocket URL", help="e.g. wss://pbx.example.com:8089/ws")
     sip_domain = fields.Char("SIP Domain")
     default_caller_id = fields.Char("Default Caller ID")
+    park_extension = fields.Char("Park Extension", default="700",
+                                 help="The PBX's parking extension; the softphone's Park transfers calls there.")
 
     # ── Region ──
     country_code = fields.Char("Country Calling Code", default=lambda self: self._default_country_code(), required=True)

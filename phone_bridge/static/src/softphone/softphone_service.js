@@ -26,10 +26,13 @@ export const softphoneService = {
             call: null,         // { id, dir: "in"|"out", number, partner, state: "ringing"|"active", answeredAt, muted, activity }
             finishedActivity: null, // the activity the last call was made for, to offer "Mark done"
             callsChanged: 0,    // bumped after every call, so lists reload
+            consult: null,      // { target, up } while talking to a transfer target, the caller on hold
+            parked: [],         // [{ slot, number, name }] waiting in the PBX's parking lot
         });
         let config = null;
         let ua = null;
         let session = null;
+        let consultSession = null;
         let reconnectDelay = 2000;
         let reconnectTimer = null;
         const audio = Object.assign(document.createElement("audio"), { autoplay: true });
@@ -115,6 +118,47 @@ export const softphoneService = {
             ring = null;
         }
 
+        // ── Hold / transfer / park ──
+        // Hold is a re-INVITE with the SDP made sendonly (the PBX plays the
+        // caller music on hold). A blind transfer REFERs the caller to the
+        // target; an attended one holds the caller, calls the target, then
+        // REFERs the caller onto that call. Park is a blind transfer to the
+        // PBX's parking extension.
+        async function setHold(s, hold) {
+            const sdh = s.sessionDescriptionHandler;
+            const options = hold && sdh ? { sessionDescriptionHandlerModifiers: [(d) => sdh.holdModifier(d)] } : {};
+            await s.invite(options);
+            for (const sender of s.sessionDescriptionHandler?.peerConnection?.getSenders() || []) {
+                if (sender.track?.kind === "audio") sender.track.enabled = !hold && !state.call?.muted;
+            }
+        }
+        function target(number) {
+            return SIP.UserAgent.makeURI(`sip:${normalise(number)}@${config.domain}`);
+        }
+        function refer(to) {
+            return new Promise((resolve, reject) => {
+                session.refer(to, { requestDelegate: { onAccept: resolve, onReject: () => reject(new Error(_t("Transfer refused"))) } })
+                    .catch(reject);
+            });
+        }
+        function endSession(s) {
+            if (s.state === SIP.SessionState.Established) s.bye().catch(() => {});
+            else if (s instanceof SIP.Inviter) s.cancel().catch(() => {});
+            else s.dispose();
+        }
+        // The consult call is over: back to the caller, off hold.
+        async function backToCaller() {
+            consultSession = null;
+            state.consult = null;
+            if (session?.state !== SIP.SessionState.Established) return;
+            attachAudio(session);
+            await setHold(session, false).catch(() => {});
+            if (state.call) state.call.held = false;
+        }
+        async function loadParked() {
+            state.parked = await rpc("/phone_bridge/parked", {}).catch(() => state.parked);
+        }
+
         function attachAudio(s) {
             const pc = s.sessionDescriptionHandler?.peerConnection;
             if (!pc) return;
@@ -144,6 +188,10 @@ export const softphoneService = {
                     event("hangup", { duration }).then(() => state.callsChanged++);
                     audio.srcObject = null;
                     session = null;
+                    if (consultSession) endSession(consultSession);
+                    consultSession = null;
+                    state.consult = null;
+                    loadParked();
                     if (call?.activity) state.finishedActivity = { ...call.activity, answered: !!call.answeredAt };
                     state.call = null;
                 }
@@ -184,7 +232,7 @@ export const softphoneService = {
                         }
                         session = inv;
                         const number = inv.remoteIdentity.uri.user || inv.remoteIdentity.displayName || "";
-                        state.call = { id: inv.request.callId, dir: "in", number, partner: null, state: "ringing", muted: false };
+                        state.call = { id: inv.request.callId, dir: "in", number, partner: null, state: "ringing", muted: false, held: false };
                         state.open = true;
                         startRing();
                         watch(inv);
@@ -260,7 +308,7 @@ export const softphoneService = {
                 state.finishedActivity = null;
                 state.call = {
                     id: inviter.request.callId, dir: "out", number: normalise(number),
-                    partner: options.partner || null, state: "ringing", muted: false, activity: options.activity || null,
+                    partner: options.partner || null, state: "ringing", muted: false, held: false, activity: options.activity || null,
                 };
                 state.open = true;
                 watch(inviter);
@@ -302,6 +350,69 @@ export const softphoneService = {
                     if (sender.track?.kind === "audio") sender.track.enabled = !state.call.muted;
                 }
             },
+            async toggleHold() {
+                if (session?.state !== SIP.SessionState.Established || state.consult || !state.call) return;
+                const hold = !state.call.held;
+                try {
+                    await setHold(session, hold);
+                    state.call.held = hold;
+                } catch (e) {
+                    notification.add(e.message || _t("Hold failed"), { type: "danger" });
+                }
+            },
+            /** Send the caller to `number` straight away. */
+            async blindTransfer(number) {
+                const to = target(number);
+                if (!to || session?.state !== SIP.SessionState.Established) return;
+                // The PBX hangs our leg up once the caller is on their way.
+                await refer(to).catch((e) => notification.add(e.message || String(e), { type: "danger" }));
+            },
+            /** Hold the caller and call `number` to talk first. */
+            async consultTransfer(number) {
+                const to = target(number);
+                if (!to || session?.state !== SIP.SessionState.Established || consultSession) return;
+                try {
+                    if (!state.call.held) await setHold(session, true);
+                    state.call.held = true;
+                } catch (e) {
+                    notification.add(e.message || _t("Hold failed"), { type: "danger" });
+                    return;
+                }
+                const inv = new SIP.Inviter(ua, to, { sessionDescriptionHandlerOptions: { constraints: { audio: true, video: false } } });
+                consultSession = inv;
+                state.consult = { target: normalise(number), up: false };
+                inv.stateChange.addListener((st) => {
+                    if (st === SIP.SessionState.Established && state.consult) {
+                        state.consult.up = true;
+                        attachAudio(inv);
+                    } else if (st === SIP.SessionState.Terminated && consultSession === inv) {
+                        backToCaller();
+                    }
+                });
+                inv.invite().catch(() => consultSession === inv && backToCaller());
+            },
+            /** Put the caller through to the person we've been talking to. */
+            async completeTransfer() {
+                if (consultSession?.state !== SIP.SessionState.Established) return;
+                await refer(consultSession).catch((e) => notification.add(e.message || String(e), { type: "danger" }));
+            },
+            cancelConsult() {
+                const c = consultSession;
+                if (!c) return;
+                consultSession = null;
+                endSession(c);
+                backToCaller();
+            },
+            canPark() {
+                return !!config?.park_extension;
+            },
+            async park() {
+                if (!config?.park_extension || session?.state !== SIP.SessionState.Established) return;
+                await refer(target(config.park_extension))
+                    .then(() => setTimeout(loadParked, 1500))
+                    .catch((e) => notification.add(e.message || String(e), { type: "danger" }));
+            },
+            loadParked,
             sendDtmf(digit) {
                 if (session?.state === SIP.SessionState.Established) {
                     session.sessionDescriptionHandler?.sendDtmf(digit);

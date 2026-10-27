@@ -35,6 +35,26 @@
                         </button>
                     </div>
 
+                    <div t-if="state.call.state === 'active' and !state.consult" class="o_pb_ctlrow">
+                        <button class="btn btn-sm" t-att-class="state.call.held ? 'btn-warning' : 'btn-secondary'" t-on-click="() => phone.toggleHold()">
+                            <i t-att-class="state.call.held ? 'fa fa-play' : 'fa fa-pause'"/> <t t-if="state.call.held">Resume</t><t t-else="">Hold</t>
+                        </button>
+                        <button class="btn btn-sm btn-secondary" t-att-class="{'active': ui.xfer}" t-on-click="openTransfer"><i class="fa fa-share"/> Transfer</button>
+                        <button t-if="phone.canPark()" class="btn btn-sm btn-secondary" t-on-click="() => phone.park()"><i class="fa fa-product-hunt"/> Park</button>
+                    </div>
+                    <div t-if="ui.xfer and !state.consult" class="o_pb_xfer">
+                        <input class="form-control form-control-sm" type="tel" placeholder="Extension or number" t-model="ui.xferTo"
+                               t-on-keydown="(ev) => ev.key === 'Enter' and this.transfer(true)"/>
+                        <div class="d-flex gap-2 mt-2">
+                            <button class="btn btn-sm btn-success flex-fill" t-on-click="() => this.transfer(true)">Transfer now</button>
+                            <button class="btn btn-sm btn-secondary flex-fill" t-on-click="() => this.transfer(false)">Talk first</button>
+                        </div>
+                    </div>
+                    <div t-if="state.consult" class="d-flex gap-2 mt-3">
+                        <button class="btn btn-sm btn-success" t-att-disabled="!state.consult.up" t-on-click="() => phone.completeTransfer()"><i class="fa fa-check"/> Transfer</button>
+                        <button class="btn btn-sm btn-secondary" t-on-click="() => phone.cancelConsult()"><i class="fa fa-undo"/> Back to caller</button>
+                    </div>
+
                     <div class="o_pb_callbtns">
                         <t t-if="state.call.dir === 'in' and state.call.state === 'ringing'">
                             <button class="o_pb_round o_pb_red" t-on-click="() => phone.hangup()" title="Decline"><i class="fa fa-phone fa-rotate-135"/></button>
@@ -62,6 +82,13 @@
                         <button class="btn btn-sm btn-primary" t-on-click="markFinishedDone">Mark done</button>
                         <button class="btn btn-sm btn-secondary" t-on-click="() => phone.dismissActivity()">Keep</button>
                     </div>
+                </div>
+
+                <div t-if="state.parked.length" class="o_pb_parked">
+                    <i class="fa fa-product-hunt"/> Parked:
+                    <button t-foreach="state.parked" t-as="p" t-key="p.slot" class="btn btn-sm btn-primary" t-on-click="() => this.pickUpParked(p.slot)">
+                        <t t-esc="p.slot"/> · <t t-esc="p.name or p.number or 'caller'"/>
+                    </button>
                 </div>
 
                 <div class="o_pb_body">
@@ -119,6 +146,21 @@
                     </t>
 
                     <!-- Emails -->
+                    <t t-elif="ui.tab === 'emails' and ui.reading">
+                        <div class="o_pb_reader">
+                            <div class="d-flex align-items-center gap-2">
+                                <button class="o_pb_icon" t-on-click="closeEmail" title="Back"><i class="fa fa-arrow-left"/></button>
+                                <div class="o_pb_subject flex-fill" t-esc="ui.reading.subject"/>
+                                <a class="o_pb_icon" t-att-href="'https://mail.google.com/mail/u/0/#all/' + ui.reading.id" target="_blank" title="Open in Gmail"><i class="fa fa-external-link"/></a>
+                            </div>
+                            <div class="o_pb_sub"><t t-esc="ui.reading.from"/> · <t t-esc="emailWhen(ui.reading)"/></div>
+                            <div t-if="ui.reading.loading" class="o_pb_none">Loading…</div>
+                            <iframe t-elif="ui.reading.html" class="o_pb_mailframe" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                                    referrerpolicy="no-referrer" t-att-srcdoc="readingDoc" t-on-load="fitEmailFrame"/>
+                            <div t-elif="ui.reading.text" class="o_pb_mailtext" t-esc="ui.reading.text"/>
+                            <div t-else="" class="o_pb_none">Could not load this email.</div>
+                        </div>
+                    </t>
                     <t t-elif="ui.tab === 'emails'">
                         <div class="o_pb_h2">
                             Emails · last 7 days

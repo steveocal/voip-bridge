@@ -1,4 +1,8 @@
+from unittest.mock import patch
+
 from odoo.tests import TransactionCase, tagged
+
+from ..models.phone_bridge_installation import PhoneBridgeInstallation
 
 
 @tagged("post_install", "-at_install")
@@ -28,3 +32,13 @@ class TestBridgeUpsert(TransactionCase):
     def test_upsert_needs_an_id(self):
         with self.assertRaises(ValueError):
             self.Call.bridge_upsert({"phone_number": "1"})
+
+    def test_extension_makes_it_the_owners_call(self):
+        owner = self.env["res.users"].create({"name": "Ext User", "login": "ext_user_call"})
+        with patch.object(PhoneBridgeInstallation, "_worker_request", lambda *a, **k: None):
+            self.env["phone_bridge.extension"].create({"number": "9301", "user_id": owner.id})
+        call = self.Call.browse(self.Call.bridge_upsert({
+            "bridge_call_id": "int.1", "phone_number": "9302", "direction": "outgoing", "extension": "9301"}))
+        self.assertEqual(call.extension, "9301")
+        self.assertEqual(call.extension_id.number, "9301")
+        self.assertEqual(call.user_id, owner)

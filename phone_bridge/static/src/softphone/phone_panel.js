@@ -30,6 +30,8 @@ export class PhonePanel extends Component {
             number: "",
             search: "",
             dtmf: false,
+            xfer: false,        // the transfer box is open
+            xferTo: "",
             loading: false,
             activities: [],
             recent: [],
@@ -38,10 +40,14 @@ export class PhonePanel extends Component {
             emails: [],
             emailsUpdating: false,
             emailsError: false,
+            reading: null,      // the email open in the reader { id, subject, from, text, html, loading }
             now: Date.now(),
         });
         const tick = setInterval(() => (this.ui.now = Date.now()), 1000);
-        onWillUnmount(() => clearInterval(tick));
+        // Parked calls change from other phones, so check while the panel is open.
+        this.phone.loadParked();
+        const parkedPoll = setInterval(() => !document.hidden && this.phone.loadParked(), 5000);
+        onWillUnmount(() => { clearInterval(tick); clearInterval(parkedPoll); });
         onWillStart(() => this.loadTab());
         // Lists change after every call.
         useEffect(() => { this.loadTab(); }, () => [this.state.callsChanged]);
@@ -115,8 +121,11 @@ export class PhonePanel extends Component {
     // shows at once (localStorage) and a fresh one replaces it in the
     // background; a failed refresh keeps the old list. ──
 
+    // Emails come from the worker's Gmail (the last week, newest first). The
+    // last list shows at once from localStorage ("updating…") and is
+    // refreshed in the background; a failed refresh keeps it ("offline copy").
     async loadEmails() {
-        const key = `phone_bridge.emails.${user.userId}`;
+        const key = `phone_bridge.gmail.${user.userId}`;
         if (!this.ui.emails.length) {
             try {
                 this.ui.emails = JSON.parse(localStorage.getItem(key) || "{}").messages || [];
@@ -127,24 +136,20 @@ export class PhonePanel extends Component {
         this.ui.emailsUpdating = true;
         this.ui.emailsError = false;
         try {
-            const since = luxon.DateTime.utc().minus({ days: 7 }).toFormat("yyyy-MM-dd HH:mm:ss");
-            const rows = await this.orm.searchRead("mail.message",
-                [["message_type", "=", "email"], ["date", ">=", since]],
-                ["author_id", "email_from", "subject", "body", "date", "model", "res_id", "record_name"],
-                { limit: 50, order: "date desc, id desc" });
-            const myPartner = user.partnerId;
-            const emails = rows.map((m) => ({
-                id: m.id,
-                from: m.author_id ? m.author_id[1] : (m.email_from || "").replace(/<.*>/, "").trim() || m.email_from,
-                partnerId: m.author_id ? m.author_id[0] : false,
-                outgoing: !!(m.author_id && m.author_id[0] === myPartner),
-                subject: m.subject || m.record_name || _t("(no subject)"),
-                preview: new DOMParser().parseFromString(m.body || "", "text/html").body.textContent.replace(/\s+/g, " ").trim().slice(0, 110),
-                date: m.date,
-                model: m.model,
-                resId: m.res_id,
-                record: m.record_name,
-            }));
+            const res = await rpc("/phone_bridge/emails", { days: 7 });
+            if (!res.ok) throw new Error("no gmail");
+            const text = (html) => new DOMParser().parseFromString(html || "", "text/html").body.textContent;
+            const emails = res.messages
+                .map((m) => ({
+                    id: m.gmail_id,
+                    from: (m.email_from || "").replace(/<.*>/, "").replace(/"/g, "").trim() || m.email_from,
+                    outgoing: m.direction === "outgoing",
+                    subject: m.subject || _t("(no subject)"),
+                    // Gmail's snippet is HTML-escaped text.
+                    preview: text(m.body).replace(/\s+/g, " ").trim().slice(0, 110),
+                    date: m.date || 0,
+                }))
+                .sort((a, b) => b.date - a.date);
             this.ui.emails = emails;
             try {
                 localStorage.setItem(key, JSON.stringify({ at: Date.now(), messages: emails }));
@@ -159,13 +164,33 @@ export class PhonePanel extends Component {
     }
 
     emailWhen(email) {
-        const d = luxon.DateTime.fromSQL(email.date, { zone: "utc" }).toLocal();
+        const d = luxon.DateTime.fromMillis(email.date);
         return d.hasSame(luxon.DateTime.local(), "day") ? d.toFormat("HH:mm") : d.toFormat("ccc d LLL");
     }
 
-    openEmail(email) {
-        if (email.model && email.resId) this.openRecord(email.model, email.resId);
-        else if (email.partnerId) this.openPartner(email.partnerId);
+    async openEmail(email) {
+        this.ui.reading = { ...email, loading: true, text: "", html: "" };
+        const body = await rpc("/phone_bridge/email", { gmail_id: email.id }).catch(() => ({}));
+        if (this.ui.reading?.id === email.id) Object.assign(this.ui.reading, { loading: false, text: body.text || "", html: body.html || "" });
+    }
+
+    closeEmail() {
+        this.ui.reading = null;
+    }
+
+    // An HTML email in a sandboxed iframe: no scripts, links open in a new
+    // tab, a light page since most emails assume one.
+    get readingDoc() {
+        return '<base target="_blank"><style>body{margin:10px;font-family:sans-serif;background:#fff;color:#111;word-break:break-word}img{max-width:100%;height:auto}</style>' +
+            this.ui.reading.html;
+    }
+
+    fitEmailFrame(ev) {
+        try {
+            ev.target.style.height = `${ev.target.contentDocument.documentElement.scrollHeight + 4}px`;
+        } catch {
+            // cross-origin: keep the default height
+        }
     }
 
     onSearch(ev) {
@@ -268,9 +293,31 @@ export class PhonePanel extends Component {
 
     // ── In call ──
 
+    // ── Transfer / park ──
+
+    openTransfer() {
+        this.ui.xfer = !this.ui.xfer;
+        this.ui.xferTo = "";
+        this.ui.dtmf = false;
+    }
+
+    transfer(blind) {
+        const to = this.ui.xferTo.trim();
+        if (!to) return;
+        this.ui.xfer = false;
+        if (blind) this.phone.blindTransfer(to);
+        else this.phone.consultTransfer(to);
+    }
+
+    pickUpParked(slot) {
+        if (!this.state.call) this.phone.dial(slot);
+    }
+
     get callStatus() {
         const call = this.state.call;
         if (!call) return "";
+        if (this.state.consult) return this.state.consult.up ? _t("Talking to %s · caller on hold", this.state.consult.target) : _t("Calling %s · caller on hold", this.state.consult.target);
+        if (call.held) return _t("On hold");
         if (call.state === "ringing") return call.dir === "in" ? _t("Incoming call") : _t("Calling…");
         const s = Math.max(0, Math.floor((this.ui.now - call.answeredAt) / 1000));
         return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;

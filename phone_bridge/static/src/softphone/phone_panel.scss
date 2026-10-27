@@ -157,6 +157,18 @@ $pb-red: #ef4444;
     .o_pb_callbtns { display: flex; gap: 22px; margin-top: auto; padding-top: 20px; }
 }
 
+.o_pb_reader {
+    padding: 8px 10px; display: flex; flex-direction: column; gap: 6px;
+    .o_pb_subject { font-weight: 600; }
+    .o_pb_mailframe { width: 100%; min-height: 240px; border: 0; border-radius: 8px; background: #fff; }
+    .o_pb_mailtext { white-space: pre-wrap; word-break: break-word; font-size: 13px; }
+}
+.o_pb_ctlrow { display: flex; gap: 8px; margin-top: 18px; }
+.o_pb_xfer { width: 100%; margin-top: 10px; padding: 10px; border-radius: 12px; background: $pb-row; }
+.o_pb_parked {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 10px 0; font-size: 13px; color: $pb-muted;
+}
+
 .o_pb_banner {
     margin: 8px 10px 0; padding: 10px 12px; border-radius: 12px; background: #1d2a1f; border: 1px solid #2f5d3a; font-size: 13px;
 }

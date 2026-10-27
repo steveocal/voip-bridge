@@ -19,6 +19,18 @@ async function ariRequest(env, path, method = "GET", body) {
 __name(ariRequest, "ariRequest");
 function asteriskPbx(env) {
   return {
+    // Channels sitting in Park(); the slot is PARKSLOT, set by the dialplan
+    // that parked them (Asterisk itself doesn't expose it).
+    async parkedCalls() {
+      const res = await ariFetch(env, "channels");
+      if (!res.ok) throw new Error(`ARI channels: ${res.status}`);
+      const parked = (await res.json()).filter((c) => c.dialplan?.app_name === "Park");
+      const calls = await Promise.all(parked.map(async (ch) => {
+        const slot = await ariFetch(env, `channels/${encodeURIComponent(ch.id)}/variable?variable=PARKSLOT`).then((r) => r.ok ? r.json() : null);
+        return slot?.value ? { slot: slot.value, number: ch.caller?.number ?? "", name: ch.caller?.name ?? "" } : null;
+      }));
+      return calls.filter((c) => !!c).sort((a, b) => a.slot.localeCompare(b.slot));
+    },
     // Stored recordings live in /var/spool/asterisk/recording/<name>.*
     recordingFile: /* @__PURE__ */ __name((name) => ariFetch(env, `recordings/stored/${encodeURIComponent(name)}/file`), "recordingFile"),
     // AMI Originate with post-answer routing, through a small bridge on the
@@ -704,6 +716,8 @@ async function pushCallToOdoo(env, callId, withRecording = false) {
     did: trunk?.did || first.did || false,
     voicemail: legs.some((l) => l.voicemail),
     voicemail_box: legs.find((l) => l.voicemail_box)?.voicemail_box || false,
+    // The extension that made or took the call: the answering leg's, else any leg that knows.
+    extension: answered?.extension || legs.find((l) => l.extension)?.extension || false,
     notes: noted?.notes_html || false,
     transcript: rec?.transcript || false
   };
@@ -1012,35 +1026,36 @@ function b64urlToUtf8(s2) {
   return new TextDecoder("utf-8").decode(bytes);
 }
 __name(b64urlToUtf8, "b64urlToUtf8");
-function extractText(payload) {
+function extractBodies(payload, out = { text: "", html: "" }) {
   const p = payload;
-  if (!p) return "";
-  if (p.body && p.body.data) return b64urlToUtf8(p.body.data);
-  if (Array.isArray(p.parts)) {
-    for (const part of p.parts) {
-      const pp = part;
-      if (pp.mimeType === "text/plain" && pp.body && pp.body.data) return b64urlToUtf8(pp.body.data);
-    }
-    for (const part of p.parts) {
-      const pp = part;
-      if (pp.mimeType === "text/html" && pp.body && pp.body.data) return b64urlToUtf8(pp.body.data);
-    }
-    for (const part of p.parts) {
-      const r = extractText(part);
-      if (r) return r;
-    }
+  if (!p) return out;
+  if (p.body?.data) {
+    if (p.mimeType === "text/html") out.html ||= b64urlToUtf8(p.body.data);
+    else if (!p.mimeType || p.mimeType === "text/plain") out.text ||= b64urlToUtf8(p.body.data);
   }
-  return "";
+  for (const part of p.parts ?? []) extractBodies(part, out);
+  return out;
 }
-__name(extractText, "extractText");
+__name(extractBodies, "extractBodies");
+function htmlToText(html) {
+  return html.replace(/<(style|script|head)[^>]*>[\s\S]*?<\/\1>/gi, "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|div|li|tr|h[1-6]|blockquote)>/gi, "\n").replace(/<li[^>]*>/gi, "\u2022 ").replace(/<[^>]+>/g, "").replace(/&nbsp;/gi, " ").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replace(/&amp;/gi, "&").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+__name(htmlToText, "htmlToText");
+function looksLikeHtml(s2) {
+  return /<(p|div|br|b|strong|i|em|u|a|ul|ol|li|span|table|h[1-6]|blockquote|img)(\s[^>]*)?\/?>/i.test(s2);
+}
+__name(looksLikeHtml, "looksLikeHtml");
 async function getGmailBody(env, gmailId) {
   const token = await getAccessToken(env);
-  if (!token) return "";
+  if (!token) return { text: "", html: "" };
   const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${gmailId}?format=full`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) return "";
+  if (!res.ok) return { text: "", html: "" };
   const d = await res.json();
-  return extractText(d.payload);
+  const b = extractBodies(d.payload);
+  if (!b.html && looksLikeHtml(b.text)) b.html = b.text;
+  if (!b.text || b.text === b.html) b.text = b.html ? htmlToText(b.html) : b.text;
+  return b;
 }
 __name(getGmailBody, "getGmailBody");
 async function getThreadContext(token, gmailId) {
@@ -1071,6 +1086,10 @@ function b64url(s2) {
   return b64std(s2).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 __name(b64url, "b64url");
+function wrap76(s2) {
+  return s2.replace(/.{76}/g, "$&\r\n");
+}
+__name(wrap76, "wrap76");
 function encodeHeader(s2) {
   if (/^[\x20-\x7e]*$/.test(s2)) return s2;
   return "=?UTF-8?B?" + b64std(s2) + "?=";
@@ -1096,7 +1115,29 @@ async function sendGmailMessage(env, opts) {
   ];
   if (inReplyTo) parts.push("In-Reply-To: <" + inReplyTo + ">");
   if (references.trim()) parts.push("References: " + references.trim());
-  parts.push("MIME-Version: 1.0", 'Content-Type: text/plain; charset="UTF-8"', "Content-Transfer-Encoding: 8bit", "", (opts.body || "").replace(/\r\n/g, "\n"));
+  const html = opts.html || (looksLikeHtml(opts.body || "") ? opts.body : "");
+  const text = (html && !opts.html ? htmlToText(html) : opts.body || (html ? htmlToText(html) : "")).replace(/\r\n/g, "\n");
+  parts.push("MIME-Version: 1.0");
+  if (html) {
+    const boundary = "pb-" + crypto.randomUUID();
+    parts.push(
+      `Content-Type: multipart/alternative; boundary="${boundary}"`,
+      "",
+      "--" + boundary,
+      'Content-Type: text/plain; charset="UTF-8"',
+      "Content-Transfer-Encoding: base64",
+      "",
+      wrap76(b64std(text)),
+      "--" + boundary,
+      'Content-Type: text/html; charset="UTF-8"',
+      "Content-Transfer-Encoding: base64",
+      "",
+      wrap76(b64std(html)),
+      "--" + boundary + "--"
+    );
+  } else {
+    parts.push('Content-Type: text/plain; charset="UTF-8"', "Content-Transfer-Encoding: 8bit", "", text);
+  }
   const raw = parts.join("\r\n");
   const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
     method: "POST",
@@ -1235,7 +1276,7 @@ function handleLogout() {
 __name(handleLogout, "handleLogout");
 
 // src/version.ts
-var VERSION = "0.2.0";
+var VERSION = "0.4.0";
 
 // src/recording.ts
 async function fetchRecording(env, name) {
@@ -1600,6 +1641,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .detail-row .k{color:#999;flex-shrink:0}
 .detail-row .v{text-align:right;word-break:break-word}
 .msg-body{margin-top:14px;font-size:15px;color:#ececec;white-space:pre-wrap;word-break:break-word}
+.msg-html{display:block;width:100%;min-height:200px;margin-top:14px;border:0;border-radius:8px;background:#fff}
 .compose-card{background:#161616;border:1px solid #2c2c2c;border-radius:16px;margin:auto;width:100%;max-width:640px;display:flex;flex-direction:column;overflow:hidden;max-height:92vh}
 .compose-field{padding:12px 20px;border-bottom:1px solid #222}
 .compose-field label{display:block;font-size:11px;color:#999;margin-bottom:4px}
@@ -4165,6 +4207,9 @@ function logCallEvent(event, extra) {
   body.set("caller", currentCall.remote || "unknown");
   body.set("did", "");
   body.set("direction", currentCall.dir === "out" ? "outgoing" : "incoming");
+  // Which extension this softphone is, so the call shows under it in Odoo.
+  var acc = activeAccount();
+  if (acc && acc.username) body.set("ext", String(acc.username));
   if (extra) { for (var k in extra) body.set(k, String(extra[k])); }
   return fetch(API + "/call-event", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() }).catch(function() {});
 }
@@ -5137,18 +5182,26 @@ function openMessageFull(m) {
 function fetchMessageFull(m) {
   var key = (m.id != null) ? ("id=" + encodeURIComponent(m.id)) : ("gmail_id=" + encodeURIComponent(m.gmail_id));
   fetch(API + "/message?" + key).then(function(r){ return r.json(); }).then(function(d){
-    if (d.message) { m.body = d.message.body; m.email_from = m.email_from || d.message.email_from; m.subject = m.subject || d.message.subject; m._full = true; }
+    if (d.message) { m.body = d.message.body; m.body_html = d.message.body_html || ""; m.email_from = m.email_from || d.message.email_from; m.subject = m.subject || d.message.subject; m._full = true; }
     renderMessageFull(m);
   }).catch(function(){ renderMessageFull(m); });
 }
+// HTML emails render in a sandboxed iframe (no scripts, no access to this
+// page), so their own styles and markup can't leak out; others as text.
 function renderMessageFull(m) {
-  var body = String(m.body || "").replace(/<[^>]*>/g, " ");
+  var body = m.body_html ? "" : String(m.body || "").replace(/<[^>]*>/g, " ");
   var rows = '<div class="detail-row"><span class="k">From</span><span class="v">' + esc(m.email_from || "\u2014") + '</span></div>'
     + '<div class="detail-row"><span class="k">Subject</span><span class="v">' + esc(m.subject || "(no subject)") + '</span></div>'
     + '<div class="detail-row"><span class="k">When</span><span class="v">' + esc(m.date ? new Date(m.date).toLocaleString() : "\u2014") + '</span></div>'
-    + '<div class="msg-body">' + esc(body) + '</div>';
+    + (m.body_html ? '<iframe class="msg-html" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>' : '<div class="msg-body">' + esc(body) + '</div>');
   var foot = '<button onclick="replyMessage()">\u21A9 Reply</button><button class="primary" onclick="newMessage()">\u2709\uFE0F New Message</button>';
   setDetail("\u2709\uFE0F " + (m.subject || "Message"), rows, foot);
+  var frame = document.querySelector("#detail-body .msg-html");
+  if (frame) {
+    // Links open in a new tab; light background since most emails assume one.
+    frame.srcdoc = '<base target="_blank"><style>body{margin:12px;font-family:sans-serif;background:#fff;color:#111;word-break:break-word}img{max-width:100%;height:auto}</style>' + m.body_html;
+    frame.onload = function() { try { frame.style.height = (frame.contentDocument.documentElement.scrollHeight + 4) + "px"; } catch (e) {} };
+  }
 }
 function extractEmail(s) {
   var m = String(s || "").match(/[A-Za-z0-9_.+-]+@[A-Za-z0-9_.-]+[.][A-Za-z]+/);
@@ -5159,8 +5212,11 @@ function replyMessage() {
   if (!m) return;
   var to = extractEmail(m.email_from) || (activeContact && activeContact.email) || "";
   var subject = (m.subject || "").replace(/^Re:[ ]*/i, "");
+  // The composer is a rich editor (and the worker sends HTML as HTML), so
+  // the quote goes in as a blockquote with its line breaks kept.
   var quote = String(m.body || "").replace(/<[^>]*>/g, " ").replace(/ +/g, " ").trim();
-  var body = NL + NL + (m.date ? "On " + new Date(m.date).toLocaleString() + ", " + (m.email_from || "") + " wrote:" + NL : "") + "> " + quote.split(NL).join(NL + "> ");
+  var body = "<p></p>" + (m.date ? "<p>On " + esc(new Date(m.date).toLocaleString()) + ", " + esc(m.email_from || "") + " wrote:</p>" : "")
+    + "<blockquote>" + esc(quote).split(NL).join("<br>") + "</blockquote>";
   openCompose(to, "Re: " + subject, body);
   closeDetail();
 }
@@ -6262,6 +6318,7 @@ async function handleCallEvent(request, env, ctx) {
   const caller = params.get("caller") ?? "unknown";
   const did = params.get("did") ?? "";
   const direction = params.get("direction") === "outgoing" ? "outgoing" : "incoming";
+  const ext = /^\d{2,6}$/.test(params.get("ext") ?? "") ? params.get("ext") : null;
   const doId = env.CALL_STATE.idFromName("global");
   const stub = env.CALL_STATE.get(doId);
   if (event === "ring") {
@@ -6271,10 +6328,11 @@ async function handleCallEvent(request, env, ctx) {
       body: JSON.stringify({ callId, caller, did, partnerId: partner?.id, partnerName: partner?.name })
     }));
     await env.DB.prepare(
-      `INSERT INTO call_log (call_id, phone_number, did, direction, state, start_date, partner_id)
-       VALUES (?1, ?2, ?3, ?4, 'calling', ?5, ?6)
-       ON CONFLICT(call_id) DO UPDATE SET phone_number=excluded.phone_number, did=excluded.did, direction=excluded.direction, partner_id=excluded.partner_id`
-    ).bind(callId, caller, did, direction, Date.now(), partner?.id ?? null).run();
+      `INSERT INTO call_log (call_id, phone_number, did, direction, state, start_date, partner_id, extension)
+       VALUES (?1, ?2, ?3, ?4, 'calling', ?5, ?6, ?7)
+       ON CONFLICT(call_id) DO UPDATE SET phone_number=excluded.phone_number, did=excluded.did, direction=excluded.direction,
+         partner_id=excluded.partner_id, extension=COALESCE(excluded.extension, call_log.extension)`
+    ).bind(callId, caller, did, direction, Date.now(), partner?.id ?? null, ext).run();
     return Response.json({ action: "ring", caller, partner: partner?.name ?? null });
   }
   if (event === "answer") {
@@ -6282,7 +6340,7 @@ async function handleCallEvent(request, env, ctx) {
       method: "POST",
       body: JSON.stringify({ callId, status: "answered", answerTime: Date.now() })
     }));
-    await env.DB.prepare("UPDATE call_log SET state='ongoing' WHERE call_id=?1").bind(callId).run();
+    await env.DB.prepare("UPDATE call_log SET state='ongoing', extension=COALESCE(?2, extension) WHERE call_id=?1").bind(callId, ext).run();
     return Response.json({ action: "answered" });
   }
   if (event === "voicemail") {
@@ -6606,6 +6664,14 @@ async function handleGetRecording(request, env) {
   return playbackResponse(env, row.recording);
 }
 __name(handleGetRecording, "handleGetRecording");
+async function handleParked(env) {
+  try {
+    return Response.json({ parked: await pbx(env).parkedCalls() });
+  } catch (e) {
+    return Response.json({ error: String(e.message || e), parked: [] }, { status: 502 });
+  }
+}
+__name(handleParked, "handleParked");
 async function handleGetTranscript(request, env) {
   const callId = new URL(request.url).searchParams.get("call_id") ?? "";
   const row = await env.DB.prepare("SELECT transcript FROM call_log WHERE call_id = ?1").bind(callId).first();
@@ -6690,16 +6756,17 @@ async function handleMessageDetail(request, env) {
   const id = parseInt(url.searchParams.get("id") ?? "0");
   const gmailId = url.searchParams.get("gmail_id") ?? "";
   if (!id && gmailId) {
-    const body = await getGmailBody(env, gmailId);
-    if (!body) return Response.json({ error: "body unavailable" }, { status: 404 });
-    return Response.json({ message: { gmail_id: gmailId, source: "gmail", body } });
+    const { text, html } = await getGmailBody(env, gmailId);
+    if (!text && !html) return Response.json({ error: "body unavailable" }, { status: 404 });
+    return Response.json({ message: { gmail_id: gmailId, source: "gmail", body: text, body_html: html } });
   }
   if (!id) return Response.json({ error: "missing id" }, { status: 400 });
   const row = await env.DB.prepare("SELECT * FROM messages WHERE id = ?1").bind(id).first();
   if (!row) return Response.json({ error: "not found" }, { status: 404 });
   if (row.source === "gmail" && row.gmail_id) {
-    const body = await getGmailBody(env, String(row.gmail_id));
-    if (body) row.body = body;
+    const { text, html } = await getGmailBody(env, String(row.gmail_id));
+    if (text) row.body = text;
+    row.body_html = html;
   }
   return Response.json({ message: row });
 }
@@ -6716,6 +6783,7 @@ async function handleSendMessage(request, env) {
     to: String(body.to).trim(),
     subject: body.subject ?? "",
     body: body.body ?? "",
+    html: body.html,
     replyToGmailId: body.replyToGmailId
   });
   return Response.json(res, { status: res.ok ? 200 : 502 });
@@ -6923,6 +6991,7 @@ var index_default = {
     else if (request.method === "POST" && url.pathname === "/call-notes") response = await handleSaveCallNotes(request, env, ctx);
     else if (request.method === "GET" && url.pathname === "/recording") response = await handleGetRecording(request, env);
     else if (request.method === "POST" && url.pathname === "/jot-to-text") response = await handleJotToText(request, env);
+    else if (request.method === "GET" && url.pathname === "/parked") response = await handleParked(env);
     else if (request.method === "GET" && url.pathname === "/transcript") response = await handleGetTranscript(request, env);
     else if (request.method === "POST" && url.pathname === "/transcribe") response = await handleTranscribe(request, env, ctx);
     else if (request.method === "GET" && url.pathname === "/voicemail/boxes") response = await handleListBoxes(env);

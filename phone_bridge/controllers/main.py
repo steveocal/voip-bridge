@@ -31,19 +31,54 @@ class PhoneBridgeController(http.Controller):
             "password": ext.sip_password or "",
             "caller_id": inst.default_caller_id or "",
             "country_code": inst.country_code or "44",
+            "park_extension": inst.park_extension or "",
         }
         config["enabled"] = all(config[k] for k in ("ws_url", "domain", "extension", "password"))
         return config
 
+    def _log_own_call(self, event, call_id, caller, direction, duration):
+        """The softphone's call goes straight into Phone → Calls under the
+        user's extension, so it is there whether or not a worker is deployed
+        (the worker's own push later lands on the same record)."""
+        Call = request.env["phone_bridge.call"].sudo()
+        ext = request.env.user.phone_bridge_extension_id
+        now = fields.Datetime.now()
+        existing = Call.search([("bridge_call_id", "=", call_id)], limit=1)
+        vals = {"bridge_call_id": call_id, "phone_number": caller or "unknown",
+                "direction": direction, "extension": ext.number or False}
+        if event == "ring":
+            vals.update(state="calling", start_date=existing.start_date or now)
+            partner = self.lookup(caller)
+            if partner:
+                vals["partner_id"] = partner["id"]
+        elif event == "answer":
+            vals["state"] = "ongoing"
+        elif event == "hangup":
+            vals.update(end_date=now, state="terminated" if int(duration or 0) > 0
+                        else ("aborted" if direction == "outgoing" else "missed"))
+            if not existing.start_date:
+                vals["start_date"] = now
+        else:
+            return
+        Call.bridge_upsert(vals)
+
     @http.route("/phone_bridge/call_event", type="json", auth="user")
     def call_event(self, event, call_id, caller="", direction="incoming", duration=0):
-        """The softphone's own call events, passed on to the worker with the
-        API token, which never reaches the browser."""
+        """The softphone's own call events: logged in Odoo, then passed on to
+        the worker with the API token, which never reaches the browser."""
+        direction = "outgoing" if direction == "outgoing" else "incoming"
+        try:
+            self._log_own_call(event, call_id, caller, direction, duration)
+        except Exception:  # noqa: BLE001 — logging a call must never break the phone
+            _logger.exception("phone_bridge: logging call %s in Odoo failed", call_id)
         inst = self._installation()
         if not (inst.worker_url and inst.api_token):
-            return {"ok": False, "error": "not deployed"}
+            return {"ok": True, "worker": False}
+        ext = request.env.user.phone_bridge_extension_id
         data = {"event": event, "callId": call_id, "caller": caller or "unknown", "did": "",
-                "direction": "outgoing" if direction == "outgoing" else "incoming"}
+                "direction": direction}
+        if ext:
+            data["ext"] = ext.number
         if event == "hangup":
             data["duration"] = int(duration or 0)
         try:
@@ -53,6 +88,54 @@ class PhoneBridgeController(http.Controller):
         except (requests.RequestException, ValueError) as e:
             _logger.warning("phone_bridge: call event %s for %s failed: %s", event, call_id, e)
             return {"ok": False, "error": str(e)}
+
+    def _worker_get(self, path, params=None):
+        """GET a worker route with the API token; None when there's no worker
+        or it can't be reached."""
+        inst = self._installation()
+        if not (inst.worker_url and inst.api_token):
+            return None
+        try:
+            res = requests.get(f"{inst.worker_url}{path}", params=params or {}, timeout=20,
+                               headers={"Authorization": f"Bearer {inst.api_token}"})
+            return res.json()
+        except (requests.RequestException, ValueError) as e:
+            _logger.warning("phone_bridge: worker %s failed: %s", path, e)
+            return None
+
+    # The worker reads one Gmail mailbox (the installation's), so only
+    # administrators see it.
+    @http.route("/phone_bridge/emails", type="json", auth="user")
+    def emails(self, days=7):
+        if not request.env.user.has_group("base.group_system"):
+            return {"ok": False, "messages": []}
+        data = self._worker_get("/messages/recent", {"days": int(days), "limit": 50})
+        if not data:
+            return {"ok": False, "messages": []}
+        return {"ok": bool(data.get("gmailOk")), "messages": data.get("messages", [])}
+
+    @http.route("/phone_bridge/email", type="json", auth="user")
+    def email(self, gmail_id):
+        """One email's full body: plain text and, when it has one, HTML."""
+        if not request.env.user.has_group("base.group_system"):
+            return {}
+        data = self._worker_get("/message", {"gmail_id": gmail_id}) or {}
+        message = data.get("message") or {}
+        return {"text": message.get("body") or "", "html": message.get("body_html") or ""}
+
+    @http.route("/phone_bridge/parked", type="json", auth="user")
+    def parked(self):
+        """Calls waiting in the PBX's parking lot, from the worker."""
+        inst = self._installation()
+        if not (inst.worker_url and inst.api_token):
+            return []
+        try:
+            res = requests.get(f"{inst.worker_url}/parked", timeout=10,
+                               headers={"Authorization": f"Bearer {inst.api_token}"})
+            return res.json().get("parked", [])
+        except (requests.RequestException, ValueError) as e:
+            _logger.warning("phone_bridge: parked calls failed: %s", e)
+            return []
 
     @http.route("/phone_bridge/lookup", type="json", auth="user")
     def lookup(self, number):

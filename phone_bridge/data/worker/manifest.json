@@ -1,10 +1,10 @@
 {
   "name": "odoo-phone-bridge",
-  "version": "0.2.0",
-  "built_at": "2026-10-26T08:16:48.841Z",
+  "version": "0.4.0",
+  "built_at": "2026-10-27T10:39:29.050Z",
   "compatibility_date": "2025-08-08",
   "main_module": "index.js",
-  "main_module_sha256": "4553920cd9a7c514ab0fdfc3c977a4369e4333b8eecf6e864164a3d77b4667f0",
+  "main_module_sha256": "31c9c7e2eecea61cff094cc6e6e089cf22f57c3e9fc517ead56a9f67b772fb7a",
   "bindings": [
     {
       "type": "durable_object_namespace",
@@ -266,6 +266,10 @@
     {
       "name": "0002_voicemail_boxes.sql",
       "sql": "-- Voicemail boxes: one per extension plus \"main\" (src/voicemail.ts). Replaces\n-- the single shared greeting library, whose settings now live in Odoo.\nCREATE TABLE IF NOT EXISTS voicemail_boxes (\n  box TEXT PRIMARY KEY,           -- \"main\" or an extension number\n  enabled INTEGER NOT NULL DEFAULT 1,\n  greeting BLOB,                  -- 8 kHz mono 16-bit WAV, NULL = the stock prompt\n  greeting_version INTEGER,       -- changes whenever the greeting does\n  duration_ms INTEGER,\n  updated_at INTEGER NOT NULL\n);\nDROP TABLE IF EXISTS greetings;\n-- Which box a voicemail was left in (NULL = not a voicemail, or before boxes).\nALTER TABLE call_log ADD COLUMN voicemail_box TEXT;\n"
+    },
+    {
+      "name": "0003_call_extension.sql",
+      "sql": "-- The extension a softphone/app was signed in as when it logged this leg\n-- (sent as ext=), so Odoo's Phone → Calls can show each extension's calls.\n-- NULL for the PBX's own trunk-leg events.\nALTER TABLE call_log ADD COLUMN extension TEXT;\n"
     }
   ],
   "assets": {

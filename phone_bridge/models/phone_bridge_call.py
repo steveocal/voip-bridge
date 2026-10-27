@@ -32,7 +32,12 @@ class PhoneBridgeCall(models.Model):
     end_date = fields.Datetime()
     duration = fields.Integer("Duration (s)", compute="_compute_duration", store=True)
     partner_id = fields.Many2one("res.partner", "Contact", index=True, tracking=True)
-    user_id = fields.Many2one("res.users", "Taken by")
+    user_id = fields.Many2one("res.users", "User", index=True,
+                              help="Who made or took the call: the owner of its extension.")
+    extension = fields.Char(readonly=True, index=True,
+                            help="The extension that made or took the call; empty for calls to our numbers nobody answered.")
+    extension_id = fields.Many2one("phone_bridge.extension", "Extension Record",
+                                   compute="_compute_extension_id", store=True)
     did = fields.Char("Our Number", readonly=True)
     voicemail = fields.Boolean(readonly=True)
     notes = fields.Html()
@@ -54,8 +59,14 @@ class PhoneBridgeCall(models.Model):
     # Fields the worker may set through bridge_upsert.
     BRIDGE_FIELDS = (
         "phone_number", "direction", "state", "start_date", "end_date", "partner_id",
-        "did", "voicemail", "voicemail_box", "notes", "transcript",
+        "did", "extension", "voicemail", "voicemail_box", "notes", "transcript",
     )
+
+    @api.depends("extension")
+    def _compute_extension_id(self):
+        Extension = self.env["phone_bridge.extension"].with_context(active_test=False)
+        for call in self:
+            call.extension_id = Extension.search([("number", "=", call.extension)], limit=1) if call.extension else False
 
     @api.depends("voicemail_box")
     def _compute_voicemail_extension_id(self):
@@ -129,6 +140,12 @@ class PhoneBridgeCall(models.Model):
         clean = {k: vals[k] for k in self.BRIDGE_FIELDS if k in vals}
         if clean.get("partner_id") and not self.env["res.partner"].browse(clean["partner_id"]).exists():
             clean["partner_id"] = False
+        # A known extension makes the call that user's (their own call history).
+        if clean.get("extension"):
+            ext = self.env["phone_bridge.extension"].with_context(active_test=False).search(
+                [("number", "=", str(clean["extension"]))], limit=1)
+            if ext.user_id:
+                clean["user_id"] = ext.user_id.id
         call = self.search([("bridge_call_id", "=", call_id)], limit=1)
         if call:
             call.write(clean)
