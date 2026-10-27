@@ -6,6 +6,23 @@
 // each group as one voip.call. Outgoing calls are only logged once.
 
 type LegRow = Record<string, unknown>;
+
+// Every extension but these is the same person's, so their calls are shared
+// across the dashboard, the app and Odoo; calls taken on these stay out
+// (except in their own dashboard). Hardcoded for now: the lasting answer is
+// to give each extension its owner (Odoo phone_bridge.extension.user_id).
+export const HIDDEN_EXTENSIONS = new Set(["202"]);
+
+/** The extension that took the call: the softphone leg that answered an
+ *  inbound call, or the one that placed an outgoing call. Null when nobody
+ *  answered or the leg didn't say. */
+export function handlingExtension(legs: object[]): string | null {
+  const rows = legs as LegRow[];
+  const took = rows[0]?.direction === "outgoing"
+    ? rows[0]
+    : rows.find(l => !l.did && (l.state === "terminated" || l.state === "ongoing"));
+  return took?.extension ? String(took.extension) : null;
+}
 const LEG_SLACK_MS = 3000;
 
 /** Rows newest first (as the history query returns them) → groups of legs,

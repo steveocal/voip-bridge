@@ -10,7 +10,7 @@ import { handlePushRegister, handlePushWake } from "./push";
 import { handleGetVoicemail, handleSetVoicemail, handleCreateGreeting, handleRenameGreeting, handleDeleteGreeting, handleGreetingAudio, handleVoicemailSync, handleVoicemailSynced } from "./voicemail";
 import type { Contact, Message } from "./odoo";
 import { jotToText } from "./jottext";
-import { groupCallLegs } from "./calllegs";
+import { groupCallLegs, handlingExtension, HIDDEN_EXTENSIONS } from "./calllegs";
 import { handleStaffEmployees, handleStaffLogin, handleStaffLocation } from "./staff";
 import { handleWebCallback, handleWebCallbackConfig, handleWebCallbackStatus, handleWebCallbackEvent } from "./webcallback";
 
@@ -30,6 +30,8 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
   // inbound DID rings, so default to 'incoming'. The browser softphone
   // passes 'outgoing' for calls it originates itself.
   const direction = params.get("direction") === "outgoing" ? "outgoing" : "incoming";
+  // The softphone's own extension (dashboard / app); Asterisk's hits have none.
+  const extension = (params.get("ext") ?? "").trim() || null;
 
   const doId = env.CALL_STATE.idFromName("global");
   const stub = env.CALL_STATE.get(doId);
@@ -42,10 +44,11 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
     }));
     // Log the call in D1 as soon as it rings (so missed calls are captured too).
     await env.DB.prepare(
-      `INSERT INTO call_log (call_id, phone_number, did, direction, state, start_date, partner_id)
-       VALUES (?1, ?2, ?3, ?4, 'calling', ?5, ?6)
-       ON CONFLICT(call_id) DO UPDATE SET phone_number=excluded.phone_number, did=excluded.did, direction=excluded.direction, partner_id=excluded.partner_id`
-    ).bind(callId, caller, did, direction, Date.now(), (partner as any)?.id ?? null).run();
+      `INSERT INTO call_log (call_id, phone_number, did, direction, state, start_date, partner_id, extension)
+       VALUES (?1, ?2, ?3, ?4, 'calling', ?5, ?6, ?7)
+       ON CONFLICT(call_id) DO UPDATE SET phone_number=excluded.phone_number, did=excluded.did, direction=excluded.direction, partner_id=excluded.partner_id,
+         extension=COALESCE(excluded.extension, call_log.extension)`
+    ).bind(callId, caller, did, direction, Date.now(), (partner as any)?.id ?? null, extension).run();
     return Response.json({ action: "ring", caller, partner: (partner as any)?.name ?? null });
   }
 
@@ -181,16 +184,20 @@ const CALL_HISTORY_SELECT = `SELECT c.id, c.call_id, c.phone_number, c.did, c.di
      CASE WHEN COALESCE(c.notes_html, '') != '' THEN 1 ELSE 0 END AS has_notes,
      CASE WHEN COALESCE(c.recording, '') != '' THEN 1 ELSE 0 END AS has_recording,
      CASE WHEN c.transcript IS NOT NULL THEN 1 ELSE 0 END AS has_transcript,
-     c.voicemail
+     c.voicemail, c.extension
    FROM call_log c
    LEFT JOIN contacts p ON p.id = c.partner_id`;
 
 // Fold each call's legs (see calllegs.ts) into one row: notes live on the
 // answered leg, so that leg's call_id stays primary and rec_call_id points at
-// the leg holding the recording/transcript.
+// the leg holding the recording/transcript. Calls taken on a hidden
+// extension are dropped unless `viewer` (the asking softphone) is that one.
 type CallRow = Record<string, unknown>;
-function mergeCallLegs(rows: CallRow[]): CallRow[] {
-  return groupCallLegs(rows).map((legs) => {
+function mergeCallLegs(rows: CallRow[], viewer = ""): CallRow[] {
+  return groupCallLegs(rows).filter((legs) => {
+    const ext = handlingExtension(legs);
+    return !ext || !HIDDEN_EXTENSIONS.has(ext) || ext === viewer;
+  }).map((legs) => {
     if (legs.length === 1) return legs[0];
     const trunkLeg = legs.find(l => l.did);
     const answered = legs.find(l => !l.did && (l.state === "terminated" || l.state === "ongoing"));
@@ -239,7 +246,7 @@ async function handleCallHistory(request: Request, env: Env): Promise<Response> 
       `${select} ORDER BY COALESCE(c.start_date, c.create_date) DESC LIMIT ?1`
     ).bind(limit).all<Record<string, unknown>>();
   }
-  return Response.json({ calls: mergeCallLegs(rows.results || []) });
+  return Response.json({ calls: mergeCallLegs(rows.results || [], url.searchParams.get("ext") ?? "") });
 }
 
 // ── Naming calls: link call_log rows to contacts by phone number ──

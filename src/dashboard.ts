@@ -996,6 +996,12 @@ function loadAccounts() {
   } catch (e) {}
   return defaultAccounts();
 }
+// This softphone's SIP extension, sent with call events and history requests
+// so calls taken on a hidden extension (see calllegs.ts) only show there.
+function myExtension() {
+  var a = activeAccount();
+  return (a && a.username) ? String(a.username) : "";
+}
 function activeAccount() {
   if (activeAccountId) {
     for (var i = 0; i < accounts.length; i++) if (accounts[i].id === activeAccountId) return accounts[i];
@@ -2601,7 +2607,7 @@ function loadCallHistoryTab() {
   var num = currentCall && currentCall.remote;
   if (!num) { el.innerHTML = '<div class="empty">No number</div>'; return; }
   el.innerHTML = '<div class="empty">Loading…</div>';
-  fetch(API + "/call-history?limit=" + PV.callPanelHistoryLimit + "&q=" + encodeURIComponent(num)).then(function(r){return r.json();}).then(function(d){
+  fetch(API + "/call-history?limit=" + PV.callPanelHistoryLimit + "&q=" + encodeURIComponent(num) + "&ext=" + encodeURIComponent(myExtension())).then(function(r){return r.json();}).then(function(d){
     var calls = (d.calls || []).filter(function(c) { return !currentCall || c.call_id !== currentCall.id; });
     if (!calls.length) { el.innerHTML = '<div class="empty">No previous calls with this number</div>'; return; }
     el.innerHTML = calls.map(function(c) {
@@ -2862,6 +2868,7 @@ function logCallEvent(event, extra) {
   body.set("caller", currentCall.remote || "unknown");
   body.set("did", "");
   body.set("direction", currentCall.dir === "out" ? "outgoing" : "incoming");
+  body.set("ext", myExtension());
   if (extra) { for (var k in extra) body.set(k, String(extra[k])); }
   return fetch(API + "/call-event", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() }).catch(function() {});
 }
@@ -3048,7 +3055,7 @@ function loadHistory() {
   var el = document.getElementById("history-list");
   if (historyTxSearch && !q) { el.innerHTML = '<div class="empty">Type words to find in call transcripts</div>'; return; }
   if (!el.querySelector(".hist-row")) el.innerHTML = '<div class="empty">Loading…</div>';
-  fetch(API + "/call-history?limit=" + PV.historyLimit + "&q=" + encodeURIComponent(q) + (historyTxSearch ? "&in=transcript" : "")).then(function(r){return r.json();}).then(function(d){
+  fetch(API + "/call-history?limit=" + PV.historyLimit + "&q=" + encodeURIComponent(q) + (historyTxSearch ? "&in=transcript" : "") + "&ext=" + encodeURIComponent(myExtension())).then(function(r){return r.json();}).then(function(d){
     if (q !== historyQuery()) return;
     var calls = d.calls || [];
     if (!calls.length) { el.innerHTML = '<div class="empty">' + (historyTxSearch ? "No transcripts mention that" : q ? "No matching calls" : "No calls yet") + '</div>'; return; }
