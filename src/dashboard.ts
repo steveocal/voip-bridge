@@ -4494,6 +4494,8 @@ function openSettings() {
   // Picking/adding an account in the form switches activeAccountId right away;
   // remember it so Cancel can put it back.
   settingsBackup = { activeAccountId: activeAccountId };
+  // Re-check push each time Settings opens so its line is always current.
+  if (inAndroidWebView()) registerPush();
   document.getElementById("set-dev").checked = settings.devMode;
   document.getElementById("set-quicktext").value = settings.quickText || "";
   renderAccountSelect();
@@ -4796,19 +4798,30 @@ function nativePush() {
 function reportPush(status, token) {
   var el = document.getElementById("push-state");
   if (el) { el.textContent = "Incoming calls when the app is closed: " + status; el.classList.remove("hidden"); }
+  // "000" files a report from a phone with no account yet.
   var a = activeAccount();
-  if (!a || !a.username) return;
-  var body = token ? { token: token, extension: a.username } : { status: status, extension: a.username };
+  var ext = (a && a.username) || "000";
+  var body = token ? { token: token, extension: ext } : { status: status, extension: ext };
   fetch(API + "/push/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   }).catch(function() {});
 }
+// Android WebViews put "; wv)" in their user agent; Chrome doesn't.
+function inAndroidWebView() { return navigator.userAgent.indexOf("; wv)") >= 0; }
 function registerPush() {
   var PN = nativePush();
-  if (!PN) return;
-  if (!activeAccount()) return;
+  if (!PN) {
+    // Inside the app this means the native bridge didn't load, so the page
+    // can't reach push at all; in a browser it's expected.
+    if (inAndroidWebView()) {
+      var Cap = window.Capacitor;
+      reportPush(!Cap ? "app bridge not loaded on " + location.host : "push plugin missing (plugins: " + Object.keys(Cap.Plugins || {}).join(", ") + ")");
+    }
+    return;
+  }
+  if (!activeAccount()) { reportPush("no SIP account set up yet"); return; }
   if (!pushListenerAdded) {
     pushListenerAdded = true;
     PN.addListener("registration", function(t) {
