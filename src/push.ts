@@ -60,17 +60,28 @@ async function sendData(env: Env, token: string, data: Record<string, string>): 
   return res.status === 404 || body.includes("UNREGISTERED") ? "gone" : "error";
 }
 
-// Called by the Android app on launch: { token, extension }.
+// Called by the Android app on launch: { token, extension }, or
+// { status, extension } to report how push setup went when there's no token
+// (permission refused, FCM error), which GET /push/status shows.
 export async function handlePushRegister(request: Request, env: Env): Promise<Response> {
-  let body: { token?: string; extension?: string };
+  let body: { token?: string; extension?: string; status?: string };
   try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
   const token = String(body.token || "").trim();
   const extension = String(body.extension || "").trim();
-  if (!token || !/^\d{2,6}$/.test(extension)) return Response.json({ error: "token and numeric extension required" }, { status: 400 });
-  await env.DB.batch([
-    env.DB.prepare("INSERT INTO push_tokens (token, extension) VALUES (?, ?) ON CONFLICT(token) DO UPDATE SET extension = excluded.extension, updated_at = datetime('now')").bind(token, extension),
-  ]);
+  const status = token ? "registered" : String(body.status || "").slice(0, 300);
+  if (!/^\d{2,6}$/.test(extension) || !status) return Response.json({ error: "token or status, and a numeric extension, required" }, { status: 400 });
+  const saveStatus = env.DB.prepare("INSERT INTO push_status (extension, status) VALUES (?, ?) ON CONFLICT(extension) DO UPDATE SET status = excluded.status, updated_at = datetime('now')").bind(extension, status);
+  console.log(`push status ${extension}: ${status}`);
+  if (token) await env.DB.prepare("INSERT INTO push_tokens (token, extension) VALUES (?, ?) ON CONFLICT(token) DO UPDATE SET extension = excluded.extension, updated_at = datetime('now')").bind(token, extension).run();
+  // Best effort: the token is what matters (push_status is migration 0013).
+  await saveStatus.run().catch(e => console.error("push_status:", e));
   return Response.json({ ok: true });
+}
+
+// What each extension's app last reported, and how many tokens it has.
+export async function handlePushStatus(env: Env): Promise<Response> {
+  const rows = await env.DB.prepare("SELECT s.extension, s.status, s.updated_at, (SELECT COUNT(*) FROM push_tokens t WHERE t.extension = s.extension) AS tokens FROM push_status s ORDER BY s.extension").all();
+  return Response.json({ apps: rows.results || [] });
 }
 
 // Called by Asterisk (GET or POST): extension, caller, type? — as query params or a

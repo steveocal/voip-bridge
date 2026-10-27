@@ -654,6 +654,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       <button class="acc-mini" onclick="newAccount()" title="New account" aria-label="New account">＋</button>
       <button class="acc-mini del" onclick="deleteAccount()" title="Delete account" aria-label="Delete account">🗑</button>
     </div>
+    <div class="hidden" id="push-state" style="font-size:12px;color:#9ca3af;margin:6px 0 2px"></div>
 
     <div id="account-editor" class="hidden">
       <div class="set-grid">
@@ -4789,22 +4790,44 @@ function nativePush() {
   if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform()) return null;
   return (Cap.Plugins && Cap.Plugins.PushNotifications) || null;
 }
+// Each step's outcome goes to the worker (GET /push/status) and to Settings,
+// so a phone that never registers says why: permission refused, an FCM error,
+// or no account yet.
+function reportPush(status, token) {
+  var el = document.getElementById("push-state");
+  if (el) { el.textContent = "Incoming calls when the app is closed: " + status; el.classList.remove("hidden"); }
+  var a = activeAccount();
+  if (!a || !a.username) return;
+  var body = token ? { token: token, extension: a.username } : { status: status, extension: a.username };
+  fetch(API + "/push/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  }).catch(function() {});
+}
 function registerPush() {
   var PN = nativePush();
   if (!PN) return;
+  if (!activeAccount()) return;
   if (!pushListenerAdded) {
     pushListenerAdded = true;
     PN.addListener("registration", function(t) {
-      var a = activeAccount();
-      if (!a || !t || !t.value) return;
-      fetch(API + "/push/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: t.value, extension: a.username })
-      }).catch(function() {});
+      if (t && t.value) reportPush("on", t.value);
+      else reportPush("FCM gave no token");
+    });
+    PN.addListener("registrationError", function(e) {
+      reportPush("FCM error: " + ((e && (e.error || e.message)) || "unknown"));
     });
   }
-  PN.requestPermissions().then(function(r) { if (r && r.receive === "granted") PN.register(); }).catch(function() {});
+  PN.checkPermissions().then(function(p) {
+    if (p && p.receive === "granted") return p;
+    return PN.requestPermissions();
+  }).then(function(r) {
+    if (r && r.receive === "granted") return PN.register();
+    reportPush("notifications not allowed (" + (r && r.receive) + "). Allow them for VoIP Bridge in Android Settings, then reopen the app");
+  }).catch(function(e) {
+    reportPush("setup failed: " + ((e && e.message) || e));
+  });
 }
 
 // Native app only: MainActivity leaves a short-lived cookie when the person
@@ -4940,6 +4963,9 @@ function applyBoot() {
   updateAccountHeader();
   loadHistory();
   loadT9Corpus();
+  // Don't wait for SIP to register: the push token is what lets a closed app
+  // take calls, so get it even when the connection is slow or failing.
+  registerPush();
   if (settings.devMode) { setStatus("🛠 Dev mode", false); return; }
   loadSipJs().then(initSoftphone).catch(function(e) { setStatus("❌ " + e.message, true); });
 }

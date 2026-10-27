@@ -6,7 +6,7 @@ import { playbackResponse } from "./recording";
 import { transcribeCall } from "./transcribe";
 import { summarizeCall, keepSummary } from "./summarize";
 import { serveDashboard } from "./dashboard";
-import { handlePushRegister, handlePushWake } from "./push";
+import { handlePushRegister, handlePushStatus, handlePushWake } from "./push";
 import { handleGetVoicemail, handleSetVoicemail, handleCreateGreeting, handleRenameGreeting, handleDeleteGreeting, handleGreetingAudio, handleVoicemailSync, handleVoicemailSynced } from "./voicemail";
 import type { Contact, Message } from "./odoo";
 import { jotToText } from "./jottext";
@@ -782,6 +782,7 @@ export default {
     else if (request.method === "POST" && url.pathname === "/staff/login") response = await handleStaffLogin(request, env);
     else if (request.method === "POST" && url.pathname === "/staff/location") response = await handleStaffLocation(request, env);
     else if (request.method === "POST" && url.pathname === "/push/register") response = await handlePushRegister(request, env);
+    else if (request.method === "GET" && url.pathname === "/push/status") response = await handlePushStatus(env);
     else if ((request.method === "POST" || request.method === "GET") && url.pathname === "/push/wake") response = await handlePushWake(request, env);
     else if (request.method === "GET" && url.pathname === "/settings") response = await handleGetSettings(env);
     else if (request.method === "POST" && url.pathname === "/settings") response = await handleSetSettings(request, env);
