@@ -283,6 +283,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 .detail-row .k{color:#999;flex-shrink:0}
 .detail-row .v{text-align:right;word-break:break-word}
 .msg-body{margin-top:14px;font-size:15px;color:#ececec;white-space:pre-wrap;word-break:break-word}
+.msg-html{display:block;width:100%;min-height:200px;margin-top:14px;border:0;border-radius:8px;background:#fff}
 .compose-card{background:#161616;border:1px solid #2c2c2c;border-radius:16px;margin:auto;width:100%;max-width:640px;display:flex;flex-direction:column;overflow:hidden;max-height:92vh}
 .compose-field{padding:12px 20px;border-bottom:1px solid #222}
 .compose-field label{display:block;font-size:11px;color:#999;margin-bottom:4px}
@@ -4044,18 +4045,26 @@ function openMessageFull(m) {
 function fetchMessageFull(m) {
   var key = (m.id != null) ? ("id=" + encodeURIComponent(m.id)) : ("gmail_id=" + encodeURIComponent(m.gmail_id));
   fetch(API + "/message?" + key).then(function(r){ return r.json(); }).then(function(d){
-    if (d.message) { m.body = d.message.body; m.email_from = m.email_from || d.message.email_from; m.subject = m.subject || d.message.subject; m._full = true; }
+    if (d.message) { m.body = d.message.body; m.body_html = d.message.body_html || ""; m.email_from = m.email_from || d.message.email_from; m.subject = m.subject || d.message.subject; m._full = true; }
     renderMessageFull(m);
   }).catch(function(){ renderMessageFull(m); });
 }
+// HTML emails render in a sandboxed iframe (no scripts, no access to this
+// page), so their own styles and markup can't leak out; others as text.
 function renderMessageFull(m) {
-  var body = String(m.body || "").replace(/<[^>]*>/g, " ");
+  var body = m.body_html ? "" : String(m.body || "").replace(/<[^>]*>/g, " ");
   var rows = '<div class="detail-row"><span class="k">From</span><span class="v">' + esc(m.email_from || "—") + '</span></div>'
     + '<div class="detail-row"><span class="k">Subject</span><span class="v">' + esc(m.subject || "(no subject)") + '</span></div>'
     + '<div class="detail-row"><span class="k">When</span><span class="v">' + esc(m.date ? new Date(m.date).toLocaleString() : "—") + '</span></div>'
-    + '<div class="msg-body">' + esc(body) + '</div>';
+    + (m.body_html ? '<iframe class="msg-html" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>' : '<div class="msg-body">' + esc(body) + '</div>');
   var foot = '<button onclick="replyMessage()">↩ Reply</button><button class="primary" onclick="newMessage()">✉️ New Message</button>';
   setDetail("✉️ " + (m.subject || "Message"), rows, foot);
+  var frame = document.querySelector("#detail-body .msg-html");
+  if (frame) {
+    // Links open in a new tab; light background since most emails assume one.
+    frame.srcdoc = '<base target="_blank"><style>body{margin:12px;font-family:sans-serif;background:#fff;color:#111;word-break:break-word}img{max-width:100%;height:auto}</style>' + m.body_html;
+    frame.onload = function() { try { frame.style.height = (frame.contentDocument.documentElement.scrollHeight + 4) + "px"; } catch (e) {} };
+  }
 }
 function extractEmail(s) {
   var m = String(s || "").match(/[A-Za-z0-9_.+-]+@[A-Za-z0-9_.-]+[.][A-Za-z]+/);
@@ -4066,8 +4075,11 @@ function replyMessage() {
   if (!m) return;
   var to = extractEmail(m.email_from) || (activeContact && activeContact.email) || "";
   var subject = (m.subject || "").replace(/^Re:[ ]*/i, "");
+  // The composer is a rich editor (and the worker sends HTML as HTML), so
+  // the quote goes in as a blockquote with its line breaks kept.
   var quote = String(m.body || "").replace(/<[^>]*>/g, " ").replace(/ +/g, " ").trim();
-  var body = NL + NL + (m.date ? "On " + new Date(m.date).toLocaleString() + ", " + (m.email_from || "") + " wrote:" + NL : "") + "> " + quote.split(NL).join(NL + "> ");
+  var body = "<p></p>" + (m.date ? "<p>On " + esc(new Date(m.date).toLocaleString()) + ", " + esc(m.email_from || "") + " wrote:</p>" : "")
+    + "<blockquote>" + esc(quote).split(NL).join("<br>") + "</blockquote>";
   openCompose(to, "Re: " + subject, body);
   closeDetail();
 }

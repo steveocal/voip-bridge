@@ -545,9 +545,9 @@ async function handleMessageDetail(request: Request, env: Env): Promise<Response
 
   // Live recent Gmail message (no D1 row yet) — return its full decoded body.
   if (!id && gmailId) {
-    const body = await getGmailBody(env, gmailId);
-    if (!body) return Response.json({ error: "body unavailable" }, { status: 404 });
-    return Response.json({ message: { gmail_id: gmailId, source: "gmail", body } });
+    const { text, html } = await getGmailBody(env, gmailId);
+    if (!text && !html) return Response.json({ error: "body unavailable" }, { status: 404 });
+    return Response.json({ message: { gmail_id: gmailId, source: "gmail", body: text, body_html: html } });
   }
   if (!id) return Response.json({ error: "missing id" }, { status: 400 });
 
@@ -556,20 +556,22 @@ async function handleMessageDetail(request: Request, env: Env): Promise<Response
   if (!row) return Response.json({ error: "not found" }, { status: 404 });
   // Gmail messages only store a snippet — pull the full decoded body on demand.
   if (row.source === "gmail" && row.gmail_id) {
-    const body = await getGmailBody(env, String(row.gmail_id));
-    if (body) row.body = body;
+    const { text, html } = await getGmailBody(env, String(row.gmail_id));
+    if (text) row.body = text;
+    row.body_html = html;
   }
   return Response.json({ message: row });
 }
 
 async function handleSendMessage(request: Request, env: Env): Promise<Response> {
-  let body: { to?: string; subject?: string; body?: string; replyToGmailId?: string };
+  let body: { to?: string; subject?: string; body?: string; html?: string; replyToGmailId?: string };
   try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
   if (!body.to || !String(body.to).trim()) return Response.json({ error: "missing recipient" }, { status: 400 });
   const res = await sendGmailMessage(env, {
     to: String(body.to).trim(),
     subject: body.subject ?? "",
     body: body.body ?? "",
+    html: body.html,
     replyToGmailId: body.replyToGmailId,
   });
   return Response.json(res, { status: res.ok ? 200 : 502 });
