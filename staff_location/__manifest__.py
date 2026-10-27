@@ -1,6 +1,6 @@
 {
     "name": "Staff Locations & Customer Visits",
-    "version": "18.0.1.0.1",
+    "version": "18.0.1.1.0",
     "category": "Human Resources",
     "summary": "Staff phone locations as stops, matched to contacts; customer meetings report and map",
     "description": """
@@ -12,7 +12,7 @@ the contact. Contacts are geocoded (street or postcode, never just the city)
 when they call, or in bulk from the contact list.
 """,
     "author": "Stephen O'Cal",
-    "depends": ["hr", "calendar", "mail", "base_geolocalize", "web_map", "voip"],
+    "depends": ["hr", "calendar", "mail", "base_geolocalize", "web_map", "phone_bridge"],
     "data": [
         "security/ir.model.access.csv",
         "data/config.xml",
