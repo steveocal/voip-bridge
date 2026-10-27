@@ -1,8 +1,8 @@
 from odoo import api, models
 
 
-class VoipCall(models.Model):
-    _inherit = "voip.call"
+class PhoneBridgeCall(models.Model):
+    _inherit = "phone_bridge.call"
 
     @api.model_create_multi
     def create(self, vals_list):
