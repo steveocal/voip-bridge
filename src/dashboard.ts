@@ -119,6 +119,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .hist-transcript .tl .ts{color:#4db8ff;margin-right:6px;font-variant-numeric:tabular-nums}
 .hist-transcript .tl .who{font-weight:600;margin-right:4px;color:#f5a623}
 .hist-transcript .tl.us .who{color:#34d399}
+.hist-transcript .tl.tr{padding-left:14px;color:#999;font-style:italic}
 .hist-transcript .tl.hit{background:#3a3210;border-radius:6px}
 #cd-pane-transcript .hist-transcript{max-height:none}
 .hist-transcript button{background:#2c2c2c;border:none;color:#ececec;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer}
@@ -3205,12 +3206,15 @@ function renderTranscript(tBox, c, transcript) {
     return;
   }
   if (!transcript) { tBox.textContent = "(no speech detected)"; return; }
-  var lines = transcript.split(String.fromCharCode(10)), html = "";
+  var lines = transcript.split(String.fromCharCode(10)), html = "", lastSec = 0;
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i], close = line.indexOf("] ");
     var ts = (line.charAt(0) === "[" && close > 0) ? line.slice(1, close) : "";
     var parts = ts.split(":");
     var sec = parts.length === 2 ? parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10) : 0;
+    // "   → ..." is the English translation of the line above.
+    if (!ts && line.trim().indexOf("→ ") === 0) { html += '<div class="tl tr" data-t="' + lastSec + '">' + esc(line.trim()) + '</div>'; continue; }
+    lastSec = sec;
     var text = ts ? line.slice(close + 2) : line, who = "", cls = "tl";
     if (text.indexOf("Us: ") === 0) { who = "Us"; cls = "tl us"; text = text.slice(4); }
     else if (text.indexOf("Them: ") === 0) { who = (c.partner_name || "").trim().split(" ")[0] || "Them"; text = text.slice(6); }
@@ -3645,6 +3649,10 @@ document.getElementById("ct-pane-calls").addEventListener("click", function(e) {
 var cdReturnView = "dial";
 var cdCall = null, cdTranscriptLoaded = false, cdHighlight = "";
 var cdOpenCallId = null, cdLoadedNotes = {}, cdJotData = null, activeCdTab = "details";
+// Whether the open call's notes came with an AI summary. The server puts a
+// summary back on any save that lacks it (it may have landed after the
+// editor loaded), unless the editor had it, i.e. the user deleted it.
+var cdSeenSummary = false;
 var cdJot = null;
 
 
@@ -3699,11 +3707,12 @@ function switchCallDetailTab(tab) {
 
 function loadCallDetailNotes(callId) {
   cdOpenCallId = callId;
-  cdLoadedNotes = {}; cdJotData = null;
+  cdLoadedNotes = {}; cdJotData = null; cdSeenSummary = false;
   document.getElementById("cd-pane-notes").innerHTML = '<div class="empty">Loading…</div>';
   if (!callId) { renderCallDetailNotesPane(); return; }
   fetch(API + "/call-notes?call_id=" + encodeURIComponent(callId)).then(function(r) { return r.json(); }).then(function(d) {
     cdLoadedNotes = (d && d.notes) || {};
+    cdSeenSummary = String(cdLoadedNotes.notes_html || "").indexOf("Call summary (AI)") >= 0;
     cdJotData = safeParseJson(cdLoadedNotes.jot_json);
     renderCallDetailNotesPane();
     // If the Jot tab was already opened/mounted before this fetch resolved
@@ -3814,7 +3823,7 @@ function postCallDetailSave(notesHtml, jotSvg, jotJson) {
   fetch(API + "/call-notes", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ call_id: callId, notes_html: notesHtml, jot_svg: jotSvg, jot_json: jotJson })
+    body: JSON.stringify({ call_id: callId, notes_html: notesHtml, jot_svg: jotSvg, jot_json: jotJson, seen_summary: cdSeenSummary })
   }).then(function(r) { return r.json(); }).then(function(d) {
     if (d.ok) {
       if (cdOpenCallId === callId) cdLoadedNotes = { notes_html: notesHtml, jot_svg: jotSvg, jot_json: jotJson };

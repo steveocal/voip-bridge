@@ -561,7 +561,7 @@ async function hasBridgeModule(env: Env, uid: number): Promise<boolean> {
 const LEG_WINDOW_MS = 60 * 60 * 1000;
 
 /** call_id's row plus the other legs of the same call (see calllegs.ts). */
-async function callLegs(env: Env, callId: string): Promise<CallRow[]> {
+export async function callLegs(env: Env, callId: string): Promise<CallRow[]> {
   const row = await env.DB.prepare("SELECT * FROM call_log WHERE call_id = ?1").bind(callId).first<CallRow>();
   if (!row?.call_id) return [];
   if (row.direction === "outgoing" || !row.phone_number) return [row];

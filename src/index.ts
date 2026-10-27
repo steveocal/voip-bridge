@@ -4,6 +4,7 @@ import { searchGmailMessages, searchRecentGmailMessages, getGmailBody, sendGmail
 import { ariRequest } from "./asterisk";
 import { playbackResponse } from "./recording";
 import { transcribeCall } from "./transcribe";
+import { summarizeCall, keepSummary } from "./summarize";
 import { serveDashboard } from "./dashboard";
 import { handlePushRegister, handlePushWake } from "./push";
 import { handleGetVoicemail, handleSetVoicemail, handleCreateGreeting, handleRenameGreeting, handleDeleteGreeting, handleGreetingAudio, handleVoicemailSync, handleVoicemailSynced } from "./voicemail";
@@ -74,6 +75,7 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
     // than waitUntil's 30s grace, and Asterisk's curl is happy to wait.
     let transcribed = false;
     try { await transcribeCall(env, callId); transcribed = true; } catch (e) { console.error("transcribeCall failed:", e); }
+    if (transcribed) { try { await summarizeCall(env, callId); } catch (e) { console.error("summarizeCall failed:", e); } }
     ctx.waitUntil(pushCallToOdoo(env, callId, true).catch((e) => console.error("pushCallToOdoo failed:", e)));
     return Response.json({ action: "recording", file, transcribed });
   }
@@ -388,13 +390,14 @@ async function handleGetCallNotes(request: Request, env: Env): Promise<Response>
 }
 
 async function handleSaveCallNotes(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-  let body: { call_id?: string; notes_html?: string; jot_svg?: string; jot_json?: string };
+  let body: { call_id?: string; notes_html?: string; jot_svg?: string; jot_json?: string; seen_summary?: boolean };
   try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
   const callId = (body.call_id ?? "").trim();
   if (!callId) return Response.json({ error: "missing call_id" }, { status: 400 });
+  const notes = await keepSummary(env, callId, body.notes_html ?? "", !!body.seen_summary);
   const result = await env.DB.prepare(
     `UPDATE call_log SET notes_html=?1, jot_svg=?2, jot_json=?3, write_date=?4 WHERE call_id=?5`
-  ).bind(body.notes_html ?? "", body.jot_svg ?? "", body.jot_json ?? "", Date.now(), callId).run();
+  ).bind(notes, body.jot_svg ?? "", body.jot_json ?? "", Date.now(), callId).run();
   if (!result.meta.changes) return Response.json({ error: "call not found" }, { status: 404 });
   ctx.waitUntil(pushCallToOdoo(env, callId).catch((e) => console.error("pushCallToOdoo failed:", e)));
   return Response.json({ ok: true });
@@ -423,8 +426,23 @@ async function handleTranscribe(request: Request, env: Env, ctx: ExecutionContex
   const callId = new URL(request.url).searchParams.get("call_id") ?? "";
   try {
     const transcript = await transcribeCall(env, callId);
+    try { await summarizeCall(env, callId); } catch (e) { console.error("summarizeCall failed:", e); }
     ctx.waitUntil(pushCallToOdoo(env, callId).catch((e) => console.error("pushCallToOdoo failed:", e)));
     return Response.json({ transcript });
+  } catch (e) {
+    return Response.json({ error: String((e as Error).message || e) }, { status: 502 });
+  }
+}
+
+// AI summary of a transcribed call into its notes; ?force=1 replaces an
+// existing one.
+async function handleSummarize(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const url = new URL(request.url);
+  const callId = url.searchParams.get("call_id") ?? "";
+  try {
+    const summary = await summarizeCall(env, callId, url.searchParams.get("force") === "1");
+    if (summary) ctx.waitUntil(pushCallToOdoo(env, callId).catch((e) => console.error("pushCallToOdoo failed:", e)));
+    return Response.json({ summary });
   } catch (e) {
     return Response.json({ error: String((e as Error).message || e) }, { status: 502 });
   }
@@ -763,6 +781,7 @@ export default {
     else if (request.method === "POST" && url.pathname === "/jot-to-text") response = await handleJotToText(request, env);
     else if (request.method === "GET" && url.pathname === "/transcript") response = await handleGetTranscript(request, env);
     else if (request.method === "POST" && url.pathname === "/transcribe") response = await handleTranscribe(request, env, ctx);
+    else if (request.method === "POST" && url.pathname === "/summarize") response = await handleSummarize(request, env, ctx);
     else if (request.method === "GET" && url.pathname === "/voicemail") response = await handleGetVoicemail(env);
     else if (request.method === "POST" && url.pathname === "/voicemail") response = await handleSetVoicemail(request, env);
     else if (request.method === "GET" && url.pathname === "/voicemail/sync") response = await handleVoicemailSync(env);
