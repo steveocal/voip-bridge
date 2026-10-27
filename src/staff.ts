@@ -80,11 +80,14 @@ export async function handleStaffLocation(request: Request, env: Env): Promise<R
   // one from the future.
   const at = Math.min(Number(body.at) || Date.now(), Date.now());
   const uid = await odooAuth(env);
-  if (!uid) return Response.json({ error: "Odoo unavailable" }, { status: 502 });
+  if (!uid) { console.error("staff location: Odoo login failed"); return Response.json({ error: "Odoo unavailable" }, { status: 502 }); }
   const r = await odooCall(env, uid, "staff.location.stay", "record_fix", [
     employeeId, lat, lon, Math.round(Number(body.accuracy) || 0),
     new Date(at).toISOString().slice(0, 19).replace("T", " "),
   ]);
-  if (r.fault) return Response.json({ error: r.fault }, { status: 502 });
+  if (r.fault) {
+    console.error(`staff location for employee ${employeeId}: Odoo fault: ${r.fault}`);
+    return Response.json({ error: r.fault }, { status: 502 });
+  }
   return Response.json({ ok: true, stay_id: r.parsed });
 }

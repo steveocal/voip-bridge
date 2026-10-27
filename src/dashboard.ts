@@ -141,7 +141,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .hist-transcript button{background:#2c2c2c;border:none;color:#ececec;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer}
 .contact-row .mini-call{width:38px;height:38px;border-radius:50%;border:none;background:#10b981;color:#fff;font-size:16px;cursor:pointer;flex-shrink:0}
 .empty{color:#666;text-align:center;padding:28px 0;font-size:14px}
-.day-head{font-size:11px;font-weight:700;letter-spacing:.5px;color:#888;text-transform:uppercase;padding:14px 4px 6px;position:sticky;top:0;background:transparent}
+.day-head{font-size:11px;font-weight:700;letter-spacing:.5px;color:#888;text-transform:uppercase;padding:14px 4px 6px;position:sticky;top:0;z-index:2;background:#000}
 .contact-row.selected{background:#262626;border-radius:10px;padding-left:8px;padding-right:8px}
 .msg-row{display:flex;align-items:flex-start;gap:12px;padding:12px 4px;border-bottom:1px solid #222}
 .msg-row .ic{font-size:18px}
@@ -158,6 +158,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .dial-fab{flex:1;background:none;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
 .dial-fab .fab{width:64px;height:64px;margin:-26px 0 -4px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:30px;background:linear-gradient(135deg,#34d399,#10b981);box-shadow:0 4px 18px rgba(16,185,129,.45)}
 .dial-fab:active .fab{transform:scale(.95)}
+.dial-fab.pad .fab{background:#2a2a2a;box-shadow:0 4px 14px rgba(0,0,0,.5);color:#e5e7eb}
 .dial-fab.in-call .fab{background:linear-gradient(135deg,#f87171,#ef4444);box-shadow:0 4px 18px rgba(239,68,68,.45)}
 .callbar{display:none}
 /* compact settings dialog */
@@ -435,7 +436,6 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <!-- DIAL VIEW -->
     <div class="view" id="view-dial">
       <div class="hist-toolbar" id="hist-toolbar">
-        <button class="green" data-action="call" onclick="histAction('call')" disabled>📞 Call</button>
         <button data-action="email" onclick="histAction('email')" disabled>✉️ Email</button>
         <button data-action="details" onclick="histAction('details')" disabled>📄 Details</button>
         <button data-action="contact" onclick="histAction('contact')" disabled>👤 Contact</button>
@@ -493,7 +493,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
         <div class="entry" id="dial-entry">
           <input id="dial-input" type="text" placeholder="Number or name (T9)" autocomplete="off" autocapitalize="off">
           <button class="hist-tx-btn" id="hist-tx-btn" onclick="toggleTranscriptSearch()" title="Search call transcripts">💬</button>
-          <button class="backspace" onclick="backspace()">⌫</button>
+          <button class="backspace" id="dial-bksp" title="Hold to clear">⌫</button>
         </div>
         <div class="dialpad" id="dialpad">
           <button class="key" data-d="1"><span class="digit">1</span><span class="letters"></span></button>
@@ -1298,6 +1298,9 @@ function stopRingback() {
 // opens/closes the keypad under the list (open by default). During a call it
 // hangs up.
 var dialKeypadOpen = true;
+var DIALPAD_ICON = '<svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor" aria-hidden="true">'
+  + [3, 9, 15, 21].map(function(y) { return [5, 12, 19].map(function(x) { return '<circle cx="' + x + '" cy="' + y + '" r="2.3"/>'; }).join(""); }).join("")
+  + '</svg>';
 function onDialView() { return !document.getElementById("view-dial").classList.contains("hidden"); }
 function navDialAction() {
   if (currentCall) { hangup(); return; }
@@ -1337,6 +1340,27 @@ function backspace() {
   inp.value = inp.value.slice(0, -1);
   onDialInput();
 }
+
+// ⌫ deletes a character; held, it clears the whole number.
+var bkspTimer = null, bkspCleared = false;
+(function() {
+  var b = document.getElementById("dial-bksp");
+  function cancel() { clearTimeout(bkspTimer); bkspTimer = null; }
+  b.addEventListener("pointerdown", function() {
+    bkspCleared = false;
+    cancel();
+    bkspTimer = setTimeout(function() {
+      bkspTimer = null; bkspCleared = true;
+      document.getElementById("dial-input").value = "";
+      onDialInput();
+    }, PV.longPressPlusMs);
+  });
+  b.addEventListener("pointerup", cancel);
+  b.addEventListener("pointerleave", cancel);
+  b.addEventListener("pointercancel", cancel);
+  b.addEventListener("contextmenu", function(e) { e.preventDefault(); });
+  b.addEventListener("click", function() { if (bkspCleared) { bkspCleared = false; return; } backspace(); });
+})();
 
 function keyDown(d) {
   if (inCall()) { padTone(d); return; }
@@ -2826,7 +2850,32 @@ function hlNum(num, range) {
   }
   return out.replace(/<[/]b><b>/g, "");
 }
+// A number picked from History, a contact or a T9 match sits in the box
+// ready to call, and History narrows to calls with that person. Typing or
+// deleting drops back to plain dialling with T9 matches.
+var histFilter = null;
+function setPickedNumber(num, name) {
+  document.getElementById("dial-input").value = num || "";
+  document.getElementById("dial-suggestions").innerHTML = "";
+  histFilter = num ? { num: num, q: pickedQuery(num, name) } : null;
+  if (!histFilter && selected && selected.type === "call") deselect();
+  updateDialBottomVisibility();
+  loadHistory();
+}
+// By name when there is one (all their numbers), else the number's last 9
+// digits, which match it with or without +44 / 0.
+function pickedQuery(num, name) {
+  name = String(name || "").trim();
+  if (name) return name;
+  var d = digitsOnly(num);
+  return d.length > 9 ? d.slice(-9) : (d || num);
+}
 function onDialInput() {
+  if (histFilter && document.getElementById("dial-input").value !== histFilter.num) {
+    histFilter = null;
+    if (selected && selected.type === "call") deselect();
+    loadHistory();
+  }
   updateDialBottomVisibility();
   if (historyTxSearch) {
     if (historyTimer) clearTimeout(historyTimer);
@@ -2877,8 +2926,8 @@ document.getElementById("dial-suggestions").addEventListener("click", function(e
   if (!row) return;
   var num = row.getAttribute("data-num");
   if (e.target.closest(".call")) { dialOut(num); return; }
-  document.getElementById("dial-input").value = num;
-  onDialInput();
+  var n = row.querySelector(".s") ? row.querySelector(".n").textContent : "";
+  setPickedNumber(num, n);
 });
 document.getElementById("dial-input").addEventListener("input", onDialInput);
 document.getElementById("dial-input").addEventListener("keydown", function(e) { if (e.key === "Enter" && !historyTxSearch) { e.preventDefault(); dialAction(); } });
@@ -3169,13 +3218,20 @@ function updateDialBottomVisibility() {
   // is actually connected — DTMF is meaningless before that.
   var inAnyCall = !!currentCall;
   var connected = !!(currentCall && currentCall.state === "active");
-  document.getElementById("nav-dial").classList.toggle("in-call", inAnyCall);
-  document.getElementById("nav-dial").setAttribute("aria-label", inAnyCall ? "Hang up" : "Dial");
   // Typing shows T9 matches in place of the list — unless 💬 is on, when the
   // box searches transcripts and the list itself shows the hits.
-  var typed = !!document.getElementById("dial-input").value.trim() && !historyTxSearch;
+  var hasNum = !!document.getElementById("dial-input").value.trim() && !historyTxSearch;
+  var typed = hasNum && !histFilter;
+  // Green handset when there's a number to call (or red to hang up);
+  // otherwise a keypad, which opens and closes the dialpad.
+  var fab = document.getElementById("nav-dial");
+  var pad = !inAnyCall && !hasNum;
+  fab.classList.toggle("in-call", inAnyCall);
+  fab.classList.toggle("pad", pad);
+  fab.setAttribute("aria-label", inAnyCall ? "Hang up" : pad ? "Keypad" : "Dial");
+  fab.querySelector(".fab").innerHTML = pad ? DIALPAD_ICON : "📞";
   document.getElementById("dialpad").classList.toggle("hidden", inAnyCall || !dialKeypadOpen);
-  document.getElementById("dial-entry").classList.toggle("hidden", inAnyCall || !(dialKeypadOpen || typed || historyTxSearch));
+  document.getElementById("dial-entry").classList.toggle("hidden", inAnyCall || !(dialKeypadOpen || hasNum || historyTxSearch));
   document.getElementById("dial-callbar").classList.toggle("hidden", inAnyCall);
   document.getElementById("hist-toolbar").classList.toggle("hidden", inAnyCall);
   document.getElementById("history-list").classList.toggle("hidden", inAnyCall || typed);
@@ -3246,7 +3302,7 @@ function toggleTranscriptSearch() {
   onDialInput();
   loadHistory();
 }
-function historyQuery() { return historyTxSearch ? document.getElementById("dial-input").value.trim() : ""; }
+function historyQuery() { return historyTxSearch ? document.getElementById("dial-input").value.trim() : histFilter ? histFilter.q : ""; }
 function loadHistory() {
   var q = historyQuery();
   var el = document.getElementById("history-list");
@@ -3256,8 +3312,12 @@ function loadHistory() {
     if (q !== historyQuery()) return;
     var calls = d.calls || [];
     if (!calls.length) { el.innerHTML = '<div class="empty">' + (historyTxSearch ? "No transcripts mention that" : q ? "No matching calls" : "No calls yet") + '</div>'; return; }
-    if (selected && selected.type === "call") deselect();
+    // A picked caller stays selected while History narrows to them.
+    var keep = histFilter && selected && selected.type === "call" ? "h-" + selected.data.id : "";
+    if (selected && selected.type === "call" && !keep) deselect();
     el.innerHTML = renderHistory(calls);
+    var row = keep && el.querySelector('[data-key="' + keep + '"]');
+    if (row) row.classList.add("selected");
   }).catch(function(){ el.innerHTML = '<div class="empty">Error loading history</div>'; });
 }
 function renderHistory(calls) {
@@ -3335,8 +3395,12 @@ document.getElementById("history-list").addEventListener("click", function(e) {
   if (histIconTap(e, row, c)) return;
   // A transcript search hit opens straight into the call's details.
   if (c.match) { selectItem("call", c, key); openCallDetailView(c, { tab: "transcript", highlight: historyQuery() }); return; }
-  // Otherwise selecting is all a tap does; the toolbar above the list acts on the selection.
-  if (row.classList.contains("selected")) deselect(); else selectItem("call", c, key);
+  // Otherwise a tap selects the call for the toolbar above the list, puts
+  // its number in the box for the green button, and narrows History to them.
+  if (row.classList.contains("selected")) { deselect(); setPickedNumber(""); return; }
+  selectItem("call", c, key);
+  var n = histNumber(c);
+  if (/^[+0-9*#]/.test(n)) setPickedNumber(n, c.partner_name);
 });
 // Recording player, opened under the row. The audio is fetched as a blob so
 // seeking works even though Asterisk serves it without range support.
@@ -3442,16 +3506,14 @@ function histSelectedCall() { return (selected && selected.type === "call") ? se
 function histNumber(c) { return (c.phone_number && c.phone_number !== "unknown") ? c.phone_number : (c.did || ""); }
 function updateHistToolbar() {
   var c = histSelectedCall();
-  var num = c ? histNumber(c) : "";
-  var can = { call: !!(num && /^[+0-9*#]/.test(num)), email: !!(c && c.partner_email), details: !!c, contact: !!(c && c.partner_id) };
+  var can = { email: !!(c && c.partner_email), details: !!c, contact: !!(c && c.partner_id) };
   var btns = document.querySelectorAll("#hist-toolbar button");
   for (var i = 0; i < btns.length; i++) btns[i].disabled = !can[btns[i].getAttribute("data-action")];
 }
 function histAction(action) {
   var c = histSelectedCall();
   if (!c) return;
-  if (action === "call") dialOut(histNumber(c));
-  else if (action === "email") openCompose(c.partner_email, "", "");
+  if (action === "email") openCompose(c.partner_email, "", "");
   else if (action === "details") openCallDetailView(c);
   else if (action === "contact") openContactById(c.partner_id);
 }
@@ -3590,12 +3652,10 @@ function startContactRename(nameEl) {
 
 // ── contact selection + messages ───────────────────────────────
 var activeContact = null;
-function prepareDial(num) {
-  document.getElementById("dial-input").value = num || "";
-  document.getElementById("dial-suggestions").innerHTML = "";
+function prepareDial(num, name) {
   dialKeypadOpen = true;
   switchView("dial");
-  onDialInput();
+  setPickedNumber(num, name);
 }
 function openMessages() { switchView("messages"); }
 
@@ -3653,7 +3713,7 @@ function renderActionBar() {
   bar.innerHTML = h;
   bar.classList.remove("hidden");
 }
-function prepareDialSelected() { var c = selected && selected.data; prepareDial(c ? (c.phone || c.mobile || "") : ""); }
+function prepareDialSelected() { var c = selected && selected.data; prepareDial(c ? (c.phone || c.mobile || "") : "", c && c.name); }
 function dialBackSelected() { var c = selected && selected.data; if (c && c.phone_number) dialOut(c.phone_number); }
 
 // ── detail views (full-screen) ─────────────────────────────────
@@ -3718,7 +3778,7 @@ function closeContactView() {
   ctContact = null;
   switchView(ctReturnView || "contacts");
 }
-function dialContactView() { if (ctContact) prepareDial(ctContact.phone || ctContact.mobile || ""); }
+function dialContactView() { if (ctContact) prepareDial(ctContact.phone || ctContact.mobile || "", ctContact.name); }
 function renderContactHead() {
   var num = ctContact.phone || ctContact.mobile || "";
   document.getElementById("ct-name").textContent = ctContact.name || "Contact";
