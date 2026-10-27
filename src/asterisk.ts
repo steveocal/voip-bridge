@@ -34,3 +34,24 @@ export async function ariRequest(env: Env, path: string, method = "GET", body?: 
   });
   return res.json();
 }
+
+interface AriBridge { id: string; bridge_class?: string; name?: string; channels?: string[] }
+interface AriChannel { id: string; caller?: { name?: string; number?: string } }
+
+/** Calls waiting in Asterisk's parking lots (res_parking holding bridges),
+ *  each with the slot to dial to pick it up (the PARKINGSLOT variable
+ *  res_parking sets on the parked channel). */
+export async function ariParkedCalls(env: Env): Promise<{ slot: string; number: string; name: string }[]> {
+  const res = await ariFetch(env, "bridges");
+  if (!res.ok) throw new Error(`ARI bridges: ${res.status}`);
+  const bridges = await res.json() as AriBridge[];
+  const ids = bridges.filter(b => b.bridge_class === "parking" || /^park/i.test(b.name ?? "")).flatMap(b => b.channels ?? []);
+  const calls = await Promise.all(ids.map(async (id) => {
+    const [ch, slot] = await Promise.all([
+      ariFetch(env, `channels/${encodeURIComponent(id)}`).then(r => r.ok ? r.json() as Promise<AriChannel> : null),
+      ariFetch(env, `channels/${encodeURIComponent(id)}/variable?variable=PARKINGSLOT`).then(r => r.ok ? r.json() as Promise<{ value?: string }> : null),
+    ]);
+    return ch && slot?.value ? { slot: slot.value, number: ch.caller?.number ?? "", name: ch.caller?.name ?? "" } : null;
+  }));
+  return calls.filter((c): c is { slot: string; number: string; name: string } => !!c).sort((a, b) => a.slot.localeCompare(b.slot));
+}

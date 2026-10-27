@@ -61,6 +61,22 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .call-banner .answer{width:44px;height:44px;border-radius:50%;border:none;background:#10b981;color:#fff;font-size:18px;cursor:pointer;flex-shrink:0;margin-right:8px}
 .call-banner .keypad{width:40px;height:40px;border-radius:50%;border:none;background:#2c2c2c;color:#ececec;font-size:16px;cursor:pointer;flex-shrink:0;margin-right:8px}
 .call-banner .keypad.active{background:#2563eb}
+.call-ctl,.consult-bar{display:flex;gap:8px;margin:0 16px 8px}
+.call-ctl button,.consult-bar button,.xfer button,.parked-strip button{flex:1;padding:9px 6px;border:none;border-radius:10px;background:#2c2c2c;color:#ececec;font-size:13px;cursor:pointer}
+.call-ctl button.on{background:#b45309}
+.call-ctl.hidden,.consult-bar.hidden,.xfer.hidden,.parked-strip.hidden{display:none}
+.consult-bar{align-items:center;padding:8px 10px;border-radius:12px;background:#1e293b;border:1px solid #334155}
+.consult-bar span{flex:2;font-size:13px;color:#cbd5e1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.consult-bar button.go{background:#10b981}
+.xfer{margin:0 16px 8px;padding:10px;border-radius:12px;background:#1a1a1a;border:1px solid #333;display:flex;flex-direction:column;gap:8px}
+.xfer .row{display:flex;gap:8px}
+.xfer input{flex:1;min-width:0;padding:9px 10px;border-radius:10px;border:1px solid #444;background:#111;color:#ececec;font-size:15px}
+.xfer .row button.x{flex:0 0 40px}
+.xfer .exts{display:flex;flex-wrap:wrap;gap:6px}
+.xfer .exts button{flex:0 0 auto;padding:6px 12px}
+.xfer button.go{background:#10b981}
+.parked-strip{display:flex;flex-wrap:wrap;gap:6px;margin:0 16px 8px;align-items:center;font-size:13px;color:#aaa}
+.parked-strip button{flex:0 0 auto;background:#1e3a5f}
 .hidden{display:none!important}
 /* views */
 .views{flex:1;overflow-y:auto;padding:4px 16px 8px;min-height:0}
@@ -397,6 +413,22 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <button class="answer hidden" id="banner-answer" onclick="answerCall()">📞</button>
     <button class="end" onclick="hangup()">📴</button>
   </div>
+  <div class="call-ctl hidden" id="call-ctl">
+    <button id="ctl-hold" onclick="toggleHold()">⏸ Hold</button>
+    <button id="ctl-xfer" onclick="openTransfer()">↪ Transfer</button>
+    <button id="ctl-park" onclick="parkCall()">🅿 Park</button>
+  </div>
+  <div class="xfer hidden" id="xfer-panel">
+    <div class="row"><input id="xfer-input" type="tel" placeholder="Extension or number" autocomplete="off"><button class="x" onclick="closeTransfer()" aria-label="Close">✕</button></div>
+    <div class="exts" id="xfer-exts"></div>
+    <div class="row"><button class="go" onclick="blindTransfer()">Transfer now</button><button onclick="consultTransfer()">Talk first</button></div>
+  </div>
+  <div class="consult-bar hidden" id="consult-bar">
+    <span id="consult-state"></span>
+    <button class="go" onclick="completeTransfer()">✓ Transfer</button>
+    <button onclick="cancelConsult()">✕ Back</button>
+  </div>
+  <div class="parked-strip hidden" id="parked-strip"></div>
 
   <div class="views">
     <!-- DIAL VIEW -->
@@ -720,6 +752,8 @@ function defParam(group, id, label, def, o, set) {
 var G_CALL = "Calls & audio", G_LIST = "Lists & search", G_TIME = "Timing (typing & taps)";
 var J_INK = "Jot: ink", J_WORD = "Jot: word detection", J_LAY = "Jot: layout & splitting", J_DOT = "Jot: periods", J_GEST = "Jot: gestures", J_BOX = "Jot: page & zoom";
 
+defParam(G_CALL, "parkExtension", "Park extension", 700, { min: 1, max: 99999, step: 1, note: "Asterisk's parking extension; Park transfers the call there" });
+defParam(G_CALL, "parkedPollMs", "Parked calls refresh", 5000, { unit: "ms", min: 1000, max: 60000, step: 500, note: "How often the parked-calls strip is checked" });
 defParam(G_CALL, "wsKeepAliveSec", "WebSocket keep-alive", 25, { unit: "s", min: 0, max: 300, step: 5, note: "Ping the SIP server this often (0 = off); applies on next connect" });
 defParam(G_CALL, "reconnectMinMs", "Reconnect first retry", 2000, { unit: "ms", min: 500, max: 60000, step: 500, note: "Wait before the first reconnect after the connection drops; doubles on each failure" });
 defParam(G_CALL, "reconnectMaxMs", "Reconnect max retry", 60000, { unit: "ms", min: 5000, max: 600000, step: 1000, note: "Longest wait between reconnect attempts" });
@@ -2892,17 +2926,7 @@ function dialAction() {
 }
 function dialOut(num) {
   if (!num) return;
-  num = String(num).replace(/[^+0-9*#]/g, "");
-  if (num.startsWith("0")) num = "+44" + num.slice(1);
-  // Asterisk strips the leading "+" from caller ID (see caller-lookup /
-  // history), so a redialled/history number often arrives here as bare
-  // digits with the country code already included (e.g. "441283246490")
-  // instead of "+441283246490". Left alone, that reaches the trunk
-  // unnormalized and gets rejected outright (voip.ms: 403, Twilio: 400
-  // Invalid phone number) instead of ringing. Only real international
-  // numbers are this long — short internal extensions (200/201/202) and
-  // feature codes are never mistaken for one.
-  else if (!num.startsWith("+") && num.length > 6) num = "+" + num;
+  num = normalizeDial(num);
   if (!sipUA) { setStatus("❌ Not registered", true); return; }
   var acc = activeAccount();
   var domain = (acc && acc.domain) || PV.defaultDomain;
@@ -2925,6 +2949,20 @@ function dialOut(num) {
     var hasMedia = !!(response && response.message && response.message.body);
     if (hasMedia) stopRingback(); else if (currentCall && currentCall.state === "calling") startRingback();
   } } });
+}
+function normalizeDial(num) {
+  num = String(num).replace(/[^+0-9*#]/g, "");
+  if (num.startsWith("0")) num = "+44" + num.slice(1);
+  // Asterisk strips the leading "+" from caller ID (see caller-lookup /
+  // history), so a redialled/history number often arrives here as bare
+  // digits with the country code already included (e.g. "441283246490")
+  // instead of "+441283246490". Left alone, that reaches the trunk
+  // unnormalized and gets rejected outright (voip.ms: 403, Twilio: 400
+  // Invalid phone number) instead of ringing. Only real international
+  // numbers are this long — short internal extensions (200/201/202) and
+  // feature codes are never mistaken for one.
+  else if (!num.startsWith("+") && num.length > 6) num = "+" + num;
+  return num;
 }
 function hangup() {
   stopRingtone();
@@ -2963,10 +3001,155 @@ function resetCall() {
   clearRemoteAudio();
   flushCallSave();
   if (heldSession) { try { heldSession.dispose(); } catch(e) {} heldSession = null; }
+  if (consultSession) { endSession(consultSession); consultSession = null; }
   sipSession = null; currentCall = null; onHold = false; muted = false;
+  closeTransfer();
   renderCallUI();
   if (onDialView()) loadHistory();
 }
+// ── hold / transfer / park ─────────────────────────────────────
+// Hold is a re-INVITE with the SDP turned sendonly (Asterisk plays the
+// caller its music on hold). "Transfer now" REFERs the caller to the target
+// (blind); "Talk first" holds the caller and calls the target, then
+// ✓ Transfer REFERs the caller onto that call (attended, Replaces). Park is
+// a blind transfer to Asterisk's parking extension; the parked strip lists
+// what's waiting (worker /parked, from ARI) and tapping a slot dials it.
+var consultSession = null, consultTarget = "";
+var XFER_EXTS = ["200", "201", "202", "203", "204"];
+
+function sipTarget(num) {
+  var acc = activeAccount();
+  return SIP.UserAgent.makeURI("sip:" + normalizeDial(num) + "@" + ((acc && acc.domain) || PV.defaultDomain));
+}
+function endSession(session) {
+  try {
+    if (session.state === SIP.SessionState.Established) session.bye().catch(function() {});
+    else if (typeof session.cancel === "function") session.cancel().catch(function() {});
+    else session.dispose();
+  } catch (e) {}
+}
+function setHold(session, hold) {
+  var sdh = session.sessionDescriptionHandler;
+  var opts = {};
+  if (hold && sdh) opts.sessionDescriptionHandlerModifiers = [function(d) { return sdh.holdModifier(d); }];
+  return session.invite(opts).then(function() {
+    try {
+      session.sessionDescriptionHandler.peerConnection.getSenders().forEach(function(sn) {
+        if (sn.track && sn.track.kind === "audio") sn.track.enabled = !hold && !muted;
+      });
+    } catch (e) {}
+  });
+}
+function toggleHold() {
+  if (!sipSession || !inCall() || consultSession) return;
+  var want = !onHold;
+  setHold(sipSession, want).then(function() { onHold = want; renderCallUI(); })
+    .catch(function() { setStatus("❌ Hold failed", true); });
+}
+function openTransfer() {
+  if (!inCall()) return;
+  var mine = myExtension();
+  document.getElementById("xfer-exts").innerHTML = XFER_EXTS.filter(function(x) { return x !== mine; })
+    .map(function(x) { return '<button onclick="pickTransferExt(this.textContent)">' + x + '</button>'; }).join("");
+  document.getElementById("xfer-panel").classList.remove("hidden");
+  var inp = document.getElementById("xfer-input");
+  inp.value = "";
+  inp.focus();
+}
+function pickTransferExt(x) { document.getElementById("xfer-input").value = x; }
+function closeTransfer() { document.getElementById("xfer-panel").classList.add("hidden"); }
+function transferInput() {
+  var v = document.getElementById("xfer-input").value.trim();
+  if (!v) document.getElementById("xfer-input").focus();
+  return v;
+}
+function referTo(session, target, done) {
+  session.refer(target, { requestDelegate: {
+    onAccept: function() { if (done) done(); },
+    onReject: function() { setStatus("❌ Transfer refused", true); }
+  } }).catch(function() { setStatus("❌ Transfer failed", true); });
+}
+function blindTransfer() {
+  var to = transferInput();
+  if (!to || !sipSession) return;
+  closeTransfer();
+  noteTransfer("Transferred to " + to);
+  // Asterisk hangs our leg up once the caller is on their way.
+  referTo(sipSession, sipTarget(to));
+}
+function consultTransfer() {
+  var to = transferInput();
+  if (!to || !sipSession) return;
+  closeTransfer();
+  var start = onHold ? Promise.resolve() : setHold(sipSession, true).then(function() { onHold = true; });
+  start.then(function() {
+    consultTarget = to;
+    var inv = new SIP.Inviter(sipUA, sipTarget(to), { sessionDescriptionHandlerOptions: { constraints: { audio: true, video: false } } });
+    consultSession = inv;
+    inv.stateChange.on(function(state) {
+      if (state === SIP.SessionState.Established) { clearRemoteAudio(); ensureRemoteAudio(inv); }
+      if (state === SIP.SessionState.Terminated && consultSession === inv) backToCaller();
+      renderCallUI();
+    });
+    attachRemoteAudio(inv);
+    inv.invite().catch(function() { backToCaller(); });
+    renderCallUI();
+  }).catch(function() { setStatus("❌ Hold failed", true); });
+}
+function completeTransfer() {
+  if (!consultSession || !sipSession) return;
+  if (consultSession.state !== SIP.SessionState.Established) return;
+  noteTransfer("Transferred to " + consultTarget + " (after talking)");
+  referTo(sipSession, consultSession);
+}
+function cancelConsult() {
+  if (!consultSession) return;
+  var c = consultSession;
+  consultSession = null;
+  endSession(c);
+  backToCaller();
+}
+// The consult call ended (or was cancelled): take the caller off hold.
+function backToCaller() {
+  consultSession = null; consultTarget = "";
+  if (!sipSession || sipSession.state !== SIP.SessionState.Established) { renderCallUI(); return; }
+  clearRemoteAudio();
+  ensureRemoteAudio(sipSession);
+  setHold(sipSession, false).then(function() { onHold = false; renderCallUI(); }).catch(function() { renderCallUI(); });
+}
+function parkCall() {
+  if (!sipSession || !inCall()) return;
+  noteTransfer("Parked");
+  referTo(sipSession, sipTarget(String(PV.parkExtension)), function() { setTimeout(loadParked, 1500); });
+}
+// A line in the call notes saying where the call went.
+function noteTransfer(text) {
+  var line = "<p><i>" + esc(text) + " at " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + "</i></p>";
+  var ed = (typeof tinymce !== "undefined") ? tinymce.get("call-notes") : null;
+  if (ed) ed.setContent(ed.getContent() + line);
+  else { var ta = document.getElementById("call-notes"); if (ta) ta.value += (ta.value ? String.fromCharCode(10) : "") + text; }
+  scheduleCallSave();
+  flushCallSave();
+}
+var parkedTimer = null;
+function loadParked() {
+  clearTimeout(parkedTimer);
+  parkedTimer = setTimeout(loadParked, PV.parkedPollMs);
+  if (document.hidden) return;
+  fetch(API + "/parked").then(function(r) { return r.json(); }).then(function(d) {
+    var el = document.getElementById("parked-strip"), list = (d && d.parked) || [];
+    el.classList.toggle("hidden", !list.length);
+    el.innerHTML = list.length ? "🅿 Parked:" + list.map(function(p) {
+      return '<button onclick="pickUpParked(' + "'" + esc(p.slot) + "'" + ')">' + esc(p.slot) + " · " + esc(p.name || p.number || "caller") + "</button>";
+    }).join("") : "";
+  }).catch(function() {});
+}
+function pickUpParked(slot) {
+  if (currentCall) return;
+  dialOut(slot);
+  setTimeout(loadParked, 3000);
+}
+
 // The dialpad is only useful before a call connects — during one, DTMF
 // lives in the in-call panel's Keypad tab. The banner ⌨️ button jumps to
 // that tab and back to whichever tab was open before.
@@ -3004,6 +3187,8 @@ function renderCallUI() {
   var btnCall = document.getElementById("btn-call");
   var btnEnd = document.getElementById("btn-end");
   if (!currentCall) {
+    document.getElementById("call-ctl").classList.add("hidden");
+    document.getElementById("consult-bar").classList.add("hidden");
     banner.classList.add("hidden");
     btnCall.classList.remove("hidden"); btnCall.classList.remove("hangup");
     btnEnd.classList.add("hidden");
@@ -3018,6 +3203,16 @@ function renderCallUI() {
   document.getElementById("banner-answer").classList.toggle("hidden", !(currentCall.state === "ringing" && currentCall.dir === "in"));
   btnCall.classList.add("hidden");
   btnEnd.classList.remove("hidden");
+  var active = currentCall.state === "active";
+  if (onHold && !consultSession) document.getElementById("banner-state").textContent = "⏸ On hold";
+  document.getElementById("call-ctl").classList.toggle("hidden", !active || !!consultSession);
+  document.getElementById("ctl-hold").classList.toggle("on", onHold);
+  document.getElementById("ctl-hold").textContent = onHold ? "▶ Resume" : "⏸ Hold";
+  document.getElementById("consult-bar").classList.toggle("hidden", !consultSession);
+  if (consultSession) {
+    var up = consultSession.state === SIP.SessionState.Established;
+    document.getElementById("consult-state").textContent = (up ? "Talking to " : "Calling ") + consultTarget + " · caller on hold";
+  }
   showCallPanel(true);
   updateDialBottomVisibility();
 }
@@ -4767,6 +4962,7 @@ function boot() {
 }
 document.addEventListener("DOMContentLoaded", boot);
 document.addEventListener("DOMContentLoaded", checkAppUpdate);
+document.addEventListener("DOMContentLoaded", loadParked);
 </script>
 </body>
 </html>`;

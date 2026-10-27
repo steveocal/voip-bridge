@@ -1,7 +1,7 @@
 import type { Env, ExecutionContext, D1PreparedStatement } from "./types";
 import { lookupCaller, pushCallToOdoo, pushCallHistory, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages, searchQuotations, contactTotals, phoneKey, createContactForNumber, renameContact } from "./odoo";
 import { searchGmailMessages, searchRecentGmailMessages, getGmailBody, sendGmailMessage } from "./gmail";
-import { ariRequest } from "./asterisk";
+import { ariRequest, ariParkedCalls } from "./asterisk";
 import { playbackResponse } from "./recording";
 import { transcribeCall } from "./transcribe";
 import { summarizeCall, keepSummary } from "./summarize";
@@ -455,6 +455,12 @@ async function handleSummarize(request: Request, env: Env, ctx: ExecutionContext
   }
 }
 
+// Calls waiting in the parking lot, for the softphones' "Parked" strip.
+async function handleParked(env: Env): Promise<Response> {
+  try { return Response.json({ parked: await ariParkedCalls(env) }); }
+  catch (e) { return Response.json({ error: String((e as Error).message || e), parked: [] }, { status: 502 }); }
+}
+
 // ── Contact messages (Odoo mail.message + Gmail) ──────────────
 
 async function handleMessages(request: Request, env: Env): Promise<Response> {
@@ -788,6 +794,7 @@ export default {
     else if (request.method === "POST" && url.pathname === "/jot-to-text") response = await handleJotToText(request, env);
     else if (request.method === "GET" && url.pathname === "/transcript") response = await handleGetTranscript(request, env);
     else if (request.method === "POST" && url.pathname === "/transcribe") response = await handleTranscribe(request, env, ctx);
+    else if (request.method === "GET" && url.pathname === "/parked") response = await handleParked(env);
     else if (request.method === "POST" && url.pathname === "/summarize") response = await handleSummarize(request, env, ctx);
     else if (request.method === "GET" && url.pathname === "/voicemail") response = await handleGetVoicemail(env);
     else if (request.method === "POST" && url.pathname === "/voicemail") response = await handleSetVoicemail(request, env);
