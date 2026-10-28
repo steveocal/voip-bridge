@@ -29,6 +29,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .reg-status{display:none}
 .install-btn{flex-shrink:0;border:1px solid #2563eb;border-radius:20px;background:rgba(37,99,235,.15);color:#7fb2ff;font-size:12px;font-weight:600;padding:7px 12px;cursor:pointer}
 .install-btn:active{background:rgba(37,99,235,.3)}
+/* quick routing switches: 📼 straight to voicemail, 📱 mobile first */
+.quick-btn{flex-shrink:0;width:36px;height:36px;border:1px solid #333;border-radius:50%;background:#1a1a1a;font-size:17px;line-height:1;cursor:pointer;padding:0;filter:grayscale(1);opacity:.55}
+.quick-btn.on{filter:none;opacity:1}
+#qb-vm.on{background:rgba(220,38,38,.25);border-color:#dc2626}
+#qb-mob.on{background:rgba(52,211,153,.2);border-color:#34d399}
+.route-strip{margin:0 16px 8px;padding:8px 12px;border-radius:10px;font-size:13px;display:flex;align-items:center;gap:8px}
+.route-strip.vm{background:rgba(220,38,38,.18);border:1px solid #dc2626;color:#fecaca}
+.route-strip.mob{background:rgba(52,211,153,.12);border:1px solid #34d399;color:#bbf7d0}
+.route-strip button{margin-left:auto;border:none;border-radius:8px;background:#2c2c2c;color:#ececec;font-size:12px;padding:5px 10px;cursor:pointer;flex-shrink:0}
+.route-strip.hidden{display:none}
 .install-tip{margin:0 16px 8px;padding:10px 12px;border-radius:10px;background:#1a1a1a;border:1px solid #333;font-size:12px;color:#ccc;display:flex;align-items:center;gap:8px}
 .install-tip button{margin-left:auto;background:none;border:none;color:#999;font-size:14px;cursor:pointer;flex-shrink:0}
 /* entry box */
@@ -393,6 +403,8 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     </div>
     <div class="reg-status" id="phone-status">Loading…</div>
     <button class="install-btn hidden" id="install-btn" onclick="installApp()">⬇ Install</button>
+    <button class="quick-btn" id="qb-vm" onclick="quickToggle('direct')" title="Straight to voicemail" aria-label="Straight to voicemail">📼</button>
+    <button class="quick-btn" id="qb-mob" onclick="quickToggle('mobileFirst')" title="Ring my mobile straight away" aria-label="Ring my mobile straight away">📱</button>
     <button class="menu-icon" onclick="toggleMenu()" aria-label="Menu">☰</button>
   </header>
 
@@ -405,6 +417,8 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <span id="update-text"></span>
     <button onclick="dismissAppUpdate()" aria-label="Dismiss">✕</button>
   </div>
+
+  <div class="route-strip hidden" id="route-strip"><span id="route-text"></span><button id="route-off">Turn off</button></div>
 
   <div class="call-banner hidden" id="call-banner">
     <div class="info">
@@ -419,6 +433,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <button id="ctl-hold" onclick="toggleHold()">⏸ Hold</button>
     <button id="ctl-xfer" onclick="openTransfer()">↪ Transfer</button>
     <button id="ctl-park" onclick="parkCall()">🅿 Park</button>
+    <button id="ctl-mobile" onclick="moveToMobile()">📱 Mobile</button>
   </div>
   <div class="xfer hidden" id="xfer-panel">
     <div class="row"><input id="xfer-input" type="tel" placeholder="Extension or number" autocomplete="off"><button class="x" onclick="closeTransfer()" aria-label="Close">✕</button></div>
@@ -527,6 +542,10 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       <div class="switch-row">
         <span>Straight to voicemail<div class="p-note">Phones don't ring; every caller hears the greeting.</div></span>
         <label class="switch"><input type="checkbox" id="vm-direct" onchange="setVmDirect(this.checked)"><span class="track"></span></label>
+      </div>
+      <div class="switch-row">
+        <span>Ring my mobile straight away<div class="p-note">Off: the mobile joins after 20 s, so the app and desk phones get first go. On: it rings with them.</div></span>
+        <label class="switch"><input type="checkbox" id="vm-mobile-first" onchange="setMobileFirst(this.checked)"><span class="track"></span></label>
       </div>
       <div class="vm-head">Greeting</div>
       <div id="vm-list"><div class="empty">Loading…</div></div>
@@ -699,6 +718,11 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
         </div>
       </div>
       <div class="loc-status" id="loc-status"></div>
+    </div>
+
+    <div class="set-field">
+      <label>My mobile — 📱 Mobile during a call transfers the caller here</label>
+      <input id="set-mobile" type="tel" placeholder="+66…" autocomplete="off">
     </div>
 
     <div class="set-field">
@@ -1062,20 +1086,22 @@ function loadSettings() {
   try {
     return {
       devMode: localStorage.getItem("vb_devMode") === "1",
-      quickText: localStorage.getItem("vb_quickText") || ""
+      quickText: localStorage.getItem("vb_quickText") || "",
+      mobileNumber: localStorage.getItem("vb_mobileNumber") || ""
     };
-  } catch (e) { return { devMode: false, quickText: "" }; }
+  } catch (e) { return { devMode: false, quickText: "", mobileNumber: "" }; }
 }
 function saveSettings() {
   try {
     localStorage.setItem("vb_devMode", settings.devMode ? "1" : "0");
     localStorage.setItem("vb_quickText", settings.quickText || "");
+    localStorage.setItem("vb_mobileNumber", settings.mobileNumber || "");
   } catch (e) {}
   try {
     fetch(API + "/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ devMode: settings.devMode ? "1" : "0", quickText: settings.quickText || "" })
+      body: JSON.stringify({ devMode: settings.devMode ? "1" : "0", quickText: settings.quickText || "", mobileNumber: settings.mobileNumber || "" })
     });
   } catch (e) {}
 }
@@ -3173,6 +3199,14 @@ function parkCall() {
   noteTransfer("Parked");
   referTo(sipSession, sipTarget(String(PV.parkExtension)), function() { setTimeout(loadParked, 1500); });
 }
+// Blind transfer to the mobile in Settings: for a call breaking up on bad
+// wifi. The caller goes out over voip.ms to the mobile and our leg hangs up.
+function moveToMobile() {
+  var num = settings.mobileNumber;
+  if (!num || !sipSession || !inCall() || consultSession) return;
+  noteTransfer("Moved to mobile " + num);
+  referTo(sipSession, sipTarget(num));
+}
 // A line in the call notes saying where the call went.
 function noteTransfer(text) {
   var line = "<p><i>" + esc(text) + " at " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + "</i></p>";
@@ -3264,6 +3298,7 @@ function renderCallUI() {
   var active = currentCall.state === "active";
   if (onHold && !consultSession) document.getElementById("banner-state").textContent = "⏸ On hold";
   document.getElementById("call-ctl").classList.toggle("hidden", !active || !!consultSession);
+  document.getElementById("ctl-mobile").classList.toggle("hidden", !settings.mobileNumber);
   document.getElementById("ctl-hold").classList.toggle("on", onHold);
   document.getElementById("ctl-hold").textContent = onHold ? "▶ Resume" : "⏸ Hold";
   document.getElementById("consult-bar").classList.toggle("hidden", !consultSession);
@@ -4361,6 +4396,8 @@ function setVmState(d) {
 function renderVoicemail() {
   var d = vmState;
   document.getElementById("vm-direct").checked = !!d.direct;
+  document.getElementById("vm-mobile-first").checked = !!d.mobileFirst;
+  renderRouteQuick();
   var sync = document.getElementById("vm-sync");
   sync.textContent = d.synced ? "✓ Phone system is up to date" : "⏳ Updating the phone system…";
   sync.className = "vm-sync" + (d.synced ? "" : " pending");
@@ -4380,6 +4417,52 @@ function renderVoicemail() {
       + '<button class="vm-del" title="Delete">🗑</button></div>';
   }
   list.innerHTML = html;
+}
+// The topbar's 📼/📱 buttons and the strip under it mirror the two routing
+// switches, so a forgotten "straight to voicemail" is hard to miss.
+function renderRouteQuick() {
+  var d = vmState || {};
+  document.getElementById("qb-vm").classList.toggle("on", !!d.direct);
+  document.getElementById("qb-mob").classList.toggle("on", !!d.mobileFirst);
+  var strip = document.getElementById("route-strip"), off = document.getElementById("route-off");
+  var wait = d.synced === false ? " (updating…)" : "";
+  strip.classList.toggle("hidden", !d.direct && !d.mobileFirst);
+  if (d.direct) {
+    strip.className = "route-strip vm";
+    document.getElementById("route-text").textContent = "📼 All calls go straight to voicemail" + wait;
+    off.onclick = function() { quickToggle("direct"); };
+  } else if (d.mobileFirst) {
+    strip.className = "route-strip mob";
+    document.getElementById("route-text").textContent = "📱 Your mobile rings straight away" + wait;
+    off.onclick = function() { quickToggle("mobileFirst"); };
+  }
+}
+var routePollTimer = null;
+function loadRouteState() {
+  clearTimeout(routePollTimer);
+  vmRequest("GET", "/voicemail").then(function(d) {
+    setVmState(d);
+    // Until Asterisk has applied a change, check back sooner.
+    routePollTimer = setTimeout(loadRouteState, d.synced ? 60000 : 3000);
+  }).catch(function() { routePollTimer = setTimeout(loadRouteState, 60000); });
+}
+function quickToggle(key) {
+  if (!vmState) { loadRouteState(); return; }
+  var body = {};
+  body[key] = !vmState[key];
+  vmState[key] = body[key];
+  renderRouteQuick();
+  vmRequest("POST", "/voicemail", body).then(function(d) { setVmState(d); loadRouteState(); })
+    .catch(function(err) { vmState[key] = !body[key]; renderRouteQuick(); setStatus("❌ Not saved: " + err.message, true); });
+}
+function setMobileFirst(on) {
+  vmRequest("POST", "/voicemail", { mobileFirst: on }).then(function(d) {
+    setVmState(d);
+    vmStatus(on ? "Mobile rings straight away ✓" : "Mobile waits 20 s again ✓", false);
+  }).catch(function(err) {
+    document.getElementById("vm-mobile-first").checked = !on;
+    vmStatus("Not saved: " + err.message, true);
+  });
 }
 function setVmDirect(on) {
   vmRequest("POST", "/voicemail", { direct: on }).then(function(d) {
@@ -4558,6 +4641,7 @@ function openSettings() {
   if (inAndroidWebView()) registerPush();
   document.getElementById("set-dev").checked = settings.devMode;
   document.getElementById("set-quicktext").value = settings.quickText || "";
+  document.getElementById("set-mobile").value = settings.mobileNumber || "";
   renderAccountSelect();
   renderStaffLocation();
   document.getElementById("settings-modal").classList.remove("hidden");
@@ -4767,6 +4851,7 @@ function applyAndReconnect() {
   if (editingAccountId && !saveAccount()) return;
   settings.devMode = document.getElementById("set-dev").checked;
   settings.quickText = document.getElementById("set-quicktext").value;
+  settings.mobileNumber = document.getElementById("set-mobile").value.trim();
   saveSettings();
   settingsBackup = null;
   closeSettings();
@@ -5027,7 +5112,7 @@ function ensureRegistered(now) {
 }
 // Check right away when the network or the PC comes back, and periodically.
 window.addEventListener("online", function() { reconnectDelay = 0; ensureRegistered(true); });
-document.addEventListener("visibilitychange", function() { if (document.visibilityState === "visible") ensureRegistered(); });
+document.addEventListener("visibilitychange", function() { if (document.visibilityState === "visible") { ensureRegistered(); if (bootStarted) loadRouteState(); } });
 setInterval(ensureRegistered, PV.reconnectCheckMs);
 
 // ── boot ───────────────────────────────────────────────────────
@@ -5036,6 +5121,7 @@ function applyBoot() {
   updateAccountHeader();
   loadHistory();
   loadT9Corpus();
+  loadRouteState();
   // Don't wait for SIP to register: the push token is what lets a closed app
   // take calls, so get it even when the connection is slow or failing.
   registerPush();
@@ -5057,6 +5143,7 @@ function boot() {
     var s = d.settings || {};
     if (s.devMode === "1") settings.devMode = true;
     if (s.quickText) settings.quickText = s.quickText;
+    if (s.mobileNumber) settings.mobileNumber = s.mobileNumber;
     if (s.favourites) {
       try {
         var f = JSON.parse(s.favourites);

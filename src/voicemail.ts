@@ -3,7 +3,9 @@ import { ariSyncGreetings } from "./asterisk";
 
 // ── Voicemail greetings ───────────────────────────────────────
 // Greetings are stored in D1. The active one and the straight-to-voicemail
-// switch are settings rows (vm_greeting, vm_direct). Asterisk never plays
+// switch are settings rows (vm_greeting, vm_direct), as is "mobile first"
+// (ring_mobile_first: [ring-mobile] skips its 20s head start for the app and
+// desk phones), which travels the same way. Asterisk never plays
 // anything from here mid-call: greetings-sync.sh on the VPS copies the
 // settings across (GET /voicemail/sync) and reports what it applied
 // (POST /voicemail/synced → vm_applied), so voicemail keeps working while
@@ -28,13 +30,13 @@ function putSetting(env: Env, key: string, value: string) {
   ).bind(key, value, Date.now());
 }
 
-/** What Asterisk should have: "direct 0|1" and "greeting <id> <version>" (or "greeting none"). */
-async function wanted(env: Env): Promise<{ direct: string; greeting: string }> {
-  const s = await getSettings(env, ["vm_direct", "vm_greeting"]);
+/** What Asterisk should have: "direct 0|1", "mobile_first 0|1" and "greeting <id> <version>" (or "greeting none"). */
+async function wanted(env: Env): Promise<{ direct: string; mobileFirst: string; greeting: string }> {
+  const s = await getSettings(env, ["vm_direct", "vm_greeting", "ring_mobile_first"]);
   const g = s.vm_greeting
     ? await env.DB.prepare("SELECT id, updated_at FROM greetings WHERE id = ?1").bind(Number(s.vm_greeting)).first<{ id: number; updated_at: number }>()
     : null;
-  return { direct: s.vm_direct === "1" ? "1" : "0", greeting: g ? `${g.id}-${g.updated_at}` : "none" };
+  return { direct: s.vm_direct === "1" ? "1" : "0", mobileFirst: s.ring_mobile_first === "1" ? "1" : "0", greeting: g ? `${g.id}-${g.updated_at}` : "none" };
 }
 
 async function syncAsterisk(env: Env) {
@@ -51,13 +53,14 @@ async function state(env: Env): Promise<Response> {
     getSettings(env, ["vm_greeting", "vm_applied", "vm_applied_at"]),
     wanted(env),
   ]);
-  let applied: { greeting?: string; direct?: string } = {};
+  let applied: { greeting?: string; direct?: string; mobileFirst?: string } = {};
   try { applied = JSON.parse(s.vm_applied || "{}"); } catch { /* never synced */ }
   return Response.json({
     direct: want.direct === "1",
+    mobileFirst: want.mobileFirst === "1",
     greeting: want.greeting === "none" ? null : Number(s.vm_greeting),
     greetings: greetings.results || [],
-    synced: applied.greeting === want.greeting && applied.direct === want.direct,
+    synced: applied.greeting === want.greeting && applied.direct === want.direct && (applied.mobileFirst ?? "0") === want.mobileFirst,
     syncedAt: Number(s.vm_applied_at) || null,
   });
 }
@@ -66,12 +69,13 @@ export async function handleGetVoicemail(env: Env): Promise<Response> {
   return state(env);
 }
 
-/** {direct?: boolean, greeting?: id | null} */
+/** {direct?: boolean, mobileFirst?: boolean, greeting?: id | null} */
 export async function handleSetVoicemail(request: Request, env: Env): Promise<Response> {
-  let body: { direct?: unknown; greeting?: unknown };
+  let body: { direct?: unknown; mobileFirst?: unknown; greeting?: unknown };
   try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
   const writes = [];
   if (typeof body.direct === "boolean") writes.push(putSetting(env, "vm_direct", body.direct ? "1" : "0"));
+  if (typeof body.mobileFirst === "boolean") writes.push(putSetting(env, "ring_mobile_first", body.mobileFirst ? "1" : "0"));
   if (body.greeting === null) writes.push(putSetting(env, "vm_greeting", ""));
   else if (typeof body.greeting === "number") {
     const g = await env.DB.prepare("SELECT id FROM greetings WHERE id = ?1").bind(body.greeting).first();
@@ -129,13 +133,13 @@ export async function handleGreetingAudio(env: Env, id: number): Promise<Respons
 export async function handleVoicemailSync(env: Env): Promise<Response> {
   const want = await wanted(env);
   const [id, ver] = want.greeting === "none" ? ["none", ""] : want.greeting.split("-");
-  return new Response(`direct ${want.direct}\ngreeting ${id}${ver ? " " + ver : ""}\n`, { headers: { "Content-Type": "text/plain" } });
+  return new Response(`direct ${want.direct}\nmobile_first ${want.mobileFirst}\ngreeting ${id}${ver ? " " + ver : ""}\n`, { headers: { "Content-Type": "text/plain" } });
 }
 
-/** greetings-sync.sh reports what it applied: greeting=<id>-<version>|none, direct=0|1. */
+/** greetings-sync.sh reports what it applied: greeting=<id>-<version>|none, direct=0|1, mobile_first=0|1. */
 export async function handleVoicemailSynced(request: Request, env: Env): Promise<Response> {
   const p = new URLSearchParams(await request.text());
-  const applied = { greeting: p.get("greeting") || "none", direct: p.get("direct") === "1" ? "1" : "0" };
+  const applied = { greeting: p.get("greeting") || "none", direct: p.get("direct") === "1" ? "1" : "0", mobileFirst: p.get("mobile_first") === "1" ? "1" : "0" };
   await env.DB.batch([putSetting(env, "vm_applied", JSON.stringify(applied)), putSetting(env, "vm_applied_at", String(Date.now()))]);
   return Response.json({ ok: true });
 }
