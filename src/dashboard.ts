@@ -149,6 +149,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .hist-transcript .tl.hit{background:#3a3210;border-radius:6px}
 #cd-pane-transcript .hist-transcript{max-height:none}
 .hist-transcript button{background:#2c2c2c;border:none;color:#ececec;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer}
+.set-note{font-size:12px;color:#9ca3af;margin:6px 0 2px}
+.set-note.err{color:#f87171}
+.set-google{display:flex;align-items:center;gap:8px;margin:4px 0}
+.set-google .set-note{flex:1;margin:0}
+.set-google .acc-mini{width:auto;height:30px;padding:0 10px;font-size:13px}
 .contact-row .mini-call{width:38px;height:38px;border-radius:50%;border:none;background:#10b981;color:#fff;font-size:16px;cursor:pointer;flex-shrink:0}
 .empty{color:#666;text-align:center;padding:28px 0;font-size:14px}
 .day-head{font-size:11px;font-weight:700;letter-spacing:.5px;color:#888;text-transform:uppercase;padding:14px 4px 6px;position:sticky;top:0;z-index:2;background:#000}
@@ -308,7 +313,28 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 .view h2{color:#f0a33c;border-left:3px solid #f0a33c;padding-left:8px}
 #view-contacts h2{color:#4db8ff;border-left-color:#4db8ff}
 #view-messages h2{color:#34d399;border-left-color:#34d399}
-#view-favourites h2{color:#f7c948;border-left-color:#f7c948}
+#view-activities h2{color:#f7c948;border-left-color:#f7c948}
+/* activities */
+.act-row{display:flex;align-items:center;gap:10px;padding:10px 4px 10px 10px;border-bottom:1px solid #222;border-left:3px solid #10b981;cursor:pointer}
+.act-row.overdue{border-left-color:#ef4444}
+.act-row.today{border-left-color:#f0a33c}
+.act-row .info{flex:1;min-width:0}
+.act-row .t{font-size:15px;font-weight:600}
+.act-row .sub{font-size:12px;color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.act-row .due{font-size:12px;color:#10b981}
+.act-row.overdue .due{color:#ef4444}
+.act-row.today .due{color:#f0a33c}
+.act-row .act-done{width:38px;height:38px;border-radius:50%;border:1px solid #333;background:none;color:#ccc;font-size:16px;cursor:pointer;flex-shrink:0}
+.act-row .mini-call{width:38px;height:38px;border-radius:50%;border:none;background:#10b981;color:#fff;font-size:16px;cursor:pointer;flex-shrink:0}
+.act-row .mini-call:disabled{background:#333;color:#666;cursor:default}
+.menu-btn{position:relative}
+.nav-badge{position:absolute;top:2px;left:50%;margin-left:6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center}
+/* contacts source filter */
+.ct-filter{display:flex;gap:6px;margin:0 0 10px;overflow-x:auto;scrollbar-width:none}
+.ct-filter button{flex:0 0 auto;display:flex;align-items:center;gap:5px;background:#1a1a1a;border:1px solid #2c2c2c;border-radius:16px;color:#bbb;font-size:13px;padding:6px 12px;cursor:pointer}
+.ct-filter button.active{background:#4db8ff;border-color:#4db8ff;color:#04121f;font-weight:600}
+.ct-filter img,.src-ico{width:16px;height:16px;border-radius:3px;vertical-align:-3px}
+.src-tag{font-size:12px;margin-left:6px;opacity:.8}
 .msg-row .subj{color:#e6e6e6}
 /* favourites star */
 .fav-star{flex-shrink:0;background:none;border:none;font-size:24px;line-height:1;cursor:pointer;padding:2px 4px;color:#555;width:38px;margin-left:auto}
@@ -625,15 +651,22 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       </div>
     </div>
 
-    <!-- FAVOURITES VIEW -->
-    <div class="view hidden" id="view-favourites">
-      <h2>⭐ Favourites</h2>
-      <div id="fav-list"><div class="empty">No favourites yet</div></div>
+    <!-- ACTIVITIES VIEW (Odoo "Call" activities) -->
+    <div class="view hidden" id="view-activities">
+      <h2>📋 Activities</h2>
+      <div id="activities-list"><div class="empty">Loading…</div></div>
     </div>
 
     <!-- CONTACTS VIEW -->
     <div class="view hidden" id="view-contacts">
       <h2>👥 Contacts</h2>
+      <div class="ct-filter" id="ct-filter">
+        <button data-src="all" onclick="setContactsTab('all')">All</button>
+        <button data-src="fav" class="active" onclick="setContactsTab('fav')">★ Favourites</button>
+        <button data-src="phone" onclick="setContactsTab('phone')">📱 Phone</button>
+        <button data-src="odoo" onclick="setContactsTab('odoo')"><img src="/icons/icon-192.png" alt="">Odoo</button>
+        <button data-src="gmail" onclick="setContactsTab('gmail')">✉️ Gmail</button>
+      </div>
       <div class="entry">
         <input id="contact-search" type="text" placeholder="Search contacts" autocomplete="off">
       </div>
@@ -649,7 +682,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 
   <nav class="bottom-menu">
     <button class="menu-btn active" data-view="dial" onclick="switchView('dial')"><span class="ico">🕐</span><span>History</span></button>
-    <button class="menu-btn" data-view="favourites" onclick="switchView('favourites')"><span class="ico">⭐</span><span>Favourites</span></button>
+    <button class="menu-btn" data-view="activities" onclick="switchView('activities')"><span class="ico">📋</span><span>Activities</span><b class="nav-badge hidden" id="act-badge"></b></button>
     <button class="dial-fab" id="nav-dial" onclick="navDialAction()" aria-label="Dial"><span class="fab">📞</span></button>
     <button class="menu-btn" data-view="contacts" onclick="switchView('contacts')"><span class="ico">👥</span><span>Contacts</span></button>
     <button class="menu-btn" data-view="messages" onclick="switchView('messages')"><span class="ico">💬</span><span>Messages</span></button>
@@ -674,6 +707,8 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       <button class="acc-mini del" onclick="deleteAccount()" title="Delete account" aria-label="Delete account">🗑</button>
     </div>
     <div class="hidden" id="push-state" style="font-size:12px;color:#9ca3af;margin:6px 0 2px"></div>
+    <div id="session-state" class="set-note">Not signed in</div>
+    <div class="set-google"><span id="google-state" class="set-note">Google: …</span><button class="acc-mini" id="google-connect" onclick="connectGoogle()">Connect</button><button class="acc-mini del hidden" id="google-disconnect" onclick="disconnectGoogle()" title="Disconnect Google">✕</button></div>
 
     <div id="account-editor" class="hidden">
       <div class="set-grid">
@@ -762,6 +797,110 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 <script>
 // ── config ─────────────────────────────────────────────────────
 var API = "https://voip-bridge.wandering-mode-c597.workers.dev";
+
+// ── Signing in ─────────────────────────────────────────────────
+// The worker is multi-user: each extension belongs to an Odoo user, and
+// calls, activities, settings and Google are that user's. The page signs in
+// with the active SIP account's extension and password and sends the token
+// it gets on every API call; a 401 (expired, or the account changed) signs
+// in again once and retries.
+var sessionToken = localStorage.getItem("vb_session") || "";
+var sessionInfo = null, sessionError = "", signingIn = null;
+var rawFetch = window.fetch.bind(window);
+function signIn() {
+  if (signingIn) return signingIn;
+  var a = activeAccount();
+  if (!a || !a.username || !a.password) {
+    sessionError = "Add your extension and password to sign in";
+    renderSessionState();
+    return Promise.resolve(null);
+  }
+  signingIn = rawFetch(API + "/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ext: String(a.username), password: a.password })
+  }).then(function(r) {
+    return r.json().then(function(d) {
+      sessionToken = r.ok && d.token ? d.token : "";
+      sessionInfo = r.ok ? d.user : null;
+      sessionError = r.ok ? "" : (d.error || "Sign-in failed");
+      try { localStorage.setItem("vb_session", sessionToken); } catch (e) {}
+      renderSessionState();
+      return sessionInfo;
+    });
+  }).catch(function() {
+    sessionError = "Can't reach the server to sign in";
+    renderSessionState();
+    return null;
+  }).then(function(u) { signingIn = null; return u; });
+  return signingIn;
+}
+function renderSessionState() {
+  var el = document.getElementById("session-state");
+  if (!el) return;
+  el.textContent = sessionInfo ? "Signed in as " + sessionInfo.name + " (ext " + sessionInfo.ext + ")" : (sessionError || "Not signed in");
+  el.classList.toggle("err", !sessionInfo && !!sessionError);
+}
+function withSession(init) {
+  init = init || {};
+  var h = new Headers(init.headers || {});
+  if (sessionToken) h.set("Authorization", "Bearer " + sessionToken);
+  var out = {};
+  for (var k in init) out[k] = init[k];
+  out.headers = h;
+  return out;
+}
+window.fetch = function(input, init) {
+  var url = typeof input === "string" ? input : input.url;
+  if (url.indexOf(API) !== 0 || url.indexOf(API + "/auth/") === 0) return rawFetch(input, init);
+  var ready = sessionToken ? Promise.resolve() : signIn();
+  return ready.then(function() { return rawFetch(input, withSession(init)); }).then(function(r) {
+    if (r.status !== 401) return r;
+    sessionToken = "";
+    return signIn().then(function(u) { return u ? rawFetch(input, withSession(init)) : r; });
+  });
+};
+function apiMe() {
+  if (!sessionToken) return;
+  fetch(API + "/auth/me").then(function(r) { return r.json(); }).then(function(d) {
+    if (d.user) { sessionInfo = d.user; sessionError = ""; renderSessionState(); }
+  }).catch(function() {});
+}
+
+// ── Google account (each user connects their own) ──────────────
+var googleAcct = null;
+function loadGoogleState() {
+  var el = document.getElementById("google-state");
+  if (!el) return;
+  fetch(API + "/google/status").then(function(r) { return r.json(); }).then(function(d) {
+    googleAcct = d.account || null;
+    renderGoogleState();
+  }).catch(function() { el.textContent = "Google: unavailable"; });
+}
+function renderGoogleState() {
+  var el = document.getElementById("google-state");
+  el.textContent = googleAcct ? "Google: " + googleAcct.email : "Google: not connected (Gmail emails and contacts)";
+  document.getElementById("google-connect").textContent = googleAcct ? "Reconnect" : "Connect";
+  document.getElementById("google-disconnect").classList.toggle("hidden", !(googleAcct && googleAcct.own));
+}
+function connectGoogle() {
+  if (!sessionToken) { signIn().then(function(u) { if (u) connectGoogle(); }); return; }
+  // Google refuses to sign in inside the app's WebView, so in the app this
+  // opens the system browser; either way Google's answer comes back here.
+  location.href = API + "/google/connect?session=" + encodeURIComponent(sessionToken) + "&back=" + encodeURIComponent(location.origin + location.pathname);
+}
+function disconnectGoogle() {
+  fetch(API + "/google/disconnect", { method: "POST" }).then(loadGoogleState).catch(function() {});
+}
+// Back from Google's consent screen: say how it went and tidy the URL.
+(function() {
+  var g = new URLSearchParams(location.search).get("google");
+  if (!g) return;
+  history.replaceState(null, "", location.pathname);
+  document.addEventListener("DOMContentLoaded", function() {
+    setStatus(g === "connected" ? "✅ Google account connected" : "⚠️ " + g, g !== "connected");
+  });
+})();
 
 // ── Parameter table ────────────────────────────────────────────
 // Every tunable that used to be a hardcoded literal is declared here once
@@ -1040,7 +1179,7 @@ function toggleFav(c) {
   var id = c && c.id != null ? String(c.id) : null;
   if (id == null) return;
   if (isFav(id)) { favourites = favourites.filter(function(x) { return String(x.id) !== id; }); }
-  else { favourites.push({ id: id, name: c.name || "", num: c.mobile || c.phone || "" }); }
+  else { favourites.push({ id: id, name: c.name || "", num: c.mobile || c.phone || "", email: c.email || "" }); }
   persistFavourites();
 }
 
@@ -1080,6 +1219,9 @@ function persistAccounts() {
     localStorage.setItem("vb_accounts", JSON.stringify(accounts));
     localStorage.setItem("vb_activeAccount", activeAccountId);
   } catch (e) {}
+  // The account decides who we are to the server, so sign in as it again.
+  sessionToken = "";
+  signIn();
 }
 
 function loadSettings() {
@@ -1347,7 +1489,7 @@ function switchView(name) {
   var b = document.querySelector('.menu-btn[data-view="' + name + '"]');
   if (b) b.classList.add("active");
   if (name === "dial") { loadHistory(); loadT9Corpus(); }
-  if (name === "favourites") renderFavourites();
+  if (name === "activities") loadActivities();
   if (name === "contacts") loadContacts(document.getElementById("contact-search").value);
   if (name === "messages") loadMessages();
 }
@@ -3565,44 +3707,175 @@ function fmtTime(ts) {
   return sameDay ? hh + ":" + mm : d.toLocaleDateString(undefined, { day: "numeric", month: "short" }) + " " + hh + ":" + mm;
 }
 
-// ── favourites ─────────────────────────────────────────────────
-function renderFavourites() {
-  var el = document.getElementById("fav-list");
-  if (!favourites.length) { el.innerHTML = '<div class="empty">No favourites yet — tap ★ on a contact</div>'; return; }
-  el.innerHTML = favourites.map(function(f) {
-    var num = f.num || "";
-    return '<div class="contact-row" data-id="' + esc(f.id) + '"><div><div class="cname">' + esc(f.name || f.id) + '</div>' + (num ? '<div class="sub">' + esc(num) + '</div>' : '') + '</div><button class="fav-star on" data-id="' + esc(f.id) + '">★</button>' + (num ? '<button class="mini-call" data-num="' + esc(num) + '">📞</button>' : '') + '</div>';
+// ── activities (Odoo "Call" activities for the worker's user) ──
+var activities = [];
+function loadActivities() {
+  var el = document.getElementById("activities-list");
+  if (!activities.length) el.innerHTML = '<div class="empty">Loading…</div>';
+  fetch(API + "/activities").then(function(r) { return r.json(); }).then(function(d) {
+    if (d.error) { el.innerHTML = '<div class="empty">' + esc(d.error) + '</div>'; return; }
+    activities = d.activities || [];
+    renderActivities();
+  }).catch(function() { el.innerHTML = '<div class="empty">Error</div>'; });
+}
+function activityDue(a) {
+  if (a.state === "today") return "Today";
+  var d = new Date(a.deadline + "T00:00:00");
+  var days = Math.round((d - new Date(new Date().toDateString())) / 86400000);
+  if (days < 0) return (-days) + "d overdue";
+  if (days === 1) return "Tomorrow";
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+function renderActivities() {
+  var el = document.getElementById("activities-list");
+  var urgent = activities.filter(function(a) { return a.state !== "planned"; }).length;
+  var badge = document.getElementById("act-badge");
+  badge.textContent = urgent;
+  badge.classList.toggle("hidden", !urgent);
+  if (!activities.length) { el.innerHTML = '<div class="empty">No call activities — plan one in Odoo with the "Call" activity type</div>'; return; }
+  el.innerHTML = activities.map(function(a, i) {
+    return '<div class="act-row ' + esc(a.state) + '" data-i="' + i + '"><div class="info">'
+      + '<div class="t">' + esc(a.summary) + '</div>'
+      + '<div class="sub">' + esc(a.record_name) + (a.phone ? ' · ' + esc(a.phone) : '') + '</div>'
+      + (a.note ? '<div class="sub">' + esc(a.note) + '</div>' : '')
+      + '<div class="due">' + esc(activityDue(a)) + '</div></div>'
+      + '<button class="act-done" title="Mark done">✓</button>'
+      + '<button class="mini-call"' + (a.phone ? '' : ' disabled') + '>📞</button></div>';
   }).join("");
 }
-document.getElementById("fav-list").addEventListener("click", function(e) {
-  var fav = e.target.closest(".fav-star");
-  if (fav) {
-    toggleFav({ id: fav.getAttribute("data-id") });
-    renderFavourites();
+document.getElementById("activities-list").addEventListener("click", function(e) {
+  var row = e.target.closest(".act-row");
+  if (!row) return;
+  var a = activities[+row.getAttribute("data-i")];
+  if (!a) return;
+  if (e.target.closest(".mini-call")) { if (a.phone) prepareDial(a.phone, a.partner ? a.partner.name : a.record_name); return; }
+  if (e.target.closest(".act-done")) {
+    activities = activities.filter(function(x) { return x.id !== a.id; });
+    renderActivities();
+    fetch(API + "/activities/" + a.id + "/done", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+      .then(function(r) { if (!r.ok) throw new Error(); })
+      .catch(function() { loadActivities(); });
     return;
   }
-  var mini = e.target.closest(".mini-call");
-  if (mini) { prepareDial(mini.getAttribute("data-num")); return; }
+  if (a.partner) openContactFull({ id: a.partner.id, name: a.partner.name });
 });
+document.addEventListener("DOMContentLoaded", loadActivities);
 
-// ── contacts (D1 cache, debounced type-ahead) ─────────────────
+// ── contacts: All / ★ Favourites / Phone / Odoo / Gmail filters ──
+// Odoo comes from the D1 cache (debounced type-ahead); Phone is the Android
+// address book (DeviceContacts plugin, app only); Gmail is Google Contacts
+// through the worker. Phone and Gmail load once and filter here.
+// Favourites keep each source's key: Odoo ids are plain, the others are
+// "dev:<id>" / "g:<id>".
+var contactsTab = "fav";
 var contactTimer = null;
 var contactsCache = {};
+var deviceContacts = null, deviceContactsError = "";
+var googleContacts = null, googleContactsError = "";
+function setContactsTab(tab) {
+  contactsTab = tab;
+  var btns = document.querySelectorAll("#ct-filter button");
+  for (var i = 0; i < btns.length; i++) btns[i].classList.toggle("active", btns[i].getAttribute("data-src") === tab);
+  loadContacts(document.getElementById("contact-search").value.trim());
+}
+function contactSource(id) {
+  id = String(id);
+  return id.indexOf("dev:") === 0 ? "phone" : id.indexOf("g:") === 0 ? "gmail" : "odoo";
+}
+function nativeContacts() {
+  var Cap = window.Capacitor;
+  if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform()) return null;
+  return (Cap.Plugins && Cap.Plugins.DeviceContacts) || null;
+}
+function loadDeviceContacts() {
+  if (deviceContacts) return Promise.resolve(deviceContacts);
+  var DC = nativeContacts();
+  if (!DC) { deviceContactsError = "Phone contacts are only in the Android app"; return Promise.resolve([]); }
+  return DC.list().then(function(r) {
+    deviceContacts = ((r && r.contacts) || []).map(function(c) {
+      return { id: "dev:" + c.id, name: c.name || c.numbers[0], phone: c.numbers[0] || "", numbers: c.numbers, email: "" };
+    });
+    deviceContactsError = "";
+    return deviceContacts;
+  }).catch(function(e) {
+    deviceContactsError = e && e.code === "DENIED" ? "Allow Contacts for VoIP Bridge in Android Settings to see phone contacts" : "Couldn't read phone contacts";
+    return [];
+  });
+}
+function loadGoogleContacts() {
+  if (googleContacts) return Promise.resolve(googleContacts);
+  return fetch(API + "/contacts/google").then(function(r) { return r.json(); }).then(function(d) {
+    if (d.error) { googleContactsError = d.error; return []; }
+    googleContacts = (d.contacts || []).map(function(c) {
+      return { id: "g:" + c.id, name: c.name, phone: c.numbers[0] || "", numbers: c.numbers, email: c.email || "" };
+    });
+    googleContactsError = "";
+    return googleContacts;
+  }).catch(function() { googleContactsError = "Couldn't load Gmail contacts"; return []; });
+}
+function loadOdooContacts(q) {
+  return fetch(API + "/contacts/cache?q=" + encodeURIComponent(q) + "&limit=" + PV.contactsLimit).then(function(r){return r.json();}).then(function(d){
+    return d.contacts || [];
+  });
+}
+function contactMatches(c, q) {
+  if (!q) return true;
+  var lq = q.toLowerCase();
+  if ((c.name || "").toLowerCase().indexOf(lq) >= 0 || (c.email || "").toLowerCase().indexOf(lq) >= 0) return true;
+  var dq = q.replace(/[^0-9]/g, "");
+  if (!dq) return false;
+  var nums = c.numbers || [c.phone, c.mobile];
+  for (var i = 0; i < nums.length; i++) if (nums[i] && nums[i].replace(/[^0-9]/g, "").indexOf(dq) >= 0) return true;
+  return false;
+}
+function byName(a, b) { return (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }); }
+var SRC_TAG = { phone: '<span class="src-tag">📱</span>', gmail: '<span class="src-tag">✉️</span>', odoo: '<img class="src-ico src-tag" src="/icons/icon-192.png" alt="">' };
+function contactRowHtml(c, showSrc) {
+  var src = contactSource(c.id);
+  var num = c.mobile || c.phone || "";
+  var sel = (activeContact && String(activeContact.id) === String(c.id)) ? " selected" : "";
+  var star = '<button class="fav-star' + (isFav(c.id) ? ' on' : '') + '" data-id="' + esc(c.id) + '">★</button>';
+  var name = src === "odoo" ? '<span class="cname-text" title="Click to rename">' + esc(c.name) + '</span>' : esc(c.name);
+  var more = c.numbers && c.numbers.length > 1 ? ' +' + (c.numbers.length - 1) : '';
+  return '<div class="contact-row' + sel + '" data-id="' + esc(c.id) + '" data-key="c-' + esc(c.id) + '"><div style="flex:1;min-width:0"><div class="cname">' + name + (c.is_company ? " 🏢" : "") + (showSrc ? SRC_TAG[src] : "") + '<span class="cname-status"></span></div>' + (num ? '<div class="sub">' + esc(num) + more + '</div>' : '') + (c.email ? '<div class="sub">' + esc(c.email) + '</div>' : '') + '</div>' + star + (num ? '<button class="mini-call" data-num="' + esc(num) + '">📞</button>' : '') + '</div>';
+}
+var contactsSeq = 0;
 function loadContacts(q) {
   var el = document.getElementById("contacts-list");
-  el.innerHTML = '<div class="empty">Loading…</div>';
-  fetch(API + "/contacts/cache?q=" + encodeURIComponent(q) + "&limit=" + PV.contactsLimit).then(function(r){return r.json();}).then(function(d){
-    var list = d.contacts || [];
+  var tab = contactsTab, seq = ++contactsSeq;
+  var job;
+  if (tab === "fav") {
+    job = Promise.resolve(favourites.map(function(f) { return { id: f.id, name: f.name || f.num || String(f.id), phone: f.num || "", email: f.email || "" }; }));
+  } else if (tab === "phone") {
+    el.innerHTML = '<div class="empty">Loading…</div>';
+    job = loadDeviceContacts();
+  } else if (tab === "gmail") {
+    el.innerHTML = '<div class="empty">Loading…</div>';
+    job = loadGoogleContacts();
+  } else if (tab === "odoo") {
+    el.innerHTML = '<div class="empty">Loading…</div>';
+    job = loadOdooContacts(q);
+  } else {
+    el.innerHTML = '<div class="empty">Loading…</div>';
+    job = Promise.all([loadOdooContacts(q), deviceContacts ? Promise.resolve(deviceContacts) : (nativeContacts() ? loadDeviceContacts() : Promise.resolve([])), loadGoogleContacts()])
+      .then(function(r) { return r[0].concat(r[1], r[2]); });
+  }
+  job.then(function(list) {
+    if (seq !== contactsSeq) return;
+    if (tab !== "odoo") list = list.filter(function(c) { return contactMatches(c, q); });
+    if (tab === "fav" || tab === "all") list = list.slice().sort(byName);
     contactsCache = {};
     for (var i = 0; i < list.length; i++) contactsCache[list[i].id] = list[i];
-    if (!list.length) { el.innerHTML = '<div class="empty">No contacts found</div>'; return; }
-    el.innerHTML = list.map(function(c) {
-      var num = c.mobile || c.phone || "";
-      var sel = (activeContact && activeContact.id === c.id) ? " selected" : "";
-      var star = '<button class="fav-star' + (isFav(c.id) ? ' on' : '') + '" data-id="' + esc(c.id) + '">★</button>';
-      return '<div class="contact-row' + sel + '" data-id="' + esc(c.id) + '" data-key="c-' + esc(c.id) + '"><div style="flex:1;min-width:0"><div class="cname"><span class="cname-text" title="Click to rename">' + esc(c.name) + '</span>' + (c.is_company ? " 🏢" : "") + '<span class="cname-status"></span></div>' + (num ? '<div class="sub">' + esc(num) + '</div>' : '') + (c.email ? '<div class="sub">' + esc(c.email) + '</div>' : '') + '</div>' + star + (num ? '<button class="mini-call" data-num="' + esc(num) + '">📞</button>' : '') + '</div>';
-    }).join("");
-  }).catch(function(){ el.innerHTML = '<div class="empty">Error</div>'; });
+    if (!list.length) {
+      var msg = tab === "fav" ? (q ? "No matching favourites" : "No favourites yet — tap ★ on a contact")
+        : tab === "phone" && deviceContactsError ? deviceContactsError
+        : tab === "gmail" && googleContactsError ? googleContactsError
+        : "No contacts found";
+      el.innerHTML = '<div class="empty">' + esc(msg) + '</div>';
+      return;
+    }
+    el.innerHTML = list.map(function(c) { return contactRowHtml(c, tab === "all" || tab === "fav"); }).join("");
+  }).catch(function(){ if (seq === contactsSeq) el.innerHTML = '<div class="empty">Error</div>'; });
 }
 document.getElementById("contact-search").addEventListener("input", function(e) {
   var q = e.target.value.trim();
@@ -3629,6 +3902,11 @@ document.getElementById("contacts-list").addEventListener("click", function(e) {
   if (!row) return;
   var c = contactsCache[row.getAttribute("data-id")];
   if (!c) return;
+  // Only Odoo contacts have a detail screen; the others dial on double-tap.
+  if (contactSource(c.id) !== "odoo") {
+    rowClick(row.getAttribute("data-key"), "extcontact", c, function() { deselect(); prepareDial(c.phone || "", c.name); });
+    return;
+  }
   rowClick(row.getAttribute("data-key"), "contact", c, function() { openContactFull(c); });
 });
 
@@ -3738,6 +4016,8 @@ function renderActionBar() {
     var c = selected.data;
     var num = c.phone || c.mobile || "";
     h = (num ? '<button class="green" onclick="prepareDialSelected()">📞 Dial</button>' : '') + '<button onclick="openMessages()">💬 Messages</button>' + '<button class="primary" onclick="openContactFull()">👤 Open</button>';
+  } else if (selected.type === "extcontact") {
+    h = selected.data.phone ? '<button class="green" onclick="prepareDialSelected()">📞 Dial</button>' : '';
   } else if (selected.type === "message") {
     h = '<button onclick="replyMessage()">↩ Reply</button>' + '<button class="primary" onclick="openMessageFull()">📖 Open</button>';
   } else if (selected.type === "call") {
@@ -4644,6 +4924,8 @@ function openSettings() {
   document.getElementById("set-mobile").value = settings.mobileNumber || "";
   renderAccountSelect();
   renderStaffLocation();
+  renderSessionState();
+  loadGoogleState();
   document.getElementById("settings-modal").classList.remove("hidden");
 }
 
@@ -5159,6 +5441,7 @@ function boot() {
   }).catch(function() {});
 }
 document.addEventListener("DOMContentLoaded", boot);
+document.addEventListener("DOMContentLoaded", apiMe);
 document.addEventListener("DOMContentLoaded", checkAppUpdate);
 document.addEventListener("DOMContentLoaded", loadParked);
 </script>

@@ -83,5 +83,7 @@ export interface Env {
   FCM_SERVICE_ACCOUNT: string; // Firebase service-account JSON (secret)
   PUSH_SECRET: string; // shared secret Asterisk sends to /push/wake (secret)
   STAFF_TOKEN_SECRET: string; // signs staff location-tracking tokens (secret, src/staff.ts)
+  SESSION_SECRET?: string; // signs dashboard sessions (secret, src/users.ts); falls back to one derived from STAFF_TOKEN_SECRET
+  API_TOKEN?: string; // the Odoo addon's bearer token (secret, src/users.ts); unset = no service access
   AI: { run(model: string, inputs: Record<string, unknown>): Promise<unknown> }; // Workers AI binding
 }

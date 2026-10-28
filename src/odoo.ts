@@ -1,6 +1,6 @@
 import type { Env, D1PreparedStatement } from "./types";
 import { ariRecordingFile } from "./asterisk";
-import { groupCallLegs, handlingExtension, HIDDEN_EXTENSIONS } from "./calllegs";
+import { groupCallLegs, handlingExtension } from "./calllegs";
 
 // ── Odoo XML-RPC client (hand-rolled, no library) ────────────
 
@@ -299,6 +299,103 @@ export async function renameContact(env: Env, id: number, name: string): Promise
   return true;
 }
 
+// ── Call activities (Odoo's "Call" activity type) ─────────────
+
+export interface CallActivity {
+  id: number;
+  summary: string;
+  note: string;
+  deadline: string;
+  state: string;            // overdue | today | planned
+  record_name: string;
+  res_model: string;
+  res_id: number;
+  partner: { id: number; name: string } | null;
+  phone: string;
+}
+
+const ACTIVITY_PHONE_FIELDS = ["phone", "mobile", "partner_phone"];
+
+/** A user's open "Call" activities, soonest first, each with the number to
+ *  ring: the record's own phone fields, else its contact's. */
+export async function callActivities(env: Env, userId: number, limit = 50): Promise<CallActivity[]> {
+  const uid = await odooAuth(env);
+  if (!uid) throw new Error("Odoo unavailable");
+  const r = await odooCall(env, uid, "mail.activity", "search_read",
+    [[["user_id", "=", userId], ["activity_type_id.category", "=", "phonecall"]]],
+    { fields: ["summary", "note", "date_deadline", "state", "res_model", "res_id", "res_name", "activity_type_id"], order: "date_deadline, id", limit });
+  if (r.fault) throw new Error(r.fault);
+  const acts = (r.parsed ?? []) as Array<Record<string, unknown>>;
+
+  // Phone fields of each record, a read per model.
+  const records = new Map<string, Record<string, unknown>>();
+  const byModel = new Map<string, number[]>();
+  for (const a of acts) {
+    const m = s(a.res_model);
+    if (!byModel.has(m)) byModel.set(m, []);
+    byModel.get(m)!.push(a.res_id as number);
+  }
+  for (const [model, ids] of byModel) {
+    const fg = await odooCall(env, uid, model, "fields_get", [], { attributes: ["type"] });
+    const have = (fg.parsed ?? {}) as Record<string, unknown>;
+    const fields = [...ACTIVITY_PHONE_FIELDS, "partner_id"].filter(f => f in have);
+    const rr = await odooCall(env, uid, model, "read", [ids], { fields: [...fields, "display_name"] });
+    for (const rec of (rr.parsed ?? []) as Array<Record<string, unknown>>) records.set(`${model}:${rec.id}`, rec);
+  }
+  // Contacts of records without a number of their own.
+  const partnerIds = new Set<number>();
+  for (const rec of records.values()) {
+    if (!ACTIVITY_PHONE_FIELDS.some(f => rec[f]) && Array.isArray(rec.partner_id)) partnerIds.add(rec.partner_id[0] as number);
+  }
+  const partners = new Map<number, Record<string, unknown>>();
+  if (partnerIds.size) {
+    const pr = await odooCall(env, uid, "res.partner", "read", [[...partnerIds]], { fields: ["phone", "mobile"] });
+    for (const p of (pr.parsed ?? []) as Array<Record<string, unknown>>) partners.set(p.id as number, p);
+  }
+
+  const out: CallActivity[] = [];
+  for (const a of acts) {
+    const model = s(a.res_model), resId = a.res_id as number;
+    const rec = records.get(`${model}:${resId}`);
+    if (!rec) continue; // record deleted
+    let phone = "";
+    for (const f of ACTIVITY_PHONE_FIELDS) if (rec[f]) { phone = s(rec[f]); break; }
+    let partner: CallActivity["partner"] = null;
+    if (model === "res.partner") partner = { id: resId, name: s(rec.display_name) };
+    else if (Array.isArray(rec.partner_id)) partner = { id: rec.partner_id[0] as number, name: s(rec.partner_id[1]) };
+    if (!phone && partner) {
+      const p = model === "res.partner" ? rec : partners.get(partner.id);
+      if (p) phone = s(p.phone) || s(p.mobile);
+    }
+    const type = Array.isArray(a.activity_type_id) ? s(a.activity_type_id[1]) : "";
+    out.push({
+      id: a.id as number,
+      summary: s(a.summary) || type || "Call",
+      note: s(a.note).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 140),
+      deadline: s(a.date_deadline),
+      state: s(a.state),
+      record_name: s(rec.display_name) || s(a.res_name),
+      res_model: model,
+      res_id: resId,
+      partner,
+      phone,
+    });
+  }
+  return out;
+}
+
+/** Mark one of a user's activities done (it moves to the record's chatter). */
+export async function activityDone(env: Env, userId: number, id: number, feedback = ""): Promise<boolean> {
+  const uid = await odooAuth(env);
+  if (!uid) return false;
+  const mine = await odooCall(env, uid, "mail.activity", "search_count", [[["id", "=", id], ["user_id", "=", userId]]]);
+  if (mine.parsed !== 1) return false;
+  const r = await odooCall(env, uid, "mail.activity", "action_feedback", [[id]], feedback ? { feedback } : {});
+  // Some versions return None, which XML-RPC can't send back; the work is done by then.
+  if (r.fault && !/marshal None/.test(r.fault)) { console.error("Odoo activity done failed:", r.fault); return false; }
+  return true;
+}
+
 // ── Contact search + D1 cache (Phase 1) ───────────────────────
 
 export interface Contact {
@@ -591,10 +688,8 @@ export async function pushCallToOdoo(env: Env, callId: string, withRecording = f
   if (!legs.length) return null;
   const markSynced = () => env.DB.batch(legs.map(l =>
     env.DB.prepare("UPDATE call_log SET odoo_synced_at = ?1 WHERE call_id = ?2").bind(Date.now(), l.call_id)));
-  // Calls taken on a hidden extension aren't this Odoo user's (calllegs.ts);
-  // marked as synced so the backfill doesn't keep picking them.
+  // bridge_upsert gives the call to its extension's user in Odoo.
   const ext = handlingExtension(legs);
-  if (ext && HIDDEN_EXTENSIONS.has(ext)) { await markSynced(); return null; }
   const uid = await odooAuth(env);
   if (!uid) return null;
   const phoneBridge = await hasPhoneBridge(env, uid);
@@ -847,6 +942,7 @@ export interface Message {
   direction?: string;
   source?: string;
   date?: number;
+  user_id?: number;    // Gmail rows: whose mailbox
 }
 
 // Our own outbound mail domains — used to infer message direction.
@@ -899,10 +995,10 @@ export async function upsertMessages(env: Env, msgs: Message[]): Promise<void> {
       ).bind(m.odoo_id, m.contact_id ?? null, m.res_model ?? "", m.res_id ?? null, m.subject ?? "", m.body ?? "", m.email_from ?? "", m.author_id ?? null, m.message_type ?? "", m.direction ?? "", m.date ?? null, Date.now()));
     } else if (m.gmail_id != null) {
       statements.push(env.DB.prepare(
-        `INSERT INTO messages (gmail_id, contact_id, subject, body, email_from, direction, source, date, updated_at)
-         VALUES (?1,?2,?3,?4,?5,?6,'gmail',?7,?8)
-         ON CONFLICT(gmail_id) DO UPDATE SET subject=excluded.subject, body=excluded.body, email_from=excluded.email_from, direction=excluded.direction, date=excluded.date, updated_at=excluded.updated_at`
-      ).bind(m.gmail_id, m.contact_id ?? null, m.subject ?? "", m.body ?? "", m.email_from ?? "", m.direction ?? "", m.date ?? null, Date.now()));
+        `INSERT INTO messages (gmail_id, contact_id, subject, body, email_from, direction, source, date, updated_at, user_id)
+         VALUES (?1,?2,?3,?4,?5,?6,'gmail',?7,?8,?9)
+         ON CONFLICT(gmail_id) DO UPDATE SET subject=excluded.subject, body=excluded.body, email_from=excluded.email_from, direction=excluded.direction, date=excluded.date, updated_at=excluded.updated_at, user_id=excluded.user_id`
+      ).bind(m.gmail_id, m.contact_id ?? null, m.subject ?? "", m.body ?? "", m.email_from ?? "", m.direction ?? "", m.date ?? null, Date.now(), m.user_id ?? null));
     }
   }
   if (statements.length) await env.DB.batch(statements);

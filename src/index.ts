@@ -1,6 +1,6 @@
 import type { Env, ExecutionContext, D1PreparedStatement } from "./types";
-import { lookupCaller, pushCallToOdoo, pushCallHistory, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages, searchQuotations, contactTotals, phoneKey, createContactForNumber, renameContact } from "./odoo";
-import { searchGmailMessages, searchRecentGmailMessages, getGmailBody, sendGmailMessage } from "./gmail";
+import { lookupCaller, pushCallToOdoo, pushCallHistory, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages, searchQuotations, contactTotals, phoneKey, createContactForNumber, renameContact, callActivities, activityDone, callLegs } from "./odoo";
+import { searchGmailMessages, searchRecentGmailMessages, getGmailBody, sendGmailMessage, listGoogleContacts, googleAccount, handleGoogleConnect, handleGoogleCallback, handleGoogleDisconnect } from "./gmail";
 import { ariRequest, ariParkedCalls } from "./asterisk";
 import { playbackResponse } from "./recording";
 import { transcribeCall } from "./transcribe";
@@ -10,7 +10,8 @@ import { handlePushRegister, handlePushStatus, handlePushWake } from "./push";
 import { handleGetVoicemail, handleSetVoicemail, handleCreateGreeting, handleRenameGreeting, handleDeleteGreeting, handleGreetingAudio, handleVoicemailSync, handleVoicemailSynced } from "./voicemail";
 import type { Contact, Message } from "./odoo";
 import { jotToText } from "./jottext";
-import { groupCallLegs, handlingExtension, HIDDEN_EXTENSIONS } from "./calllegs";
+import { groupCallLegs } from "./calllegs";
+import { type User, sessionUser, handleLogin, handleMe, extensionOwners, extensionUser, syncExtensions, canSee } from "./users";
 import { handleStaffEmployees, handleStaffLogin, handleStaffLocation } from "./staff";
 import { handleWebCallback, handleWebCallbackConfig, handleWebCallbackStatus, handleWebCallbackEvent } from "./webcallback";
 
@@ -20,6 +21,7 @@ export { CallState } from "./callstate";
 // ── Route handlers ─────────────────────────────────────────────
 
 async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const session = await sessionUser(request, env);
   const body = await request.text();
   const params = new URLSearchParams(body);
   const event = params.get("event") ?? "unknown";
@@ -31,7 +33,9 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
   // passes 'outgoing' for calls it originates itself.
   const direction = params.get("direction") === "outgoing" ? "outgoing" : "incoming";
   // The softphone's own extension (dashboard / app); Asterisk's hits have none.
-  const extension = (params.get("ext") ?? "").trim() || null;
+  // A signed-in softphone's session says which; the field is the fallback.
+  const extension = session?.ext || (params.get("ext") ?? "").trim() || null;
+  const userId = session?.id || await extensionUser(env, extension);
 
   const doId = env.CALL_STATE.idFromName("global");
   const stub = env.CALL_STATE.get(doId);
@@ -44,11 +48,11 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
     }));
     // Log the call in D1 as soon as it rings (so missed calls are captured too).
     await env.DB.prepare(
-      `INSERT INTO call_log (call_id, phone_number, did, direction, state, start_date, partner_id, extension)
-       VALUES (?1, ?2, ?3, ?4, 'calling', ?5, ?6, ?7)
+      `INSERT INTO call_log (call_id, phone_number, did, direction, state, start_date, partner_id, extension, user_id)
+       VALUES (?1, ?2, ?3, ?4, 'calling', ?5, ?6, ?7, ?8)
        ON CONFLICT(call_id) DO UPDATE SET phone_number=excluded.phone_number, did=excluded.did, direction=excluded.direction, partner_id=excluded.partner_id,
-         extension=COALESCE(excluded.extension, call_log.extension)`
-    ).bind(callId, caller, did, direction, Date.now(), (partner as any)?.id ?? null, extension).run();
+         extension=COALESCE(excluded.extension, call_log.extension), user_id=COALESCE(excluded.user_id, call_log.user_id)`
+    ).bind(callId, caller, did, direction, Date.now(), (partner as any)?.id ?? null, extension, userId).run();
     return Response.json({ action: "ring", caller, partner: (partner as any)?.name ?? null });
   }
 
@@ -184,20 +188,18 @@ const CALL_HISTORY_SELECT = `SELECT c.id, c.call_id, c.phone_number, c.did, c.di
      CASE WHEN COALESCE(c.notes_html, '') != '' THEN 1 ELSE 0 END AS has_notes,
      CASE WHEN COALESCE(c.recording, '') != '' THEN 1 ELSE 0 END AS has_recording,
      CASE WHEN c.transcript IS NOT NULL THEN 1 ELSE 0 END AS has_transcript,
-     c.voicemail, c.extension
+     c.voicemail, c.extension, c.user_id
    FROM call_log c
    LEFT JOIN contacts p ON p.id = c.partner_id`;
 
 // Fold each call's legs (see calllegs.ts) into one row: notes live on the
 // answered leg, so that leg's call_id stays primary and rec_call_id points at
-// the leg holding the recording/transcript. Calls taken on a hidden
-// extension are dropped unless `viewer` (the asking softphone) is that one.
+// the leg holding the recording/transcript. Only calls `viewer` may see are
+// kept: their own, and the ones nobody answered (users.ts).
 type CallRow = Record<string, unknown>;
-function mergeCallLegs(rows: CallRow[], viewer = ""): CallRow[] {
-  return groupCallLegs(rows).filter((legs) => {
-    const ext = handlingExtension(legs);
-    return !ext || !HIDDEN_EXTENSIONS.has(ext) || ext === viewer;
-  }).map((legs) => {
+async function mergeCallLegs(env: Env, rows: CallRow[], viewer: User): Promise<CallRow[]> {
+  const owners = await extensionOwners(env);
+  return groupCallLegs(rows).filter((legs) => canSee(legs, owners, viewer)).map((legs) => {
     if (legs.length === 1) return legs[0];
     const trunkLeg = legs.find(l => l.did);
     const answered = legs.find(l => !l.did && (l.state === "terminated" || l.state === "ongoing"));
@@ -215,9 +217,11 @@ function mergeCallLegs(rows: CallRow[], viewer = ""): CallRow[] {
   });
 }
 
-async function handleCallHistory(request: Request, env: Env): Promise<Response> {
+async function handleCallHistory(request: Request, env: Env, user: User): Promise<Response> {
   const url = new URL(request.url);
-  const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50") || 50, 200);
+  const want = Math.min(parseInt(url.searchParams.get("limit") ?? "50") || 50, 200);
+  // Other people's calls are dropped after the query, so read more rows.
+  const limit = want * 3;
   const q = (url.searchParams.get("q") ?? "").trim();
   const select = CALL_HISTORY_SELECT;
   let rows;
@@ -246,7 +250,7 @@ async function handleCallHistory(request: Request, env: Env): Promise<Response> 
       `${select} ORDER BY COALESCE(c.start_date, c.create_date) DESC LIMIT ?1`
     ).bind(limit).all<Record<string, unknown>>();
   }
-  return Response.json({ calls: mergeCallLegs(rows.results || [], url.searchParams.get("ext") ?? "") });
+  return Response.json({ calls: (await mergeCallLegs(env, rows.results || [], user)).slice(0, want) });
 }
 
 // ── Naming calls: link call_log rows to contacts by phone number ──
@@ -381,14 +385,24 @@ async function handleRenameContact(request: Request, env: Env, id: number): Prom
   return ok ? Response.json({ ok: true, id, name }) : Response.json({ error: "Odoo update failed" }, { status: 502 });
 }
 
+// A call's notes, recording and transcript are its owner's (or everyone's
+// when nobody answered it).
+async function mayOpenCall(env: Env, user: User, callId: string): Promise<boolean> {
+  if (!callId) return false;
+  const legs = await callLegs(env, callId);
+  return !legs.length || canSee(legs as unknown as CallRow[], await extensionOwners(env), user);
+}
+const notYours = () => Response.json({ error: "not your call" }, { status: 403 });
+
 // Combined call-notes editor + jot sketch (HTML / SVG / Excalidraw JSON),
 // keyed by call_id. Saved on demand from the dashboard, and loaded when a
 // call-history item is reopened so the notes + sketch can be edited further.
 
-async function handleGetCallNotes(request: Request, env: Env): Promise<Response> {
+async function handleGetCallNotes(request: Request, env: Env, user: User): Promise<Response> {
   const url = new URL(request.url);
   const callId = url.searchParams.get("call_id") ?? "";
   if (!callId) return Response.json({ error: "missing call_id" }, { status: 400 });
+  if (!(await mayOpenCall(env, user, callId))) return notYours();
   const row = await env.DB.prepare(
     "SELECT call_id, notes_html, jot_svg, jot_json FROM call_log WHERE call_id = ?1"
   ).bind(callId).first<Record<string, unknown>>();
@@ -396,11 +410,12 @@ async function handleGetCallNotes(request: Request, env: Env): Promise<Response>
   return Response.json({ notes: row });
 }
 
-async function handleSaveCallNotes(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+async function handleSaveCallNotes(request: Request, env: Env, ctx: ExecutionContext, user: User): Promise<Response> {
   let body: { call_id?: string; notes_html?: string; jot_svg?: string; jot_json?: string; seen_summary?: boolean };
   try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
   const callId = (body.call_id ?? "").trim();
   if (!callId) return Response.json({ error: "missing call_id" }, { status: 400 });
+  if (!(await mayOpenCall(env, user, callId))) return notYours();
   const notes = await keepSummary(env, callId, body.notes_html ?? "", !!body.seen_summary);
   const result = await env.DB.prepare(
     `UPDATE call_log SET notes_html=?1, jot_svg=?2, jot_json=?3, write_date=?4 WHERE call_id=?5`
@@ -411,16 +426,18 @@ async function handleSaveCallNotes(request: Request, env: Env, ctx: ExecutionCon
 }
 
 // Call recording audio, streamed from Asterisk's stored recordings via ARI.
-async function handleGetRecording(request: Request, env: Env): Promise<Response> {
+async function handleGetRecording(request: Request, env: Env, user: User): Promise<Response> {
   const callId = new URL(request.url).searchParams.get("call_id") ?? "";
+  if (!(await mayOpenCall(env, user, callId))) return notYours();
   const row = await env.DB.prepare("SELECT recording FROM call_log WHERE call_id = ?1")
     .bind(callId).first<{ recording: string | null }>();
   if (!row?.recording) return Response.json({ error: "no recording" }, { status: 404 });
   return playbackResponse(env, row.recording);
 }
 
-async function handleGetTranscript(request: Request, env: Env): Promise<Response> {
+async function handleGetTranscript(request: Request, env: Env, user: User): Promise<Response> {
   const callId = new URL(request.url).searchParams.get("call_id") ?? "";
+  if (!(await mayOpenCall(env, user, callId))) return notYours();
   const row = await env.DB.prepare("SELECT transcript FROM call_log WHERE call_id = ?1")
     .bind(callId).first<{ transcript: string | null }>();
   if (!row) return Response.json({ error: "call not found" }, { status: 404 });
@@ -429,8 +446,9 @@ async function handleGetTranscript(request: Request, env: Env): Promise<Response
 
 // (Re)run Whisper on a call's recording, e.g. one recorded before
 // transcription existed or whose automatic run failed.
-async function handleTranscribe(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+async function handleTranscribe(request: Request, env: Env, ctx: ExecutionContext, user: User): Promise<Response> {
   const callId = new URL(request.url).searchParams.get("call_id") ?? "";
+  if (!(await mayOpenCall(env, user, callId))) return notYours();
   try {
     const transcript = await transcribeCall(env, callId);
     try { await summarizeCall(env, callId); } catch (e) { console.error("summarizeCall failed:", e); }
@@ -443,9 +461,10 @@ async function handleTranscribe(request: Request, env: Env, ctx: ExecutionContex
 
 // AI summary of a transcribed call into its notes; ?force=1 replaces an
 // existing one.
-async function handleSummarize(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+async function handleSummarize(request: Request, env: Env, ctx: ExecutionContext, user: User): Promise<Response> {
   const url = new URL(request.url);
   const callId = url.searchParams.get("call_id") ?? "";
+  if (!(await mayOpenCall(env, user, callId))) return notYours();
   try {
     const summary = await summarizeCall(env, callId, url.searchParams.get("force") === "1");
     if (summary) ctx.waitUntil(pushCallToOdoo(env, callId).catch((e) => console.error("pushCallToOdoo failed:", e)));
@@ -463,7 +482,7 @@ async function handleParked(env: Env): Promise<Response> {
 
 // ── Contact messages (Odoo mail.message + Gmail) ──────────────
 
-async function handleMessages(request: Request, env: Env): Promise<Response> {
+async function handleMessages(request: Request, env: Env, user: User): Promise<Response> {
   const url = new URL(request.url);
   const contactId = parseInt(url.searchParams.get("contact") ?? "0");
   if (!contactId) return Response.json({ error: "missing contact id" }, { status: 400 });
@@ -487,8 +506,8 @@ async function handleMessages(request: Request, env: Env): Promise<Response> {
   const email = (contact.email || "").trim();
   if (email) {
     try {
-      const g = await searchGmailMessages(env, email, limit);
-      await upsertMessages(env, g.map(m => ({ ...m, contact_id: contactId })));
+      const g = await searchGmailMessages(env, user.id, email, limit);
+      await upsertMessages(env, g.map(m => ({ ...m, contact_id: contactId, user_id: user.id })));
       gmailOk = true;
     } catch (e) {
       console.error("Gmail message sync failed:", e);
@@ -498,8 +517,9 @@ async function handleMessages(request: Request, env: Env): Promise<Response> {
   // Return merged messages from D1 (cache), newest first.
   const rows = await env.DB.prepare(
     `SELECT id, odoo_id, gmail_id, contact_id, subject, body, email_from, author_id, message_type, direction, source, date
-     FROM messages WHERE contact_id = ?1 ORDER BY COALESCE(date, 0) DESC LIMIT ?2`
-  ).bind(contactId, limit * 2).all<Record<string, unknown>>();
+     FROM messages WHERE contact_id = ?1 AND (source != 'gmail' OR user_id = ?3)
+     ORDER BY COALESCE(date, 0) DESC LIMIT ?2`
+  ).bind(contactId, limit * 2, user.id).all<Record<string, unknown>>();
 
   return Response.json({
     contact: { id: contact.id, name: contact.name, email: contact.email },
@@ -511,7 +531,7 @@ async function handleMessages(request: Request, env: Env): Promise<Response> {
 
 // Recent Gmail messages across all senders (last N days) — for the Messages
 // tab when no contact is selected.
-async function handleRecentMessages(request: Request, env: Env): Promise<Response> {
+async function handleRecentMessages(request: Request, env: Env, user: User): Promise<Response> {
   const url = new URL(request.url);
   const days = Math.max(1, Math.min(parseInt(url.searchParams.get("days") ?? "7") || 7, 30));
   const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50") || 50, 100);
@@ -519,7 +539,7 @@ async function handleRecentMessages(request: Request, env: Env): Promise<Respons
   let gmailOk = false;
   let messages: Message[] = [];
   try {
-    messages = await searchRecentGmailMessages(env, days, limit);
+    messages = await searchRecentGmailMessages(env, user.id, days, limit);
     gmailOk = true;
   } catch (e) {
     console.error("Recent Gmail sync failed:", e);
@@ -536,16 +556,29 @@ async function handleQuotations(request: Request, env: Env): Promise<Response> {
   return Response.json({ quotations });
 }
 
+// ── Call activities ───────────────────────────────────────────
+
+async function handleActivities(env: Env, user: User): Promise<Response> {
+  try { return Response.json({ activities: await callActivities(env, user.id) }); }
+  catch (e) { return Response.json({ error: String((e as Error).message || e) }, { status: 502 }); }
+}
+
+async function handleActivityDone(request: Request, env: Env, user: User, id: number): Promise<Response> {
+  const body = await request.json().catch(() => ({})) as { feedback?: string };
+  const ok = await activityDone(env, user.id, id, body.feedback || "");
+  return Response.json({ ok }, { status: ok ? 200 : 502 });
+}
+
 // ── Message detail + send ─────────────────────────────────────
 
-async function handleMessageDetail(request: Request, env: Env): Promise<Response> {
+async function handleMessageDetail(request: Request, env: Env, user: User): Promise<Response> {
   const url = new URL(request.url);
   const id = parseInt(url.searchParams.get("id") ?? "0");
   const gmailId = url.searchParams.get("gmail_id") ?? "";
 
   // Live recent Gmail message (no D1 row yet) — return its full decoded body.
   if (!id && gmailId) {
-    const { text, html } = await getGmailBody(env, gmailId);
+    const { text, html } = await getGmailBody(env, user.id, gmailId);
     if (!text && !html) return Response.json({ error: "body unavailable" }, { status: 404 });
     return Response.json({ message: { gmail_id: gmailId, source: "gmail", body: text, body_html: html } });
   }
@@ -553,21 +586,21 @@ async function handleMessageDetail(request: Request, env: Env): Promise<Response
 
   const row = await env.DB.prepare("SELECT * FROM messages WHERE id = ?1")
     .bind(id).first<Record<string, unknown>>();
-  if (!row) return Response.json({ error: "not found" }, { status: 404 });
+  if (!row || (row.source === "gmail" && row.user_id !== user.id)) return Response.json({ error: "not found" }, { status: 404 });
   // Gmail messages only store a snippet — pull the full decoded body on demand.
   if (row.source === "gmail" && row.gmail_id) {
-    const { text, html } = await getGmailBody(env, String(row.gmail_id));
+    const { text, html } = await getGmailBody(env, user.id, String(row.gmail_id));
     if (text) row.body = text;
     row.body_html = html;
   }
   return Response.json({ message: row });
 }
 
-async function handleSendMessage(request: Request, env: Env): Promise<Response> {
+async function handleSendMessage(request: Request, env: Env, user: User): Promise<Response> {
   let body: { to?: string; subject?: string; body?: string; html?: string; replyToGmailId?: string };
   try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
   if (!body.to || !String(body.to).trim()) return Response.json({ error: "missing recipient" }, { status: 400 });
-  const res = await sendGmailMessage(env, {
+  const res = await sendGmailMessage(env, user.id, {
     to: String(body.to).trim(),
     subject: body.subject ?? "",
     body: body.body ?? "",
@@ -607,6 +640,13 @@ async function handleContactsCache(request: Request, env: Env): Promise<Response
   return Response.json({ contacts: rows.results || [] });
 }
 
+// Google (Gmail) contacts, for the dashboard's Contacts → Gmail tab. The
+// list is small enough to send whole; the page filters it.
+async function handleGoogleContacts(env: Env, user: User): Promise<Response> {
+  try { return Response.json({ contacts: await listGoogleContacts(env, user.id) }); }
+  catch (e) { return Response.json({ error: String((e as Error).message || e) }, { status: 502 }); }
+}
+
 // Every dialable contact, slim, for the dialpad's client-side T9 search.
 async function handleContactsT9(env: Env): Promise<Response> {
   const rows = await env.DB.prepare(
@@ -640,25 +680,29 @@ async function handlePushCalls(request: Request, env: Env): Promise<Response> {
   return Response.json(await pushCallHistory(env, limit));
 }
 
-// Read all app settings (key-value) from D1.
-async function handleGetSettings(env: Env): Promise<Response> {
-  const rows = await env.DB.prepare("SELECT key, value FROM settings")
-    .all<{ key: string; value: string }>();
+// A user's settings: their own over the shared defaults (the global
+// `settings` rows from before there were users).
+async function handleGetSettings(env: Env, user: User): Promise<Response> {
+  const [shared, own] = await Promise.all([
+    env.DB.prepare("SELECT key, value FROM settings").all<{ key: string; value: string }>(),
+    env.DB.prepare("SELECT key, value FROM user_settings WHERE user_id = ?1").bind(user.id).all<{ key: string; value: string }>(),
+  ]);
   const settings: Record<string, string> = {};
-  for (const r of rows.results || []) settings[r.key] = r.value;
+  for (const r of shared.results || []) settings[r.key] = r.value;
+  for (const r of own.results || []) settings[r.key] = r.value;
   return Response.json({ settings });
 }
 
 // Upsert app settings (JSON body of key → value).
-async function handleSetSettings(request: Request, env: Env): Promise<Response> {
+async function handleSetSettings(request: Request, env: Env, user: User): Promise<Response> {
   let body: Record<string, unknown>;
   try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
   const statements: D1PreparedStatement[] = [];
   for (const [k, v] of Object.entries(body)) {
     if (typeof v !== "string" && typeof v !== "number" && typeof v !== "boolean") continue;
     statements.push(env.DB.prepare(
-      "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at"
-    ).bind(k, String(v), Date.now()));
+      "INSERT INTO user_settings (user_id, key, value, updated_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(user_id, key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at"
+    ).bind(user.id, k, String(v), Date.now()));
   }
   if (statements.length) await env.DB.batch(statements);
   return Response.json({ ok: true, count: statements.length });
@@ -695,7 +739,7 @@ async function fetchOdooContact(env: Env, id: number): Promise<Record<string, un
 
 /** ?cached=1 answers from D1 alone (fast: no address beyond city, no
  *  totals); otherwise the contact comes from Odoo along with its totals. */
-async function handleContactDetail(env: Env, id: number, cachedOnly: boolean): Promise<Response> {
+async function handleContactDetail(env: Env, id: number, cachedOnly: boolean, user: User): Promise<Response> {
   const [odooContact, totals] = cachedOnly
     ? [null, null]
     : await Promise.all([fetchOdooContact(env, id), contactTotals(env, id)]);
@@ -715,7 +759,7 @@ async function handleContactDetail(env: Env, id: number, cachedOnly: boolean): P
     `${CALL_HISTORY_SELECT} WHERE ${where} ORDER BY COALESCE(c.start_date, c.create_date) DESC LIMIT 100`
   ).bind(id, ...keys.map(k => `%${k}%`)).all<Record<string, unknown>>();
 
-  return Response.json({ contact, totals, calls: mergeCallLegs(calls.results || []) });
+  return Response.json({ contact, totals, calls: await mergeCallLegs(env, calls.results || [], user) });
 }
 
 // Handwritten Jot page (PNG/JPEG data: URL) → plain text.
@@ -767,13 +811,15 @@ export default {
       return new Response(null, { status: 204, headers: corsHeaders() });
     }
 
+    // Open routes: the page itself, signing in, and what Asterisk, the
+    // website widget and the Android app post without a session (Asterisk
+    // can't sign in). Everything else needs a signed-in user (users.ts).
     let response: Response;
-    if (request.method === "POST" && url.pathname === "/call-event") response = await handleCallEvent(request, env, ctx);
-    else if (request.method === "POST" && url.pathname === "/click2call") response = await handleClick2Call(request, env);
-    else if (request.method === "POST" && url.pathname === "/answer") response = await handleAnswer(request, env);
-    else if (request.method === "POST" && url.pathname === "/hangup-call") response = await handleHangupCall(request, env);
-    else if (request.method === "POST" && url.pathname === "/sync") response = await handleSync(env);
-    else if (request.method === "POST" && url.pathname === "/odoo/push-calls") response = await handlePushCalls(request, env);
+    const m = request.method, p = url.pathname;
+    if (m === "POST" && p === "/auth/login") response = await handleLogin(request, env);
+    else if (m === "GET" && p === "/auth/me") response = await handleMe(request, env);
+    else if (m === "GET" && p === "/google/callback") response = await handleGoogleCallback(request, env);
+    else if (m === "POST" && p === "/call-event") response = await handleCallEvent(request, env, ctx);
     else if (request.method === "GET" && url.pathname === "/web-callback/config") response = handleWebCallbackConfig();
     else if (request.method === "GET" && url.pathname === "/web-callback/status") response = await handleWebCallbackStatus(request, env);
     else if (request.method === "POST" && url.pathname === "/web-callback") response = await handleWebCallback(request, env, ctx);
@@ -782,45 +828,61 @@ export default {
     else if (request.method === "POST" && url.pathname === "/staff/login") response = await handleStaffLogin(request, env);
     else if (request.method === "POST" && url.pathname === "/staff/location") response = await handleStaffLocation(request, env);
     else if (request.method === "POST" && url.pathname === "/push/register") response = await handlePushRegister(request, env);
-    else if (request.method === "GET" && url.pathname === "/push/status") response = await handlePushStatus(env);
     else if ((request.method === "POST" || request.method === "GET") && url.pathname === "/push/wake") response = await handlePushWake(request, env);
-    else if (request.method === "GET" && url.pathname === "/settings") response = await handleGetSettings(env);
-    else if (request.method === "POST" && url.pathname === "/settings") response = await handleSetSettings(request, env);
     else if (request.method === "GET" && url.pathname === "/caller-lookup") response = await handleCallerLookup(request, env);
-    else if (request.method === "GET" && url.pathname === "/active-calls") response = await handleActiveCalls(request, env);
-    else if (request.method === "GET" && url.pathname === "/call-history") response = await handleCallHistory(request, env);
-    else if (request.method === "POST" && url.pathname === "/call-history/resolve-names") response = await handleResolveHistoryNames(env);
-    else if (request.method === "POST" && url.pathname === "/call-history/create-missing-contacts") response = await handleCreateMissingContacts(env);
-    else if (request.method === "GET" && url.pathname === "/call-notes") response = await handleGetCallNotes(request, env);
-    else if (request.method === "POST" && url.pathname === "/call-notes") response = await handleSaveCallNotes(request, env, ctx);
-    else if (request.method === "GET" && url.pathname === "/recording") response = await handleGetRecording(request, env);
-    else if (request.method === "POST" && url.pathname === "/jot-to-text") response = await handleJotToText(request, env);
-    else if (request.method === "GET" && url.pathname === "/transcript") response = await handleGetTranscript(request, env);
-    else if (request.method === "POST" && url.pathname === "/transcribe") response = await handleTranscribe(request, env, ctx);
-    else if (request.method === "GET" && url.pathname === "/parked") response = await handleParked(env);
-    else if (request.method === "POST" && url.pathname === "/summarize") response = await handleSummarize(request, env, ctx);
-    else if (request.method === "GET" && url.pathname === "/voicemail") response = await handleGetVoicemail(env);
-    else if (request.method === "POST" && url.pathname === "/voicemail") response = await handleSetVoicemail(request, env);
     else if (request.method === "GET" && url.pathname === "/voicemail/sync") response = await handleVoicemailSync(env);
     else if (request.method === "POST" && url.pathname === "/voicemail/synced") response = await handleVoicemailSynced(request, env);
-    else if (request.method === "POST" && url.pathname === "/greetings") response = await handleCreateGreeting(request, env);
-    else if (request.method === "POST" && /^\/greetings\/\d+$/.test(url.pathname)) response = await handleRenameGreeting(request, env, parseInt(url.pathname.split("/")[2]));
-    else if (request.method === "DELETE" && /^\/greetings\/\d+$/.test(url.pathname)) response = await handleDeleteGreeting(env, parseInt(url.pathname.split("/")[2]));
     else if (request.method === "GET" && /^\/greetings\/\d+\/audio$/.test(url.pathname)) response = await handleGreetingAudio(env, parseInt(url.pathname.split("/")[2]));
-    else if (request.method === "GET" && url.pathname === "/quotations") response = await handleQuotations(request, env);
-    else if (request.method === "GET" && url.pathname === "/messages") response = await handleMessages(request, env);
-    else if (request.method === "GET" && url.pathname === "/messages/recent") response = await handleRecentMessages(request, env);
-    else if (request.method === "GET" && url.pathname === "/message") response = await handleMessageDetail(request, env);
-    else if (request.method === "POST" && url.pathname === "/send-message") response = await handleSendMessage(request, env);
-    else if (request.method === "GET" && url.pathname === "/contacts") response = await handleContacts(request, env);
-    else if (request.method === "GET" && url.pathname === "/contacts/t9") response = await handleContactsT9(env);
-    else if (request.method === "GET" && url.pathname === "/contacts/cache") response = await handleContactsCache(request, env);
-    else if (request.method === "GET" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleContactDetail(env, parseInt(url.pathname.split("/")[2]), url.searchParams.get("cached") === "1");
-    else if (request.method === "POST" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleRenameContact(request, env, parseInt(url.pathname.split("/")[2]));
     else if (url.pathname === "/") response = Response.redirect(new URL("/dashboard", url).toString(), 302);
     else if (url.pathname === "/.well-known/assetlinks.json") response = Response.json(ANDROID_ASSET_LINKS);
     else if (url.pathname === "/dashboard") response = serveDashboard();
-    else response = new Response("Not found", { status: 404 });
+    else {
+      const user = await sessionUser(request, env);
+      if (!user) response = Response.json({ error: "sign in first" }, { status: 401 });
+      else if (m === "GET" && p === "/google/connect") response = await handleGoogleConnect(request, env, user.id);
+      else if (m === "POST" && p === "/google/disconnect") response = await handleGoogleDisconnect(env, user.id);
+      else if (m === "GET" && p === "/google/status") response = Response.json({ account: await googleAccount(env, user.id) });
+      else if (m === "POST" && p === "/extensions/sync") response = Response.json({ extensions: await syncExtensions(env) });
+      else if (request.method === "POST" && url.pathname === "/click2call") response = await handleClick2Call(request, env);
+      else if (request.method === "POST" && url.pathname === "/answer") response = await handleAnswer(request, env);
+      else if (request.method === "POST" && url.pathname === "/hangup-call") response = await handleHangupCall(request, env);
+      else if (request.method === "POST" && url.pathname === "/sync") response = await handleSync(env);
+      else if (request.method === "POST" && url.pathname === "/odoo/push-calls") response = await handlePushCalls(request, env);
+      else if (request.method === "GET" && url.pathname === "/push/status") response = await handlePushStatus(env);
+      else if (request.method === "GET" && url.pathname === "/settings") response = await handleGetSettings(env, user);
+      else if (request.method === "POST" && url.pathname === "/settings") response = await handleSetSettings(request, env, user);
+      else if (request.method === "GET" && url.pathname === "/active-calls") response = await handleActiveCalls(request, env);
+      else if (request.method === "GET" && url.pathname === "/call-history") response = await handleCallHistory(request, env, user);
+      else if (request.method === "POST" && url.pathname === "/call-history/resolve-names") response = await handleResolveHistoryNames(env);
+      else if (request.method === "POST" && url.pathname === "/call-history/create-missing-contacts") response = await handleCreateMissingContacts(env);
+      else if (request.method === "GET" && url.pathname === "/call-notes") response = await handleGetCallNotes(request, env, user);
+      else if (request.method === "POST" && url.pathname === "/call-notes") response = await handleSaveCallNotes(request, env, ctx, user);
+      else if (request.method === "GET" && url.pathname === "/recording") response = await handleGetRecording(request, env, user);
+      else if (request.method === "POST" && url.pathname === "/jot-to-text") response = await handleJotToText(request, env);
+      else if (request.method === "GET" && url.pathname === "/transcript") response = await handleGetTranscript(request, env, user);
+      else if (request.method === "POST" && url.pathname === "/transcribe") response = await handleTranscribe(request, env, ctx, user);
+      else if (request.method === "GET" && url.pathname === "/parked") response = await handleParked(env);
+      else if (request.method === "POST" && url.pathname === "/summarize") response = await handleSummarize(request, env, ctx, user);
+      else if (request.method === "GET" && url.pathname === "/voicemail") response = await handleGetVoicemail(env);
+      else if (request.method === "POST" && url.pathname === "/voicemail") response = await handleSetVoicemail(request, env);
+      else if (request.method === "POST" && url.pathname === "/greetings") response = await handleCreateGreeting(request, env);
+      else if (request.method === "POST" && /^\/greetings\/\d+$/.test(url.pathname)) response = await handleRenameGreeting(request, env, parseInt(url.pathname.split("/")[2]));
+      else if (request.method === "DELETE" && /^\/greetings\/\d+$/.test(url.pathname)) response = await handleDeleteGreeting(env, parseInt(url.pathname.split("/")[2]));
+      else if (request.method === "GET" && url.pathname === "/activities") response = await handleActivities(env, user);
+      else if (request.method === "POST" && /^\/activities\/\d+\/done$/.test(url.pathname)) response = await handleActivityDone(request, env, user, parseInt(url.pathname.split("/")[2]));
+      else if (request.method === "GET" && url.pathname === "/quotations") response = await handleQuotations(request, env);
+      else if (request.method === "GET" && url.pathname === "/messages") response = await handleMessages(request, env, user);
+      else if (request.method === "GET" && url.pathname === "/messages/recent") response = await handleRecentMessages(request, env, user);
+      else if (request.method === "GET" && url.pathname === "/message") response = await handleMessageDetail(request, env, user);
+      else if (request.method === "POST" && url.pathname === "/send-message") response = await handleSendMessage(request, env, user);
+      else if (request.method === "GET" && url.pathname === "/contacts") response = await handleContacts(request, env);
+      else if (request.method === "GET" && url.pathname === "/contacts/t9") response = await handleContactsT9(env);
+      else if (request.method === "GET" && url.pathname === "/contacts/google") response = await handleGoogleContacts(env, user);
+      else if (request.method === "GET" && url.pathname === "/contacts/cache") response = await handleContactsCache(request, env);
+      else if (request.method === "GET" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleContactDetail(env, parseInt(url.pathname.split("/")[2]), url.searchParams.get("cached") === "1", user);
+      else if (request.method === "POST" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleRenameContact(request, env, parseInt(url.pathname.split("/")[2]));
+      else response = new Response("Not found", { status: 404 });
+    }
 
     // Add CORS headers
     const headers = new Headers(response.headers);

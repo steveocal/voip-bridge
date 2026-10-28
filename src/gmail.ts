@@ -1,5 +1,6 @@
 import type { Env } from "./types";
 import type { Message } from "./odoo";
+import { signed, unsign, userEmail } from "./users";
 
 // ── Gmail API client (OAuth refresh-token flow) ───────────────
 // Reads messages to/from a contact's email via the Gmail API and returns
@@ -10,11 +11,17 @@ import type { Message } from "./odoo";
 // on `messages.get`. So we list ids, then GET each message with format=metadata
 // to retrieve From/To/Subject/Date headers + snippet. N+1 but proven correct.
 
-let cachedToken: { token: string; expiry: number } | null = null;
+// Each user reads their own Google account: the refresh token they gave
+// when they connected it (user_google, see /google/connect). The worker's
+// own GOOGLE_REFRESH_TOKEN stands in for the one user whose Odoo email is
+// that account's address, so the original mailbox keeps working.
 
-async function getAccessToken(env: Env): Promise<string | null> {
-  if (cachedToken && cachedToken.expiry > Date.now() + 60_000) return cachedToken.token;
-  if (!env.GOOGLE_REFRESH_TOKEN || !env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) return null;
+const tokenCache = new Map<string, { token: string; expiry: number }>();
+let envAccountEmail: string | null = null;
+
+async function refreshAccessToken(env: Env, refreshToken: string): Promise<string | null> {
+  const hit = tokenCache.get(refreshToken);
+  if (hit && hit.expiry > Date.now() + 60_000) return hit.token;
   try {
     const res = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
@@ -22,19 +29,120 @@ async function getAccessToken(env: Env): Promise<string | null> {
       body: new URLSearchParams({
         client_id: env.GOOGLE_CLIENT_ID,
         client_secret: env.GOOGLE_CLIENT_SECRET,
-        refresh_token: env.GOOGLE_REFRESH_TOKEN,
+        refresh_token: refreshToken,
         grant_type: "refresh_token",
       }).toString(),
     });
     const data = await res.json() as { access_token?: string; expires_in?: number };
     if (!data.access_token) return null;
     const expiresIn = (data.expires_in ?? 3600) - 60;
-    cachedToken = { token: data.access_token, expiry: Date.now() + expiresIn * 1000 };
-    return cachedToken.token;
+    tokenCache.set(refreshToken, { token: data.access_token, expiry: Date.now() + expiresIn * 1000 });
+    return data.access_token;
   } catch (e) {
-    console.error("Gmail token refresh failed:", e);
+    console.error("Google token refresh failed:", e);
     return null;
   }
+}
+
+/** The Gmail address a token belongs to. */
+async function accountEmail(token: string): Promise<string> {
+  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/profile", { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) return "";
+  return String(((await res.json()) as { emailAddress?: string }).emailAddress || "");
+}
+
+async function getAccessToken(env: Env, userId: number): Promise<string | null> {
+  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !userId) return null;
+  const own = await env.DB.prepare("SELECT refresh_token FROM user_google WHERE user_id = ?1").bind(userId).first<{ refresh_token: string }>();
+  if (own) return refreshAccessToken(env, own.refresh_token);
+  if (!env.GOOGLE_REFRESH_TOKEN) return null;
+  const token = await refreshAccessToken(env, env.GOOGLE_REFRESH_TOKEN);
+  if (!token) return null;
+  if (envAccountEmail === null) envAccountEmail = (await accountEmail(token)).toLowerCase();
+  const mine = (await userEmail(env, userId)).toLowerCase();
+  return mine && mine === envAccountEmail ? token : null;
+}
+
+/** Which Google account a user has connected (null = none). */
+export async function googleAccount(env: Env, userId: number): Promise<{ email: string; own: boolean } | null> {
+  const own = await env.DB.prepare("SELECT email FROM user_google WHERE user_id = ?1").bind(userId).first<{ email: string }>();
+  if (own) return { email: own.email, own: true };
+  return (await getAccessToken(env, userId)) && envAccountEmail ? { email: envAccountEmail, own: false } : null;
+}
+
+// ── Connecting a user's Google account (OAuth code flow) ──────
+
+const GOOGLE_SCOPES = [
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.send",
+  "https://www.googleapis.com/auth/contacts.readonly",
+  "email",
+];
+
+function googleRedirect(request: Request): string {
+  return new URL("/google/callback", request.url).toString();
+}
+
+/** Sends the signed-in user to Google's consent screen. The Odoo addon asks
+ *  with ?json=1&back=<its own page> and redirects the browser itself, so
+ *  its API token never reaches the browser; Google's answer then returns
+ *  there instead of to the dashboard. */
+export async function handleGoogleConnect(request: Request, env: Env, userId: number): Promise<Response> {
+  const params = new URL(request.url).searchParams;
+  const back = params.get("back") || "";
+  if (!env.GOOGLE_CLIENT_ID) return Response.json({ error: "Google isn't configured on the worker" }, { status: 503 });
+  const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  url.searchParams.set("client_id", env.GOOGLE_CLIENT_ID);
+  url.searchParams.set("redirect_uri", googleRedirect(request));
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", GOOGLE_SCOPES.join(" "));
+  url.searchParams.set("access_type", "offline");
+  url.searchParams.set("prompt", "consent");
+  const backB64 = back ? btoa(back).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "") : "";
+  url.searchParams.set("state", await signed(env, `google.${userId}.${Date.now() + 15 * 60_000}.${backB64}`));
+  if (params.get("json") === "1") return Response.json({ url: url.toString() });
+  return Response.redirect(url.toString(), 302);
+}
+
+/** Google sends the user back here; keep their refresh token. */
+export async function handleGoogleCallback(request: Request, env: Env): Promise<Response> {
+  const params = new URL(request.url).searchParams;
+  const state = await unsign(env, params.get("state") || "");
+  const [kind, uid, exp, backB64] = (state || "").split(".");
+  let page = new URL("/dashboard", request.url).toString();
+  if (backB64) { try { page = atob(backB64.replace(/-/g, "+").replace(/_/g, "/")); } catch { /* keep the dashboard */ } }
+  const back = (msg: string) => {
+    const u = new URL(page);
+    u.searchParams.set("google", msg);
+    return Response.redirect(u.toString(), 302);
+  };
+  if (kind !== "google" || !uid || Number(exp) < Date.now()) return back("Google sign-in expired, try again");
+  if (!params.get("code")) return back(params.get("error") === "access_denied" ? "Google access was not allowed" : "Google sign-in failed");
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code: params.get("code")!,
+      client_id: env.GOOGLE_CLIENT_ID,
+      client_secret: env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: googleRedirect(request),
+      grant_type: "authorization_code",
+    }).toString(),
+  });
+  const data = await res.json() as { access_token?: string; refresh_token?: string };
+  if (!data.refresh_token || !data.access_token) return back("Google gave no refresh token");
+  const email = await accountEmail(data.access_token);
+  await env.DB.prepare(
+    "INSERT INTO user_google (user_id, email, refresh_token, updated_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(user_id) DO UPDATE SET email=excluded.email, refresh_token=excluded.refresh_token, updated_at=excluded.updated_at"
+  ).bind(parseInt(uid), email, data.refresh_token, Date.now()).run();
+  googleContactsCache.delete(parseInt(uid));
+  return back("connected");
+}
+
+export async function handleGoogleDisconnect(env: Env, userId: number): Promise<Response> {
+  await env.DB.prepare("DELETE FROM user_google WHERE user_id = ?1").bind(userId).run();
+  googleContactsCache.delete(userId);
+  return Response.json({ ok: true });
 }
 
 const OUR_SENDERS = /(systecgroup\.info|ihproducts\.co\.uk|infracool\.co\.uk|infraredheaterpanels\.co\.uk)/i;
@@ -70,10 +178,10 @@ async function getMessage(token: string, id: string): Promise<Message | null> {
 }
 
 /** Search Gmail for the email thread with a contact (from: OR to:). */
-export async function searchGmailMessages(env: Env, email: string, limit = 30): Promise<Message[]> {
+export async function searchGmailMessages(env: Env, userId: number, email: string, limit = 30): Promise<Message[]> {
   const clean = (email || "").trim();
   if (!clean) return [];
-  const token = await getAccessToken(env);
+  const token = await getAccessToken(env, userId);
   if (!token) return [];
 
   const listUrl = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
@@ -94,8 +202,8 @@ export async function searchGmailMessages(env: Env, email: string, limit = 30): 
 }
 
 /** Search Gmail for recent messages across all senders (last N days). */
-export async function searchRecentGmailMessages(env: Env, days = 7, limit = 30): Promise<Message[]> {
-  const token = await getAccessToken(env);
+export async function searchRecentGmailMessages(env: Env, userId: number, days = 7, limit = 30): Promise<Message[]> {
+  const token = await getAccessToken(env, userId);
   if (!token) return [];
   const listUrl = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
   listUrl.searchParams.set("q", `newer_than:${days}d`);
@@ -160,8 +268,8 @@ export function looksLikeHtml(s: string): boolean {
 /** Fetch the full decoded body of a Gmail message (format=full): `text` is
  *  the plain version (made from the HTML when the email has none), `html`
  *  the HTML version or "". */
-export async function getGmailBody(env: Env, gmailId: string): Promise<Bodies> {
-  const token = await getAccessToken(env);
+export async function getGmailBody(env: Env, userId: number, gmailId: string): Promise<Bodies> {
+  const token = await getAccessToken(env, userId);
   if (!token) return { text: "", html: "" };
   const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${gmailId}?format=full`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
@@ -214,8 +322,8 @@ export interface SendOptions {
 }
 
 /** Send (or reply to) an email via the Gmail API. */
-export async function sendGmailMessage(env: Env, opts: SendOptions): Promise<{ ok: boolean; id?: string; threadId?: string; error?: string }> {
-  const token = await getAccessToken(env);
+export async function sendGmailMessage(env: Env, userId: number, opts: SendOptions): Promise<{ ok: boolean; id?: string; threadId?: string; error?: string }> {
+  const token = await getAccessToken(env, userId);
   if (!token) return { ok: false, error: "no gmail token" };
 
   let inReplyTo = "", references = "", threadId: string | undefined;
@@ -262,4 +370,61 @@ export async function sendGmailMessage(env: Env, opts: SendOptions): Promise<{ o
   }
   const d = await res.json() as { id?: string; threadId?: string };
   return { ok: true, id: d.id, threadId: d.threadId };
+}
+
+// ── Google Contacts (People API) ──────────────────────────────
+// Needs contacts.readonly, which /google/connect asks for; tokens from
+// before that answer 403 and the dashboard's Gmail tab says so.
+
+export interface GoogleContact {
+  id: string;
+  name: string;
+  numbers: string[];
+  email: string;
+}
+
+const googleContactsCache = new Map<number, { at: number; list: GoogleContact[] }>();
+const GOOGLE_CONTACTS_TTL = 10 * 60_000;
+
+export async function listGoogleContacts(env: Env, userId: number): Promise<GoogleContact[]> {
+  const hit = googleContactsCache.get(userId);
+  if (hit && Date.now() - hit.at < GOOGLE_CONTACTS_TTL) return hit.list;
+  const token = await getAccessToken(env, userId);
+  if (!token) throw new Error("Connect your Google account in Settings to see Gmail contacts");
+  const list: GoogleContact[] = [];
+  let pageToken = "";
+  for (let page = 0; page < 10; page++) {
+    const url = new URL("https://people.googleapis.com/v1/people/me/connections");
+    url.searchParams.set("personFields", "names,phoneNumbers,emailAddresses");
+    url.searchParams.set("pageSize", "1000");
+    url.searchParams.set("sortOrder", "FIRST_NAME_ASCENDING");
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 403) throw new Error("Google contacts not allowed: reconnect Google with the contacts.readonly scope");
+    if (!res.ok) throw new Error(`Google contacts failed: ${res.status}`);
+    const d = await res.json() as {
+      connections?: Array<{
+        resourceName: string;
+        names?: Array<{ displayName?: string }>;
+        phoneNumbers?: Array<{ value?: string }>;
+        emailAddresses?: Array<{ value?: string }>;
+      }>;
+      nextPageToken?: string;
+    };
+    for (const p of d.connections ?? []) {
+      const email = p.emailAddresses?.[0]?.value ?? "";
+      const name = p.names?.[0]?.displayName || email;
+      if (!name) continue;
+      list.push({
+        id: p.resourceName.replace("people/", ""),
+        name,
+        numbers: (p.phoneNumbers ?? []).map(n => (n.value ?? "").trim()).filter(Boolean),
+        email,
+      });
+    }
+    if (!d.nextPageToken) break;
+    pageToken = d.nextPageToken;
+  }
+  googleContactsCache.set(userId, { at: Date.now(), list });
+  return list;
 }

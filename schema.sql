@@ -52,7 +52,8 @@ CREATE TABLE IF NOT EXISTS call_log (
   recording TEXT,                        -- local-only: Asterisk stored-recording name (see migrations/0006_call_recording.sql)
   transcript TEXT,                       -- local-only: Whisper transcript, one "[m:ss] text" line per segment (NULL = not transcribed)
   voicemail INTEGER NOT NULL DEFAULT 0,  -- local-only: 1 = went to voicemail; the message is in recording (see migrations/0008_voicemail.sql)
-  odoo_synced_at INTEGER                 -- local-only: when pushCallToOdoo last sent this leg's call (see migrations/0009_odoo_push.sql)
+  odoo_synced_at INTEGER,                -- local-only: when pushCallToOdoo last sent this leg's call (see migrations/0009_odoo_push.sql)
+  extension TEXT                         -- local-only: the softphone extension that logged this leg (see migrations/0012_call_extension.sql)
 );
 CREATE INDEX IF NOT EXISTS idx_call_log_phone ON call_log(phone_number);
 CREATE INDEX IF NOT EXISTS idx_call_log_start ON call_log(start_date);
@@ -101,7 +102,8 @@ CREATE TABLE IF NOT EXISTS messages (
   direction TEXT,                        -- 'incoming' | 'outgoing'
   source TEXT NOT NULL DEFAULT 'odoo',   -- 'odoo' | 'gmail'
   date INTEGER,                          -- epoch ms
-  updated_at INTEGER
+  updated_at INTEGER,
+  user_id INTEGER                        -- Gmail rows: whose mailbox (see migrations/0014_multi_user.sql); NULL for Odoo rows
 );
 CREATE INDEX IF NOT EXISTS idx_messages_contact ON messages(contact_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_odoo ON messages(odoo_id);
@@ -128,3 +130,26 @@ CREATE TABLE IF NOT EXISTS web_callbacks (
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_web_callbacks_created ON web_callbacks(created_at);
+
+-- ── Users (see migrations/0014_multi_user.sql, src/users.ts) ──
+CREATE TABLE IF NOT EXISTS extensions (
+  number TEXT PRIMARY KEY,
+  user_id INTEGER,
+  user_name TEXT,
+  user_email TEXT,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS user_settings (
+  user_id INTEGER NOT NULL,
+  key TEXT NOT NULL,
+  value TEXT,
+  updated_at INTEGER,
+  PRIMARY KEY (user_id, key)
+);
+CREATE TABLE IF NOT EXISTS user_google (
+  user_id INTEGER PRIMARY KEY,
+  email TEXT,
+  refresh_token TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_call_log_user ON call_log(user_id);
