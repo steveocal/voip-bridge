@@ -167,7 +167,11 @@
                             <span t-if="ui.emailsUpdating" class="o_pb_muted"> · updating…</span>
                             <span t-elif="ui.emailsError" class="o_pb_muted"> · offline copy</span>
                         </div>
-                        <div t-if="!ui.emails.length and !ui.emailsUpdating" class="o_pb_none"
+                        <div t-if="ui.google === false" class="o_pb_none">
+                            Your Google account isn't connected.<br/>
+                            <a href="/phone_bridge/google_connect">Connect Google</a> to see your Gmail here.
+                        </div>
+                        <div t-elif="!ui.emails.length and !ui.emailsUpdating" class="o_pb_none"
                              t-esc="ui.emailsError ? 'Could not load emails.' : 'No emails in the last week.'"/>
                         <div t-foreach="ui.emails" t-as="m" t-key="m.id" class="o_pb_row o_pb_email" t-on-click="() => this.openEmail(m)">
                             <i class="fa o_pb_dir" t-att-class="m.outgoing ? 'fa-arrow-up' : 'fa-envelope-o'"/>
@@ -188,6 +192,17 @@
                             <input class="o_pb_dialinput" type="tel" placeholder="Number" t-att-value="ui.number"
                                    t-on-input="onKeypadInput" t-on-keydown="onKeypadKeydown"/>
                             <button class="o_pb_icon" t-if="ui.number" t-on-click="backspace" title="Delete"><i class="fa fa-long-arrow-left"/></button>
+                        </div>
+                        <t t-set="matches" t-value="suggestions"/>
+                        <div t-if="ui.number.trim() and !(ui.picked and ui.picked.num === ui.number)" class="o_pb_matches">
+                            <div t-foreach="matches" t-as="s" t-key="s.key" class="o_pb_row">
+                                <div class="o_pb_main" t-on-click="() => this.pickSuggestion(s)">
+                                    <div t-if="s.name"><t t-foreach="s.nameParts" t-as="p" t-key="p_index"><b t-if="p.on" t-esc="p.t"/><t t-else="" t-esc="p.t"/></t></div>
+                                    <div t-att-class="s.name ? 'o_pb_sub' : ''"><t t-foreach="s.numParts" t-as="p" t-key="p_index"><b t-if="p.on" t-esc="p.t"/><t t-else="" t-esc="p.t"/></t></div>
+                                </div>
+                                <button class="o_pb_icon o_pb_callicon" t-on-click="() => this.callSuggestion(s)" t-att-disabled="state.status !== 'registered'" title="Call"><i class="fa fa-phone"/></button>
+                            </div>
+                            <div t-if="!matches.length" class="o_pb_none">No matches: press call to dial <t t-esc="ui.number.trim()"/></div>
                         </div>
                         <div class="o_pb_keys">
                             <button t-foreach="keys" t-as="k" t-key="k[0]" class="o_pb_key" t-on-click="() => this.pressKey(k[0])">

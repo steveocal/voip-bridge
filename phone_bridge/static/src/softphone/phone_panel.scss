@@ -172,3 +172,11 @@ $pb-red: #ef4444;
 .o_pb_banner {
     margin: 8px 10px 0; padding: 10px 12px; border-radius: 12px; background: #1d2a1f; border: 1px solid #2f5d3a; font-size: 13px;
 }
+
+// Keypad matches (names / numbers with the typed part in bold).
+.o_pb_matches {
+    max-height: 200px;
+    overflow-y: auto;
+    margin-bottom: 6px;
+    b { color: $pb-green; }
+}

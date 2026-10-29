@@ -99,7 +99,9 @@ class PhoneBridgeCall(models.Model):
                 copies = attachments.copy({"res_field": False, "name": call.recording_filename or "voicemail.wav",
                                            "mimetype": "audio/wav"}) if attachments else attachments
                 template.send_mail(call.id, email_values={"email_to": email_to, "attachment_ids": copies.ids})
-            if user:
+            # Portal and public users can't open calls in Odoo, so they get
+            # the email only.
+            if user and not user.share:
                 call.activity_schedule(
                     "mail.mail_activity_data_todo", user_id=user.id,
                     summary=_("Voicemail from %s", call.partner_id.name or call.phone_number),

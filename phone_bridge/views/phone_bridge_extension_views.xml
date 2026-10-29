@@ -8,6 +8,7 @@
                 <field name="number"/>
                 <field name="name"/>
                 <field name="user_id"/>
+                <field name="user_share" optional="hide"/>
                 <field name="voicemail_enabled"/>
                 <field name="greeting_filename" string="Greeting" optional="show"/>
                 <field name="voicemail_email" optional="show"/>
@@ -29,6 +30,11 @@
                     <group>
                         <group string="Extension">
                             <field name="user_id"/>
+                            <field name="user_share" invisible="1"/>
+                            <div colspan="2" class="text-muted" invisible="not user_share">
+                                A portal or public user signs in with the phone app or dashboard only:
+                                no softphone in Odoo, and voicemail comes by email without a to-do.
+                            </div>
                             <field name="sip_password" password="True"/>
                             <field name="active" invisible="1"/>
                         </group>

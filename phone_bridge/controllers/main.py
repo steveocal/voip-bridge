@@ -3,7 +3,7 @@ import re
 
 import requests
 
-from odoo import fields, http
+from odoo import _, fields, http
 from odoo.http import request
 
 _logger = logging.getLogger(__name__)
@@ -83,42 +83,59 @@ class PhoneBridgeController(http.Controller):
             data["duration"] = int(duration or 0)
         try:
             res = requests.post(f"{inst.worker_url}/call-event", data=data, timeout=15,
-                                headers={"Authorization": f"Bearer {inst.api_token}"})
+                                headers=self._worker_headers(inst))
             return res.json()
         except (requests.RequestException, ValueError) as e:
             _logger.warning("phone_bridge: call event %s for %s failed: %s", event, call_id, e)
             return {"ok": False, "error": str(e)}
 
+    @staticmethod
+    def _worker_headers(inst):
+        """The API token, and which Odoo user we're asking for: the worker
+        keeps calls, Gmail and settings per user."""
+        return {"Authorization": f"Bearer {inst.api_token}", "X-Odoo-User": str(request.env.uid)}
+
     def _worker_get(self, path, params=None):
-        """GET a worker route with the API token; None when there's no worker
-        or it can't be reached."""
+        """GET a worker route with the API token, as the current user; None
+        when there's no worker or it can't be reached."""
         inst = self._installation()
         if not (inst.worker_url and inst.api_token):
             return None
         try:
             res = requests.get(f"{inst.worker_url}{path}", params=params or {}, timeout=20,
-                               headers={"Authorization": f"Bearer {inst.api_token}"})
+                               headers=self._worker_headers(inst))
             return res.json()
         except (requests.RequestException, ValueError) as e:
             _logger.warning("phone_bridge: worker %s failed: %s", path, e)
             return None
 
-    # The worker reads one Gmail mailbox (the installation's), so only
-    # administrators see it.
+    # Each user reads their own Gmail through the worker, once they have
+    # connected it (/phone_bridge/google_connect).
     @http.route("/phone_bridge/emails", type="json", auth="user")
     def emails(self, days=7):
-        if not request.env.user.has_group("base.group_system"):
-            return {"ok": False, "messages": []}
         data = self._worker_get("/messages/recent", {"days": int(days), "limit": 50})
         if not data:
             return {"ok": False, "messages": []}
         return {"ok": bool(data.get("gmailOk")), "messages": data.get("messages", [])}
 
+    @http.route("/phone_bridge/google_status", type="json", auth="user")
+    def google_status(self):
+        data = self._worker_get("/google/status") or {}
+        return data.get("account") or False
+
+    @http.route("/phone_bridge/google_connect", type="http", auth="user")
+    def google_connect(self):
+        """Off to Google's consent screen for the current user's account; the
+        worker sends them back to Odoo afterwards."""
+        back = request.httprequest.host_url.rstrip("/") + "/odoo"
+        data = self._worker_get("/google/connect", {"json": "1", "back": back}) or {}
+        if not data.get("url"):
+            return request.make_response(_("The phone service couldn't start the Google sign-in."), status=502)
+        return request.redirect(data["url"], local=False)
+
     @http.route("/phone_bridge/email", type="json", auth="user")
     def email(self, gmail_id):
         """One email's full body: plain text and, when it has one, HTML."""
-        if not request.env.user.has_group("base.group_system"):
-            return {}
         data = self._worker_get("/message", {"gmail_id": gmail_id}) or {}
         message = data.get("message") or {}
         return {"text": message.get("body") or "", "html": message.get("body_html") or ""}
@@ -131,7 +148,7 @@ class PhoneBridgeController(http.Controller):
             return []
         try:
             res = requests.get(f"{inst.worker_url}/parked", timeout=10,
-                               headers={"Authorization": f"Bearer {inst.api_token}"})
+                               headers=self._worker_headers(inst))
             return res.json().get("parked", [])
         except (requests.RequestException, ValueError) as e:
             _logger.warning("phone_bridge: parked calls failed: %s", e)

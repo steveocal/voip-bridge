@@ -30,9 +30,14 @@
                             <field name="voicemail_enabled"/>
                         </list>
                     </field>
-                    <group>
+                    <field name="share" invisible="1"/>
+                    <group invisible="share">
                         <field name="phone_bridge_extension_id" options="{'no_create': True}"/>
                     </group>
+                    <div class="text-muted" invisible="not share">
+                        Portal and public users take calls in the phone app or dashboard, signing in with
+                        an extension number and its SIP password.
+                    </div>
                 </page>
             </xpath>
         </field>

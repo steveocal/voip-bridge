@@ -3,6 +3,7 @@ import { rpc } from "@web/core/network/rpc";
 import { useService } from "@web/core/utils/hooks";
 import { user } from "@web/core/user";
 import { _t } from "@web/core/l10n/translation";
+import { t9Entry, t9Search } from "./t9";
 
 const KEYS = [
     ["1", ""], ["2", "ABC"], ["3", "DEF"],
@@ -10,6 +11,10 @@ const KEYS = [
     ["7", "PQRS"], ["8", "TUV"], ["9", "WXYZ"],
     ["*", ""], ["0", "+"], ["#", ""],
 ];
+
+// The panel is personal even for administrators (who can see every call in
+// the backend): your own calls, and the ones nobody answered.
+const MY_CALLS = ["|", ["user_id", "=", user.userId], ["user_id", "=", false]];
 
 /** The phone: a phone-shaped panel docked at the right, laid out like the
  *  VoIP Bridge dashboard. Tabs along the bottom (Activities, Recent, the
@@ -28,6 +33,8 @@ export class PhonePanel extends Component {
             tab: localStorage.getItem("phone_bridge.tab") || "activities",
             contactsTab: localStorage.getItem("phone_bridge.contactsTab") || "all",
             number: "",
+            picked: null,       // { num, partner } when the number came from a keypad match
+            corpus: [],         // keypad matching: recent callers, then contacts
             search: "",
             dtmf: false,
             xfer: false,        // the transfer box is open
@@ -40,6 +47,7 @@ export class PhonePanel extends Component {
             emails: [],
             emailsUpdating: false,
             emailsError: false,
+            google: undefined,  // the user's connected Google account; false = none
             reading: null,      // the email open in the reader { id, subject, from, text, html, loading }
             now: Date.now(),
         });
@@ -73,6 +81,7 @@ export class PhonePanel extends Component {
         if (this.ui.tab === "recent") loads.push(this.loadRecent());
         else if (this.ui.tab === "contacts") loads.push(this.loadContacts());
         else if (this.ui.tab === "emails") loads.push(this.loadEmails());
+        else if (this.ui.tab === "keypad") loads.push(this.loadCorpus());
         await Promise.all(loads);
     }
 
@@ -88,7 +97,7 @@ export class PhonePanel extends Component {
     async loadRecent() {
         this.ui.loading = true;
         try {
-            this.ui.recent = await this.orm.searchRead("phone_bridge.call", [],
+            this.ui.recent = await this.orm.searchRead("phone_bridge.call", MY_CALLS,
                 ["partner_id", "phone_number", "direction", "state", "start_date", "duration", "voicemail", "voicemail_heard"],
                 { limit: 40, order: "start_date desc, id desc" });
         } finally {
@@ -135,6 +144,7 @@ export class PhonePanel extends Component {
         }
         this.ui.emailsUpdating = true;
         this.ui.emailsError = false;
+        rpc("/phone_bridge/google_status", {}).then((g) => (this.ui.google = g), () => {});
         try {
             const res = await rpc("/phone_bridge/emails", { days: 7 });
             if (!res.ok) throw new Error("no gmail");
@@ -229,6 +239,50 @@ export class PhonePanel extends Component {
         return call.direction === "outgoing" ? "fa-arrow-up" : "fa-arrow-down";
     }
 
+    // ── Keypad matches: recent callers first, then every contact with a
+    // number (reloaded at most every 10 minutes) ──
+
+    async loadCorpus() {
+        if (this.corpusAt && Date.now() - this.corpusAt < 10 * 60 * 1000) return;
+        this.corpusAt = Date.now();
+        try {
+            const [recent, partners] = await Promise.all([
+                this.orm.searchRead("phone_bridge.call", [...MY_CALLS, ["phone_number", "!=", false]], ["partner_id", "phone_number"], { limit: 100, order: "start_date desc, id desc" }),
+                this.orm.searchRead("res.partner", [["active", "=", true], "|", ["phone", "!=", false], ["mobile", "!=", false]], ["display_name", "phone", "mobile"], { limit: 5000, order: "name" }),
+            ]);
+            const out = [];
+            for (const c of recent) {
+                const partner = c.partner_id ? { id: c.partner_id[0], name: c.partner_id[1] } : null;
+                out.push(t9Entry(partner ? partner.name : "", c.phone_number, partner));
+            }
+            for (const p of partners) {
+                const partner = { id: p.id, name: p.display_name };
+                if (p.mobile) out.push(t9Entry(p.display_name, p.mobile, partner));
+                if (p.phone && p.phone.replace(/[^0-9]/g, "") !== (p.mobile || "").replace(/[^0-9]/g, "")) out.push(t9Entry(p.display_name, p.phone, partner));
+            }
+            this.ui.corpus = out;
+        } catch {
+            this.corpusAt = 0;
+        }
+    }
+
+    get suggestions() {
+        if (this.ui.picked && this.ui.picked.num === this.ui.number) return [];
+        return t9Search(this.ui.corpus, this.ui.number, 8);
+    }
+
+    // Tap a match to put its number in the box; its phone icon calls straight away.
+    pickSuggestion(s) {
+        this.ui.number = s.num;
+        this.ui.picked = { num: s.num, partner: s.partner };
+    }
+
+    callSuggestion(s) {
+        this.phone.dial(s.num, s.partner ? { partner: s.partner } : {});
+        this.ui.number = "";
+        this.ui.picked = null;
+    }
+
     // ── Dialling ──
 
     pressKey(key) {
@@ -243,8 +297,10 @@ export class PhonePanel extends Component {
     dialTyped() {
         const n = this.ui.number.trim();
         if (!n) return;
-        this.phone.dial(n);
+        const picked = this.ui.picked && this.ui.picked.num === this.ui.number ? this.ui.picked.partner : null;
+        this.phone.dial(n, picked ? { partner: picked } : {});
         this.ui.number = "";
+        this.ui.picked = null;
     }
 
     onKeypadInput(ev) {

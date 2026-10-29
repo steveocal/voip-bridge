@@ -81,6 +81,18 @@ class TestVoicemail(TransactionCase):
         self.assertTrue(call.voicemail_heard)
         self.assertFalse(call.activity_ids)
 
+    def test_portal_owner_gets_email_without_activity(self):
+        portal = self.env["res.users"].create({"name": "Portal Owner", "login": "ext_portal", "email": "portal@example.com",
+                                               "groups_id": [(6, 0, [self.env.ref("base.group_portal").id])]})
+        self.env["hr.employee"].create({"name": "Portal Owner", "user_id": portal.id})
+        self.ext.write({"user_id": portal.id, "voicemail_email": "portal@example.com"})
+        self.assertTrue(self.ext.user_share)
+        call = self._voicemail("9201", "vm.3")
+        self.Call.bridge_notify_voicemail([call.id])
+        mail = self.env["mail.mail"].search([("model", "=", "phone_bridge.call"), ("res_id", "=", call.id)])
+        self.assertEqual(mail.email_to, "portal@example.com")
+        self.assertFalse(call.activity_ids)
+
     def test_main_box_uses_installation_settings(self):
         inst = self.env["phone_bridge.installation"]._get_installation()
         inst.write({"main_voicemail_email": "office@example.com", "main_voicemail_user_id": self.user.id})

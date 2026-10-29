@@ -18,8 +18,10 @@ class PhoneBridgeExtension(models.Model):
 
     number = fields.Char(required=True, index=True, help="The extension number on the phone system, e.g. 201.")
     name = fields.Char(help="What it is, e.g. Desk phone, Android app.")
-    user_id = fields.Many2one("res.users", "User", domain=[("share", "=", False)],
-                              help="Who takes this extension's calls and gets its voicemail alerts.")
+    user_id = fields.Many2one("res.users", "User", domain=[("employee_ids", "!=", False)],
+                              help="Who takes this extension's calls and gets its voicemail alerts: a user linked "
+                                   "to an employee, who can be an internal, portal or public user.")
+    user_share = fields.Boolean(related="user_id.share", string="Portal/Public User")
     sip_password = fields.Char("SIP Password", groups="base.group_system",
                                help="As set for this extension on the phone system. The user's softphone signs in with it.")
     active = fields.Boolean(default=True)
