@@ -299,11 +299,13 @@ export async function renameContact(env: Env, id: number, name: string): Promise
   return true;
 }
 
-// ── Call activities (Odoo's "Call" activity type) ─────────────
+// ── Activities (all of a user's open Odoo activities) ─────────
 
-export interface CallActivity {
+export interface UserActivity {
   id: number;
   summary: string;
+  type: string;             // activity type name, e.g. Call, Meeting, To-Do
+  kind: string;             // its category: phonecall | meeting | upload_file | default …
   note: string;
   deadline: string;
   state: string;            // overdue | today | planned
@@ -316,16 +318,24 @@ export interface CallActivity {
 
 const ACTIVITY_PHONE_FIELDS = ["phone", "mobile", "partner_phone"];
 
-/** A user's open "Call" activities, soonest first, each with the number to
- *  ring: the record's own phone fields, else its contact's. */
-export async function callActivities(env: Env, userId: number, limit = 50): Promise<CallActivity[]> {
+/** A user's open activities of every type, soonest first, each with the
+ *  number to ring: the record's own phone fields, else its contact's. */
+export async function userActivities(env: Env, userId: number, limit = 100): Promise<UserActivity[]> {
   const uid = await odooAuth(env);
   if (!uid) throw new Error("Odoo unavailable");
   const r = await odooCall(env, uid, "mail.activity", "search_read",
-    [[["user_id", "=", userId], ["activity_type_id.category", "=", "phonecall"]]],
+    [[["user_id", "=", userId]]],
     { fields: ["summary", "note", "date_deadline", "state", "res_model", "res_id", "res_name", "activity_type_id"], order: "date_deadline, id", limit });
   if (r.fault) throw new Error(r.fault);
   const acts = (r.parsed ?? []) as Array<Record<string, unknown>>;
+
+  // Each activity type's category, so the list can tell calls from meetings.
+  const typeIds = [...new Set(acts.map(a => Array.isArray(a.activity_type_id) ? a.activity_type_id[0] as number : 0).filter(Boolean))];
+  const kinds = new Map<number, string>();
+  if (typeIds.length) {
+    const tr = await odooCall(env, uid, "mail.activity.type", "read", [typeIds], { fields: ["category"] });
+    for (const t of (tr.parsed ?? []) as Array<Record<string, unknown>>) kinds.set(t.id as number, s(t.category));
+  }
 
   // Phone fields of each record, a read per model.
   const records = new Map<string, Record<string, unknown>>();
@@ -353,14 +363,14 @@ export async function callActivities(env: Env, userId: number, limit = 50): Prom
     for (const p of (pr.parsed ?? []) as Array<Record<string, unknown>>) partners.set(p.id as number, p);
   }
 
-  const out: CallActivity[] = [];
+  const out: UserActivity[] = [];
   for (const a of acts) {
     const model = s(a.res_model), resId = a.res_id as number;
     const rec = records.get(`${model}:${resId}`);
     if (!rec) continue; // record deleted
     let phone = "";
     for (const f of ACTIVITY_PHONE_FIELDS) if (rec[f]) { phone = s(rec[f]); break; }
-    let partner: CallActivity["partner"] = null;
+    let partner: UserActivity["partner"] = null;
     if (model === "res.partner") partner = { id: resId, name: s(rec.display_name) };
     else if (Array.isArray(rec.partner_id)) partner = { id: rec.partner_id[0] as number, name: s(rec.partner_id[1]) };
     if (!phone && partner) {
@@ -370,7 +380,9 @@ export async function callActivities(env: Env, userId: number, limit = 50): Prom
     const type = Array.isArray(a.activity_type_id) ? s(a.activity_type_id[1]) : "";
     out.push({
       id: a.id as number,
-      summary: s(a.summary) || type || "Call",
+      summary: s(a.summary) || type || "Activity",
+      type,
+      kind: Array.isArray(a.activity_type_id) ? kinds.get(a.activity_type_id[0] as number) || "default" : "default",
       note: s(a.note).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 140),
       deadline: s(a.date_deadline),
       state: s(a.state),

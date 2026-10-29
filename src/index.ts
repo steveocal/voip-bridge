@@ -1,6 +1,6 @@
 import type { Env, ExecutionContext, D1PreparedStatement } from "./types";
-import { lookupCaller, pushCallToOdoo, pushCallHistory, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages, searchQuotations, contactTotals, phoneKey, createContactForNumber, renameContact, callActivities, activityDone, callLegs } from "./odoo";
-import { searchGmailMessages, searchRecentGmailMessages, getGmailBody, sendGmailMessage, listGoogleContacts, googleAccount, handleGoogleConnect, handleGoogleCallback, handleGoogleDisconnect } from "./gmail";
+import { lookupCaller, pushCallToOdoo, pushCallHistory, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages, searchQuotations, contactTotals, phoneKey, createContactForNumber, renameContact, userActivities, activityDone, callLegs } from "./odoo";
+import { searchGmailMessages, searchRecentGmailMessages, getGmailBody, sendGmailMessage, listGoogleContacts, googleAccount, handleGoogleConnect, handleGoogleCallback, handleGoogleDisconnect, calendarEvents } from "./gmail";
 import { ariRequest, ariParkedCalls } from "./asterisk";
 import { playbackResponse } from "./recording";
 import { transcribeCall } from "./transcribe";
@@ -556,11 +556,18 @@ async function handleQuotations(request: Request, env: Env): Promise<Response> {
   return Response.json({ quotations });
 }
 
-// ── Call activities ───────────────────────────────────────────
+// ── Activities: Odoo activities + Google Calendar appointments ─
 
 async function handleActivities(env: Env, user: User): Promise<Response> {
-  try { return Response.json({ activities: await callActivities(env, user.id) }); }
-  catch (e) { return Response.json({ error: String((e as Error).message || e) }, { status: 502 }); }
+  const [acts, cal] = await Promise.allSettled([userActivities(env, user.id), calendarEvents(env, user.id)]);
+  const why = (r: PromiseRejectedResult) => String((r.reason as Error)?.message || r.reason);
+  if (acts.status === "rejected" && cal.status === "rejected") return Response.json({ error: why(acts) }, { status: 502 });
+  return Response.json({
+    activities: acts.status === "fulfilled" ? acts.value : [],
+    activitiesError: acts.status === "rejected" ? why(acts) : undefined,
+    events: cal.status === "fulfilled" ? cal.value : [],
+    calendarError: cal.status === "rejected" ? why(cal) : undefined,
+  });
 }
 
 async function handleActivityDone(request: Request, env: Env, user: User, id: number): Promise<Response> {

@@ -76,6 +76,7 @@ const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/contacts.readonly",
+  "https://www.googleapis.com/auth/calendar.readonly",
   "email",
 ];
 
@@ -427,4 +428,61 @@ export async function listGoogleContacts(env: Env, userId: number): Promise<Goog
   }
   googleContactsCache.set(userId, { at: Date.now(), list });
   return list;
+}
+
+// ── Google Calendar (the Activities tab's appointments) ───────
+
+export interface CalendarEvent {
+  id: string;
+  summary: string;
+  start: string;        // ISO date-time, or YYYY-MM-DD for all-day events
+  end: string;
+  allDay: boolean;
+  location: string;
+  note: string;
+  link: string;         // the event in Google Calendar
+  meet: string;         // its video call link, if any
+  phone: string;        // a phone number found in its location or description
+}
+
+const PHONE_IN_TEXT = /(?:\+|\b0)[\d ()-]{8,}\d/;
+
+/** A user's primary-calendar events from now until `days` ahead, soonest
+ *  first. Throws when Google isn't connected or the connection predates
+ *  the calendar scope. */
+export async function calendarEvents(env: Env, userId: number, days = 14): Promise<CalendarEvent[]> {
+  const token = await getAccessToken(env, userId);
+  if (!token) throw new Error("Connect your Google account in Settings to see your calendar");
+  const url = new URL("https://www.googleapis.com/calendar/v3/calendars/primary/events");
+  url.searchParams.set("timeMin", new Date().toISOString());
+  url.searchParams.set("timeMax", new Date(Date.now() + days * 86400_000).toISOString());
+  url.searchParams.set("singleEvents", "true");
+  url.searchParams.set("orderBy", "startTime");
+  url.searchParams.set("maxResults", "100");
+  const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+  if (res.status === 403) throw new Error("Reconnect Google in Settings to see your calendar");
+  if (!res.ok) throw new Error(`Google Calendar failed: ${res.status}`);
+  const d = await res.json() as {
+    items?: Array<{
+      id: string; status?: string; summary?: string; location?: string; description?: string;
+      htmlLink?: string; hangoutLink?: string;
+      start?: { dateTime?: string; date?: string }; end?: { dateTime?: string; date?: string };
+    }>;
+  };
+  return (d.items ?? []).filter(e => e.status !== "cancelled").map(e => {
+    const note = (e.description ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const location = e.location ?? "";
+    return {
+      id: e.id,
+      summary: e.summary || "(No title)",
+      start: e.start?.dateTime || e.start?.date || "",
+      end: e.end?.dateTime || e.end?.date || "",
+      allDay: !e.start?.dateTime,
+      location,
+      note: note.slice(0, 140),
+      link: e.htmlLink ?? "",
+      meet: e.hangoutLink ?? "",
+      phone: (PHONE_IN_TEXT.exec(location) ?? PHONE_IN_TEXT.exec(note))?.[0].replace(/[^\d+]/g, "") ?? "",
+    };
+  });
 }

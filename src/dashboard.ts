@@ -327,6 +327,10 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 .act-row .act-done{width:38px;height:38px;border-radius:50%;border:1px solid #333;background:none;color:#ccc;font-size:16px;cursor:pointer;flex-shrink:0}
 .act-row .mini-call{width:38px;height:38px;border-radius:50%;border:none;background:#10b981;color:#fff;font-size:16px;cursor:pointer;flex-shrink:0}
 .act-row .mini-call:disabled{background:#333;color:#666;cursor:default}
+.act-row.event{border-left-color:#4db8ff}
+.act-row.event .due{color:#4db8ff}
+.act-row .act-meet{width:38px;height:38px;border-radius:50%;border:1px solid #333;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:16px;flex-shrink:0}
+.act-note{font-size:12px;color:#f0a33c;padding:8px 4px}
 .menu-btn{position:relative}
 .nav-badge{position:absolute;top:2px;left:50%;margin-left:6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center}
 /* contacts source filter */
@@ -651,7 +655,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       </div>
     </div>
 
-    <!-- ACTIVITIES VIEW (Odoo "Call" activities) -->
+    <!-- ACTIVITIES VIEW (Odoo activities + Google Calendar) -->
     <div class="view hidden" id="view-activities">
       <h2>📋 Activities</h2>
       <div id="activities-list"><div class="empty">Loading…</div></div>
@@ -3707,16 +3711,77 @@ function fmtTime(ts) {
   return sameDay ? hh + ":" + mm : d.toLocaleDateString(undefined, { day: "numeric", month: "short" }) + " " + hh + ":" + mm;
 }
 
-// ── activities (Odoo "Call" activities for the worker's user) ──
-var activities = [];
+// ── activities: the user's Odoo activities (every type) and Google
+// Calendar appointments, in one list grouped by day ──
+var activities = [];   // Odoo activities
+var calEvents = [];    // Google Calendar events
+var actItems = [];     // both, as rendered (rows point into this by index)
+var actNotes = [];     // why a source is missing (not connected, Odoo down …)
 function loadActivities() {
   var el = document.getElementById("activities-list");
-  if (!activities.length) el.innerHTML = '<div class="empty">Loading…</div>';
+  if (!actItems.length) el.innerHTML = '<div class="empty">Loading…</div>';
   fetch(API + "/activities").then(function(r) { return r.json(); }).then(function(d) {
     if (d.error) { el.innerHTML = '<div class="empty">' + esc(d.error) + '</div>'; return; }
     activities = d.activities || [];
+    calEvents = d.events || [];
+    actNotes = [d.activitiesError, d.calendarError].filter(Boolean);
     renderActivities();
   }).catch(function() { el.innerHTML = '<div class="empty">Error</div>'; });
+}
+function ymd(d) { return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
+function hhmm(d) { return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2); }
+function actDayLabel(day, today) {
+  if (day < today) return "Overdue";
+  if (day === today) return "Today";
+  var d = new Date(day + "T00:00:00");
+  var t = new Date(today + "T00:00:00"); t.setDate(t.getDate() + 1);
+  if (ymd(d) === ymd(t)) return "Tomorrow";
+  return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+}
+var ACT_ICONS = { phonecall: "📞", meeting: "👥", upload_file: "📎", email: "✉️" };
+function renderActivities() {
+  var el = document.getElementById("activities-list");
+  var today = ymd(new Date());
+  var urgent = activities.filter(function(a) { return a.state !== "planned"; }).length;
+  var badge = document.getElementById("act-badge");
+  badge.textContent = urgent;
+  badge.classList.toggle("hidden", !urgent);
+  actItems = activities.map(function(a) {
+    return { src: "odoo", a: a, day: a.deadline < today ? "0000" : a.deadline, at: a.deadline + "T00:00" };
+  }).concat(calEvents.map(function(e) {
+    var d = e.allDay ? null : new Date(e.start);
+    var day = e.allDay ? e.start : ymd(d);
+    if (day < today) day = today;  // started earlier and still running
+    return { src: "cal", e: e, day: day, at: e.allDay ? day + "T00:01" : day + "T" + hhmm(d) };
+  }));
+  actItems.sort(function(x, y) { return x.day < y.day ? -1 : x.day > y.day ? 1 : x.at < y.at ? -1 : x.at > y.at ? 1 : 0; });
+  var notes = actNotes.map(function(n) { return '<div class="act-note">' + esc(n) + '</div>'; }).join("");
+  if (!actItems.length) { el.innerHTML = notes + '<div class="empty">Nothing planned: no open Odoo activities or upcoming appointments</div>'; return; }
+  var html = notes, lastDay = null;
+  actItems.forEach(function(it, i) {
+    if (it.day !== lastDay) { html += '<div class="day-head">' + esc(it.day === "0000" ? "Overdue" : actDayLabel(it.day, today)) + '</div>'; lastDay = it.day; }
+    if (it.src === "odoo") {
+      var a = it.a;
+      html += '<div class="act-row ' + esc(a.state) + '" data-i="' + i + '"><div class="info">'
+        + '<div class="t">' + (ACT_ICONS[a.kind] || "✅") + ' ' + esc(a.summary) + '</div>'
+        + '<div class="sub">' + esc(a.record_name) + (a.phone ? ' · ' + esc(a.phone) : '') + '</div>'
+        + (a.note ? '<div class="sub">' + esc(a.note) + '</div>' : '')
+        + '<div class="due">' + esc(a.type ? a.type + " · " + activityDue(a) : activityDue(a)) + '</div></div>'
+        + '<button class="act-done" title="Mark done">✓</button>'
+        + '<button class="mini-call"' + (a.phone ? '' : ' disabled') + '>📞</button></div>';
+    } else {
+      var e = it.e;
+      var when = e.allDay ? "All day" : hhmm(new Date(e.start)) + (e.end ? "–" + hhmm(new Date(e.end)) : "");
+      html += '<div class="act-row event" data-i="' + i + '"><div class="info">'
+        + '<div class="t">📅 ' + esc(e.summary) + '</div>'
+        + (e.location ? '<div class="sub">' + esc(e.location) + '</div>' : '')
+        + (e.note ? '<div class="sub">' + esc(e.note) + '</div>' : '')
+        + '<div class="due">' + esc(when) + ' · Google Calendar</div></div>'
+        + (e.meet ? '<a class="act-meet" href="' + esc(e.meet) + '" target="_blank" rel="noopener" title="Join video call">🎥</a>' : '')
+        + (e.phone ? '<button class="mini-call">📞</button>' : '') + '</div>';
+    }
+  });
+  el.innerHTML = html;
 }
 function activityDue(a) {
   if (a.state === "today") return "Today";
@@ -3726,28 +3791,19 @@ function activityDue(a) {
   if (days === 1) return "Tomorrow";
   return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
-function renderActivities() {
-  var el = document.getElementById("activities-list");
-  var urgent = activities.filter(function(a) { return a.state !== "planned"; }).length;
-  var badge = document.getElementById("act-badge");
-  badge.textContent = urgent;
-  badge.classList.toggle("hidden", !urgent);
-  if (!activities.length) { el.innerHTML = '<div class="empty">No call activities — plan one in Odoo with the "Call" activity type</div>'; return; }
-  el.innerHTML = activities.map(function(a, i) {
-    return '<div class="act-row ' + esc(a.state) + '" data-i="' + i + '"><div class="info">'
-      + '<div class="t">' + esc(a.summary) + '</div>'
-      + '<div class="sub">' + esc(a.record_name) + (a.phone ? ' · ' + esc(a.phone) : '') + '</div>'
-      + (a.note ? '<div class="sub">' + esc(a.note) + '</div>' : '')
-      + '<div class="due">' + esc(activityDue(a)) + '</div></div>'
-      + '<button class="act-done" title="Mark done">✓</button>'
-      + '<button class="mini-call"' + (a.phone ? '' : ' disabled') + '>📞</button></div>';
-  }).join("");
-}
 document.getElementById("activities-list").addEventListener("click", function(e) {
   var row = e.target.closest(".act-row");
   if (!row) return;
-  var a = activities[+row.getAttribute("data-i")];
-  if (!a) return;
+  var it = actItems[+row.getAttribute("data-i")];
+  if (!it) return;
+  if (it.src === "cal") {
+    var ev = it.e;
+    if (e.target.closest(".act-meet")) return;  // the link opens the call
+    if (e.target.closest(".mini-call")) { prepareDial(ev.phone, ev.summary); return; }
+    if (ev.link) window.open(ev.link, "_blank", "noopener");
+    return;
+  }
+  var a = it.a;
   if (e.target.closest(".mini-call")) { if (a.phone) prepareDial(a.phone, a.partner ? a.partner.name : a.record_name); return; }
   if (e.target.closest(".act-done")) {
     activities = activities.filter(function(x) { return x.id !== a.id; });
