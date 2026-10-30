@@ -644,7 +644,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       <div class="cp-tabs">
         <button class="cp-tab active" data-tab="details" onclick="switchContactTab('details')">Details</button>
         <button class="cp-tab" data-tab="sales" onclick="switchContactTab('sales')">Sales / Purchases</button>
-        <button class="cp-tab" data-tab="messages" onclick="switchContactTab('messages')">Messages</button>
+        <button class="cp-tab" data-tab="messages" onclick="switchContactTab('messages')">Emails</button>
         <button class="cp-tab" data-tab="calls" onclick="switchContactTab('calls')">Calls</button>
       </div>
       <div class="cd-body">
@@ -679,8 +679,8 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 
     <!-- MESSAGES VIEW -->
     <div class="view hidden" id="view-messages">
-      <h2 id="msg-title">💬 Messages</h2>
-      <div id="messages-list"><div class="empty">Select a contact to view messages</div></div>
+      <h2 id="msg-title">✉️ Emails</h2>
+      <div id="messages-list"><div class="empty">Select a contact to view emails</div></div>
     </div>
   </div>
 
@@ -689,7 +689,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <button class="menu-btn" data-view="activities" onclick="switchView('activities')"><span class="ico">📋</span><span>Activities</span><b class="nav-badge hidden" id="act-badge"></b></button>
     <button class="dial-fab" id="nav-dial" onclick="navDialAction()" aria-label="Dial"><span class="fab">📞</span></button>
     <button class="menu-btn" data-view="contacts" onclick="switchView('contacts')"><span class="ico">👥</span><span>Contacts</span></button>
-    <button class="menu-btn" data-view="messages" onclick="switchView('messages')"><span class="ico">💬</span><span>Messages</span></button>
+    <button class="menu-btn" data-view="messages" onclick="switchView('messages')"><span class="ico">✉️</span><span>Emails</span></button>
   </nav>
   <div class="action-bar hidden" id="action-bar"></div>
 </div>
@@ -941,16 +941,16 @@ defParam(G_LIST, "historyLimit", "History rows loaded", 200, { min: 1, max: 1000
 defParam(G_LIST, "callPanelHistoryLimit", "Call history in call panel", 20, { min: 1, max: 200, step: 5 });
 defParam(G_LIST, "suggestionsLimit", "Contact suggestions while dialling", 6, { min: 1, max: 30 });
 defParam(G_LIST, "contactsLimit", "Contacts loaded", 100, { min: 1, max: 1000, step: 10 });
-defParam(G_LIST, "callPanelMessagesLimit", "Messages in call panel", 100, { min: 1, max: 500, step: 10 });
-defParam(G_LIST, "contactMessagesLimit", "Messages per contact", 50, { min: 1, max: 500, step: 10 });
+defParam(G_LIST, "callPanelMessagesLimit", "Emails in call panel", 100, { min: 1, max: 500, step: 10 });
+defParam(G_LIST, "contactMessagesLimit", "Emails per contact", 50, { min: 1, max: 500, step: 10 });
 defParam(G_LIST, "contactOrdersLimit", "Sales orders per contact", 20, { min: 1, max: 100, step: 5 });
-defParam(G_LIST, "recentMessagesDays", "Recent messages: days back", 7, { unit: "days", min: 1, max: 90 });
-defParam(G_LIST, "recentMessagesLimit", "Recent messages: max", 50, { min: 1, max: 500, step: 10 });
+defParam(G_LIST, "recentMessagesDays", "Recent emails: days back", 7, { unit: "days", min: 1, max: 90 });
+defParam(G_LIST, "recentMessagesLimit", "Recent emails: max", 50, { min: 1, max: 500, step: 10 });
 
 defParam(G_TIME, "suggestDebounceMs", "Dial T9 search delay", 60, { unit: "ms", min: 0, max: 2000, step: 10, note: "Wait after typing before searching" });
 defParam(G_TIME, "historyDebounceMs", "History search delay", 250, { unit: "ms", min: 0, max: 2000, step: 10 });
 defParam(G_TIME, "contactsDebounceMs", "Contacts search delay", 250, { unit: "ms", min: 0, max: 2000, step: 10 });
-defParam(G_TIME, "doubleTapMs", "Double-tap window", 300, { unit: "ms", min: 100, max: 1000, step: 10, note: "Contacts / messages rows" });
+defParam(G_TIME, "doubleTapMs", "Double-tap window", 300, { unit: "ms", min: 100, max: 1000, step: 10, note: "Contacts / email rows" });
 defParam(G_TIME, "jotAutoConvertMs", "Jot auto-convert delay", 1500, { unit: "ms", min: 0, max: 30000, step: 100, note: "Wait after the last finished word before the handwriting is read and copied into the notes" });
 defParam(G_TIME, "jotTextAutosaveMs", "Jot text edit autosave delay", 800, { unit: "ms", min: 200, max: 10000, step: 100, note: "Wait after the last keystroke before copying edited Aa text into the notes" });
 defParam(G_TIME, "contactRenameAutosaveMs", "Contact rename autosave delay", 900, { unit: "ms", min: 200, max: 10000, step: 100, note: "Wait after the last keystroke before saving the name to Odoo" });
@@ -3950,7 +3950,7 @@ document.getElementById("contacts-list").addEventListener("click", function(e) {
     return;
   }
   var mini = e.target.closest(".mini-call");
-  if (mini) { prepareDial(mini.getAttribute("data-num")); return; }
+  if (mini) { dialOut(mini.getAttribute("data-num")); return; }
   if (e.target.closest(".cname-edit")) return;
   var nameEl = e.target.closest(".cname-text");
   if (nameEl) { startContactRename(nameEl); return; }
@@ -4053,6 +4053,7 @@ function selectItem(type, data, key) {
   var el = document.querySelector('[data-key="' + key + '"]');
   if (el) el.classList.add("selected");
   if (type === "contact") activeContact = { id: data.id, name: data.name, email: data.email || "", phone: data.phone || data.mobile || "" };
+  if (type === "call") activeContact = data.partner_id ? { id: data.partner_id, name: data.partner_name || "", email: data.partner_email || "", phone: data.phone_number || "" } : null;
   renderActionBar();
 }
 function deselect() {
@@ -4071,9 +4072,9 @@ function renderActionBar() {
   if (selected.type === "contact") {
     var c = selected.data;
     var num = c.phone || c.mobile || "";
-    h = (num ? '<button class="green" onclick="prepareDialSelected()">📞 Dial</button>' : '') + '<button onclick="openMessages()">💬 Messages</button>' + '<button class="primary" onclick="openContactFull()">👤 Open</button>';
+    h = (num ? '<button class="green" onclick="dialSelected()">📞 Call</button>' : '') + '<button onclick="openMessages()">✉️ Emails</button>' + '<button class="primary" onclick="openContactFull()">👤 Open</button>';
   } else if (selected.type === "extcontact") {
-    h = selected.data.phone ? '<button class="green" onclick="prepareDialSelected()">📞 Dial</button>' : '';
+    h = selected.data.phone ? '<button class="green" onclick="dialSelected()">📞 Call</button>' : '';
   } else if (selected.type === "message") {
     h = '<button onclick="replyMessage()">↩ Reply</button>' + '<button class="primary" onclick="openMessageFull()">📖 Open</button>';
   } else if (selected.type === "call") {
@@ -4084,7 +4085,7 @@ function renderActionBar() {
   bar.innerHTML = h;
   bar.classList.remove("hidden");
 }
-function prepareDialSelected() { var c = selected && selected.data; prepareDial(c ? (c.phone || c.mobile || "") : "", c && c.name); }
+function dialSelected() { var c = selected && selected.data; if (c) dialOut(c.phone || c.mobile || ""); }
 function dialBackSelected() { var c = selected && selected.data; if (c && c.phone_number) dialOut(c.phone_number); }
 
 // ── detail views (full-screen) ─────────────────────────────────
@@ -4096,7 +4097,7 @@ function setDetail(title, bodyHtml, footHtml) {
   document.getElementById("detail-foot").innerHTML = footHtml || "";
   openDetail();
 }
-// ── contact detail: in-screen view (Details / Sales / Messages / Calls) ──
+// ── contact detail: in-screen view (Details / Sales / Emails / Calls) ──
 var ctContact = null, ctReturnView = "contacts", ctData = null, ctLoaded = {};
 var ctNameTimer = null;
 function currentViewName() {
@@ -4149,7 +4150,7 @@ function closeContactView() {
   ctContact = null;
   switchView(ctReturnView || "contacts");
 }
-function dialContactView() { if (ctContact) prepareDial(ctContact.phone || ctContact.mobile || "", ctContact.name); }
+function dialContactView() { if (ctContact) dialOut(ctContact.phone || ctContact.mobile || ""); }
 function renderContactHead() {
   var num = ctContact.phone || ctContact.mobile || "";
   document.getElementById("ct-name").textContent = ctContact.name || "Contact";
@@ -4549,6 +4550,11 @@ function sendCompose() {
 }
 function loadMessages() {
   var el = document.getElementById("messages-list");
+  if (!activeContact && selected && selected.type === "call") {
+    document.getElementById("msg-title").textContent = "✉️ Emails";
+    el.innerHTML = '<div class="empty">This call isn’t linked to a contact</div>';
+    return;
+  }
   if (!activeContact) {
     document.getElementById("msg-title").textContent = "📥 Recent emails (7 days)";
     el.innerHTML = '<div class="empty">Downloading recent emails…</div>';
@@ -4560,14 +4566,14 @@ function loadMessages() {
     }).catch(function(){ el.innerHTML = '<div class="empty">Error loading emails</div>'; });
     return;
   }
-  document.getElementById("msg-title").textContent = "💬 " + activeContact.name;
-  el.innerHTML = '<div class="empty">Downloading messages…</div>';
+  document.getElementById("msg-title").textContent = "✉️ " + activeContact.name;
+  el.innerHTML = '<div class="empty">Downloading emails…</div>';
   messagesCache = {};
   fetch(API + "/messages?contact=" + encodeURIComponent(activeContact.id) + "&limit=" + PV.contactMessagesLimit).then(function(r){return r.json();}).then(function(d){
-    var msgs = d.messages || [];
-    if (!msgs.length) { el.innerHTML = '<div class="empty">No messages found</div>'; return; }
+    var msgs = (d.messages || []).filter(function(m) { return m.source === "gmail" || m.message_type === "email"; });
+    if (!msgs.length) { el.innerHTML = '<div class="empty">No emails found</div>'; return; }
     el.innerHTML = msgs.map(function(m) { return renderMessageRow(m); }).join("");
-  }).catch(function(){ el.innerHTML = '<div class="empty">Error loading messages</div>'; });
+  }).catch(function(){ el.innerHTML = '<div class="empty">Error loading emails</div>'; });
 }
 function renderMessageRow(m) {
   var dir = m.direction === "outgoing" ? "⬆" : "⬇";
