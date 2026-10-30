@@ -56,7 +56,7 @@ declare class D1PreparedStatement {
 }
 export type { D1PreparedStatement };
 
-interface D1Result<T = Record<string, unknown>> {
+export interface D1Result<T = Record<string, unknown>> {
   results?: T[];
   success: boolean;
   meta: Record<string, unknown>;

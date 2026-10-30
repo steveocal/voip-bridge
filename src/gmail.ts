@@ -135,8 +135,8 @@ export async function handleGoogleCallback(request: Request, env: Env): Promise<
   const email = await accountEmail(data.access_token);
   await env.DB.prepare(
     "INSERT INTO user_google (user_id, email, refresh_token, updated_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(user_id) DO UPDATE SET email=excluded.email, refresh_token=excluded.refresh_token, updated_at=excluded.updated_at"
-  ).bind(parseInt(uid), email, data.refresh_token, Date.now()).run();
-  googleContactsCache.delete(parseInt(uid));
+  ).bind(parseInt(uid, 10), email, data.refresh_token, Date.now()).run();
+  googleContactsCache.delete(parseInt(uid, 10));
   return back("connected");
 }
 

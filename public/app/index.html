@@ -80,14 +80,15 @@ li{margin-bottom:8px}
     var mb = (v.size / 1048576).toFixed(1);
     var when = new Date(v.builtAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
     document.getElementById("ver").textContent = "Version " + v.versionName + " · " + mb + " MB · " + when;
-    if (v.notes) { var n = document.getElementById("notes"); n.textContent = v.notes; n.hidden = false; }
+    var notes = document.getElementById("notes");
+    if (v.notes) { notes.textContent = v.notes; notes.hidden = false; }
     // Versioned URL so no cache can hand out an older APK.
     dl.href = "voip-bridge.apk?v=" + v.versionCode;
     dl.removeAttribute("aria-disabled");
   }).catch(function () {
     document.getElementById("ver").textContent = "The app isn't available to download right now.";
   });
-  try { if (window.QRCode) new QRCode(document.getElementById("qr"), { text: location.href.split("#")[0], width: 140, height: 140 }); } catch (e) {}
+  try { if (window.QRCode) new QRCode(document.getElementById("qr"), { text: location.href.split("#")[0], width: 140, height: 140 }); } catch (_e) {}
 })();
 </script>
 </body>

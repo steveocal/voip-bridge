@@ -1,0 +1,23 @@
+{
+	"$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+	"vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+	"files": {
+		"includes": ["src/**", "public/**", "scripts/**", "!public/sip.min.js"]
+	},
+	"formatter": { "enabled": false },
+	"assist": { "enabled": false },
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "recommended",
+			"style": {
+				"useTemplate": "off",
+				"noNonNullAssertion": "off"
+			},
+			"complexity": {
+				"useArrowFunction": "off",
+				"useLiteralKeys": "off"
+			}
+		}
+	}
+}

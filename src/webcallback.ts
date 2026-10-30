@@ -255,7 +255,7 @@ export async function handleWebCallbackEvent(request: Request, env: Env, ctx: Ex
     ctx.waitUntil(pushCallToOdoo(env, callId).catch(e => console.error("pushCallToOdoo failed:", e)));
   } else if (event === "done") {
     const status = params.get("status") ?? "";
-    const talk = parseInt(params.get("talk") ?? "0") || 0;
+    const talk = parseInt(params.get("talk") ?? "0", 10) || 0;
     const answered = status === "ANSWER";
     await env.DB.batch([
       env.DB.prepare("UPDATE web_callbacks SET state = ?1, updated_at = ?2 WHERE id = ?3").bind(answered ? "connected" : "no-answer", now, id),

@@ -135,14 +135,14 @@ export async function sessionUser(request: Request, env: Env): Promise<User | nu
     || (request.method === "GET" ? new URL(request.url).searchParams.get("session") : null);
   if (!bearer) return null;
   if (env.API_TOKEN && await same(bearer, env.API_TOKEN)) {
-    const id = parseInt(request.headers.get("X-Odoo-User") || "0");
+    const id = parseInt(request.headers.get("X-Odoo-User") || "0", 10);
     return { id, name: "", ext: "", service: true };
   }
   const payload = await unsign(env, bearer);
   if (!payload) return null;
   const [kind, uid, ext, exp] = payload.split(".");
   if (kind !== "s" || !uid || Number(exp) < Date.now()) return null;
-  const id = parseInt(uid);
+  const id = parseInt(uid, 10);
   return { id, name: userNames.get(id) ?? "", ext };
 }
 

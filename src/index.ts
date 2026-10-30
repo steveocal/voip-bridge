@@ -1,4 +1,4 @@
-import type { Env, ExecutionContext, D1PreparedStatement } from "./types";
+import type { Env, ExecutionContext, D1PreparedStatement, D1Result } from "./types";
 import { lookupCaller, pushCallToOdoo, pushCallHistory, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages, searchQuotations, contactTotals, phoneKey, createContactForNumber, renameContact, userActivities, activityDone, callLegs } from "./odoo";
 import { searchGmailMessages, searchRecentGmailMessages, getGmailBody, sendGmailMessage, listGoogleContacts, googleAccount, handleGoogleConnect, handleGoogleCallback, handleGoogleDisconnect, calendarEvents } from "./gmail";
 import { ariRequest, ariParkedCalls } from "./asterisk";
@@ -44,7 +44,7 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
     const partner = await lookupCaller(env, caller);
     await stub.fetch(new Request("https://do/create", {
       method: "POST",
-      body: JSON.stringify({ callId, caller, did, partnerId: (partner as any)?.id, partnerName: (partner as any)?.name }),
+      body: JSON.stringify({ callId, caller, did, partnerId: partner?.id, partnerName: partner?.name }),
     }));
     // Log the call in D1 as soon as it rings (so missed calls are captured too).
     await env.DB.prepare(
@@ -52,8 +52,8 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
        VALUES (?1, ?2, ?3, ?4, 'calling', ?5, ?6, ?7, ?8)
        ON CONFLICT(call_id) DO UPDATE SET phone_number=excluded.phone_number, did=excluded.did, direction=excluded.direction, partner_id=excluded.partner_id,
          extension=COALESCE(excluded.extension, call_log.extension), user_id=COALESCE(excluded.user_id, call_log.user_id)`
-    ).bind(callId, caller, did, direction, Date.now(), (partner as any)?.id ?? null, extension, userId).run();
-    return Response.json({ action: "ring", caller, partner: (partner as any)?.name ?? null });
+    ).bind(callId, caller, did, direction, Date.now(), partner?.id ?? null, extension, userId).run();
+    return Response.json({ action: "ring", caller, partner: partner?.name ?? null });
   }
 
   if (event === "answer") {
@@ -88,7 +88,7 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
   }
 
   if (event === "hangup") {
-    const duration = parseInt(params.get("duration") ?? "0");
+    const duration = parseInt(params.get("duration") ?? "0", 10);
     const state = duration > 0 ? "terminated" : (direction === "outgoing" ? "aborted" : "missed");
     await stub.fetch(new Request("https://do/update", {
       method: "POST",
@@ -219,12 +219,12 @@ async function mergeCallLegs(env: Env, rows: CallRow[], viewer: User): Promise<C
 
 async function handleCallHistory(request: Request, env: Env, user: User): Promise<Response> {
   const url = new URL(request.url);
-  const want = Math.min(parseInt(url.searchParams.get("limit") ?? "50") || 50, 200);
+  const want = Math.min(parseInt(url.searchParams.get("limit") ?? "50", 10) || 50, 200);
   // Other people's calls are dropped after the query, so read more rows.
   const limit = want * 3;
   const q = (url.searchParams.get("q") ?? "").trim();
   const select = CALL_HISTORY_SELECT;
-  let rows;
+  let rows: D1Result<Record<string, unknown>>;
   if (q && url.searchParams.get("in") === "transcript") {
     // Transcript search: newest first, each row carrying its first matching line.
     rows = await env.DB.prepare(
@@ -484,9 +484,9 @@ async function handleParked(env: Env): Promise<Response> {
 
 async function handleMessages(request: Request, env: Env, user: User): Promise<Response> {
   const url = new URL(request.url);
-  const contactId = parseInt(url.searchParams.get("contact") ?? "0");
+  const contactId = parseInt(url.searchParams.get("contact") ?? "0", 10);
   if (!contactId) return Response.json({ error: "missing contact id" }, { status: 400 });
-  const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50") || 50, 100);
+  const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50", 10) || 50, 100);
 
   const contact = await env.DB.prepare("SELECT id, name, email FROM contacts WHERE id = ?1")
     .bind(contactId).first<{ id: number; name: string; email: string }>();
@@ -533,8 +533,8 @@ async function handleMessages(request: Request, env: Env, user: User): Promise<R
 // tab when no contact is selected.
 async function handleRecentMessages(request: Request, env: Env, user: User): Promise<Response> {
   const url = new URL(request.url);
-  const days = Math.max(1, Math.min(parseInt(url.searchParams.get("days") ?? "7") || 7, 30));
-  const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50") || 50, 100);
+  const days = Math.max(1, Math.min(parseInt(url.searchParams.get("days") ?? "7", 10) || 7, 30));
+  const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50", 10) || 50, 100);
 
   let gmailOk = false;
   let messages: Message[] = [];
@@ -549,9 +549,9 @@ async function handleRecentMessages(request: Request, env: Env, user: User): Pro
 
 async function handleQuotations(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
-  const contactId = parseInt(url.searchParams.get("contact") ?? "0");
+  const contactId = parseInt(url.searchParams.get("contact") ?? "0", 10);
   if (!contactId) return Response.json({ error: "missing contact id" }, { status: 400 });
-  const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "20") || 20, 100);
+  const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "20", 10) || 20, 100);
   const quotations = await searchQuotations(env, contactId, limit);
   return Response.json({ quotations });
 }
@@ -580,7 +580,7 @@ async function handleActivityDone(request: Request, env: Env, user: User, id: nu
 
 async function handleMessageDetail(request: Request, env: Env, user: User): Promise<Response> {
   const url = new URL(request.url);
-  const id = parseInt(url.searchParams.get("id") ?? "0");
+  const id = parseInt(url.searchParams.get("id") ?? "0", 10);
   const gmailId = url.searchParams.get("gmail_id") ?? "";
 
   // Live recent Gmail message (no D1 row yet) — return its full decoded body.
@@ -622,7 +622,7 @@ async function handleSendMessage(request: Request, env: Env, user: User): Promis
 async function handleContacts(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const q = url.searchParams.get("q") ?? "";
-  const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50") || 50, 200);
+  const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50", 10) || 50, 200);
   const contacts = await searchContacts(env, q, limit);
   return Response.json({ contacts });
 }
@@ -631,9 +631,9 @@ async function handleContacts(request: Request, env: Env): Promise<Response> {
 async function handleContactsCache(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const q = (url.searchParams.get("q") ?? "").trim();
-  const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50") || 50, 200);
+  const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50", 10) || 50, 200);
   const select = "SELECT id, name, company_type, is_company, phone, mobile, email, website, vat, function, city, active FROM contacts";
-  let rows;
+  let rows: D1Result<Record<string, unknown>>;
   if (q) {
     const like = `%${q}%`;
     rows = await env.DB.prepare(
@@ -683,7 +683,7 @@ async function handlePushCalls(request: Request, env: Env): Promise<Response> {
     try { return Response.json({ odoo_id: await pushCallToOdoo(env, callId, true) }); }
     catch (e) { return Response.json({ error: String((e as Error).message || e) }, { status: 502 }); }
   }
-  const limit = Math.min(parseInt(params.get("limit") ?? "10") || 10, 50);
+  const limit = Math.min(parseInt(params.get("limit") ?? "10", 10) || 10, 50);
   return Response.json(await pushCallHistory(env, limit));
 }
 
@@ -839,7 +839,7 @@ export default {
     else if (request.method === "GET" && url.pathname === "/caller-lookup") response = await handleCallerLookup(request, env);
     else if (request.method === "GET" && url.pathname === "/voicemail/sync") response = await handleVoicemailSync(env);
     else if (request.method === "POST" && url.pathname === "/voicemail/synced") response = await handleVoicemailSynced(request, env);
-    else if (request.method === "GET" && /^\/greetings\/\d+\/audio$/.test(url.pathname)) response = await handleGreetingAudio(env, parseInt(url.pathname.split("/")[2]));
+    else if (request.method === "GET" && /^\/greetings\/\d+\/audio$/.test(url.pathname)) response = await handleGreetingAudio(env, parseInt(url.pathname.split("/")[2], 10));
     else if (url.pathname === "/") response = Response.redirect(new URL("/dashboard", url).toString(), 302);
     else if (url.pathname === "/.well-known/assetlinks.json") response = Response.json(ANDROID_ASSET_LINKS);
     else if (url.pathname === "/dashboard") response = serveDashboard();
@@ -873,10 +873,10 @@ export default {
       else if (request.method === "GET" && url.pathname === "/voicemail") response = await handleGetVoicemail(env);
       else if (request.method === "POST" && url.pathname === "/voicemail") response = await handleSetVoicemail(request, env);
       else if (request.method === "POST" && url.pathname === "/greetings") response = await handleCreateGreeting(request, env);
-      else if (request.method === "POST" && /^\/greetings\/\d+$/.test(url.pathname)) response = await handleRenameGreeting(request, env, parseInt(url.pathname.split("/")[2]));
-      else if (request.method === "DELETE" && /^\/greetings\/\d+$/.test(url.pathname)) response = await handleDeleteGreeting(env, parseInt(url.pathname.split("/")[2]));
+      else if (request.method === "POST" && /^\/greetings\/\d+$/.test(url.pathname)) response = await handleRenameGreeting(request, env, parseInt(url.pathname.split("/")[2], 10));
+      else if (request.method === "DELETE" && /^\/greetings\/\d+$/.test(url.pathname)) response = await handleDeleteGreeting(env, parseInt(url.pathname.split("/")[2], 10));
       else if (request.method === "GET" && url.pathname === "/activities") response = await handleActivities(env, user);
-      else if (request.method === "POST" && /^\/activities\/\d+\/done$/.test(url.pathname)) response = await handleActivityDone(request, env, user, parseInt(url.pathname.split("/")[2]));
+      else if (request.method === "POST" && /^\/activities\/\d+\/done$/.test(url.pathname)) response = await handleActivityDone(request, env, user, parseInt(url.pathname.split("/")[2], 10));
       else if (request.method === "GET" && url.pathname === "/quotations") response = await handleQuotations(request, env);
       else if (request.method === "GET" && url.pathname === "/messages") response = await handleMessages(request, env, user);
       else if (request.method === "GET" && url.pathname === "/messages/recent") response = await handleRecentMessages(request, env, user);
@@ -886,8 +886,8 @@ export default {
       else if (request.method === "GET" && url.pathname === "/contacts/t9") response = await handleContactsT9(env);
       else if (request.method === "GET" && url.pathname === "/contacts/google") response = await handleGoogleContacts(env, user);
       else if (request.method === "GET" && url.pathname === "/contacts/cache") response = await handleContactsCache(request, env);
-      else if (request.method === "GET" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleContactDetail(env, parseInt(url.pathname.split("/")[2]), url.searchParams.get("cached") === "1", user);
-      else if (request.method === "POST" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleRenameContact(request, env, parseInt(url.pathname.split("/")[2]));
+      else if (request.method === "GET" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleContactDetail(env, parseInt(url.pathname.split("/")[2], 10), url.searchParams.get("cached") === "1", user);
+      else if (request.method === "POST" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleRenameContact(request, env, parseInt(url.pathname.split("/")[2], 10));
       else response = new Response("Not found", { status: 404 });
     }
 

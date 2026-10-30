@@ -73,6 +73,7 @@ export async function transcribeCall(env: Env, callId: string): Promise<string> 
 // Whisper's language tag, or failing that any non-Latin script (it sometimes
 // tags a mixed piece "en" while writing a line in Thai).
 function needsTranslation(l: Line): boolean {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: \u0000 is just the start of the Latin range
   return (!!l.lang && l.lang !== "en") || /[^\u0000-\u024F\u2000-\u206F\u20AC]/.test(l.text);
 }
 

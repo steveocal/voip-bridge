@@ -22,7 +22,7 @@ function tokenFor(env: Env, employeeId: number): Promise<string> {
 
 /** Employee id the token was issued to, or null. */
 async function verifyToken(env: Env, token: string): Promise<number | null> {
-  const id = parseInt(token.split(".")[0]);
+  const id = parseInt(token.split(".")[0], 10);
   if (!id || !env.STAFF_TOKEN_SECRET) return null;
   const expected = await tokenFor(env, id);
   if (expected.length !== token.length) return null;

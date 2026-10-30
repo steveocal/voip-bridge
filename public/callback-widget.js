@@ -11,7 +11,7 @@
 
   var script = document.currentScript || document.querySelector('script[src*="callback-widget.js"]');
   var API = script ? new URL(script.src, location.href).origin : "https://voip-bridge.wandering-mode-c597.workers.dev";
-  var opt = (script && script.dataset) || {};
+  var opt = script ? script.dataset : {};
   var COLOR = opt.color || "#0092c8";
   var LABEL = opt.label || "Speak with a heating expert";
   var SHOW_MOBILE = opt.showMobile === "true";
@@ -71,7 +71,7 @@
 
   function el(html) { var t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstChild; }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
-  function store(k, v) { try { if (v === undefined) return sessionStorage.getItem(k); sessionStorage.setItem(k, v); } catch (e) { return null; } }
+  function store(k, v) { try { if (v === undefined) return sessionStorage.getItem(k); sessionStorage.setItem(k, v); } catch (_e) { return null; } }
 
   function loadConfig() {
     return fetch(API + "/web-callback/config").then(function (r) { return r.json(); })
@@ -158,11 +158,11 @@
         renderForm(null, { name: form.name.value, phone: form.phone.value, country: form.country.value });
       });
     });
+    var fillTimes = function () {
+      var d = slots[+form.day.value] || { times: [] };
+      form.at.innerHTML = d.times.map(function (t) { return '<option value="' + t.at + '">' + esc(t.label) + '</option>'; }).join("");
+    };
     if (form.day) {
-      var fillTimes = function () {
-        var d = slots[+form.day.value] || { times: [] };
-        form.at.innerHTML = d.times.map(function (t) { return '<option value="' + t.at + '">' + esc(t.label) + '</option>'; }).join("");
-      };
       form.day.addEventListener("change", fillTimes);
       fillTimes();
     }
