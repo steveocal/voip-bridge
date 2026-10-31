@@ -78,6 +78,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .consult-bar{align-items:center;padding:8px 10px;border-radius:12px;background:#1e293b;border:1px solid #334155}
 .consult-bar span{flex:2;font-size:13px;color:#cbd5e1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .consult-bar button.go{background:#10b981}
+.consult-bar button#consult-merge{background:#6366f1}
+.consult-bar button:disabled{opacity:.4;cursor:default}
 .xfer{margin:0 16px 8px;padding:10px;border-radius:12px;background:#1a1a1a;border:1px solid #333;display:flex;flex-direction:column;gap:8px}
 .xfer .row{display:flex;gap:8px}
 .xfer input{flex:1;min-width:0;padding:9px 10px;border-radius:10px;border:1px solid #444;background:#111;color:#ececec;font-size:15px}
@@ -462,17 +464,19 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
   <div class="call-ctl hidden" id="call-ctl">
     <button id="ctl-hold" onclick="toggleHold()">⏸ Hold</button>
     <button id="ctl-xfer" onclick="openTransfer()">↪ Transfer</button>
+    <button id="ctl-add" onclick="openAddCall()">➕ Add</button>
     <button id="ctl-park" onclick="parkCall()">🅿 Park</button>
     <button id="ctl-mobile" onclick="moveToMobile()">📱 Mobile</button>
   </div>
   <div class="xfer hidden" id="xfer-panel">
     <div class="row"><input id="xfer-input" type="tel" placeholder="Extension or number" autocomplete="off"><button class="x" onclick="closeTransfer()" aria-label="Close">✕</button></div>
     <div class="exts" id="xfer-exts"></div>
-    <div class="row"><button class="go" onclick="blindTransfer()">Transfer now</button><button onclick="consultTransfer()">Talk first</button></div>
+    <div class="row"><button class="go" id="xfer-now" onclick="blindTransfer()">Transfer now</button><button id="xfer-talk" onclick="consultTransfer()">Talk first</button></div>
   </div>
   <div class="consult-bar hidden" id="consult-bar">
     <span id="consult-state"></span>
-    <button class="go" onclick="completeTransfer()">✓ Transfer</button>
+    <button class="go" id="consult-merge" onclick="mergeCall()">👥 Merge</button>
+    <button class="go" id="consult-xfer" onclick="completeTransfer()">✓ Transfer</button>
     <button onclick="cancelConsult()">✕ Back</button>
   </div>
   <div class="parked-strip hidden" id="parked-strip"></div>
@@ -3175,7 +3179,8 @@ function dialOut(num) {
   logCallEvent("ring");
   inviter.stateChange.on(function(state) {
     if (state === SIP.SessionState.Established) { stopRingback(); ensureRemoteAudio(inviter); currentCall.state = "active"; currentCall.answeredAt = Date.now(); renderCallUI(); logCallEvent("answer"); }
-    if (state === SIP.SessionState.Terminated) { logHangup(); resetCall(); }
+    // A merge swaps sipSession for the conference leg; this leg's hangup then isn't the call ending.
+    if (state === SIP.SessionState.Terminated && sipSession === inviter) { logHangup(); resetCall(); }
   });
   attachRemoteAudio(inviter);
   inviter.invite({ requestDelegate: { onProgress: function(response) {
@@ -3275,14 +3280,31 @@ function setHold(session, hold) {
     } catch (e) {}
   });
 }
+// Holding a conference leg would only silence us in the room, and a re-INVITE
+// there gains nothing: just stop sending the mic (the room's audio isn't
+// played while we talk to someone else, see consultTransfer).
+function holdLeg(hold) {
+  if (!currentCall || !currentCall.conf) return setHold(sipSession, hold);
+  try {
+    sipSession.sessionDescriptionHandler.peerConnection.getSenders().forEach(function(sn) {
+      if (sn.track && sn.track.kind === "audio") sn.track.enabled = !hold && !muted;
+    });
+  } catch (e) {}
+  return Promise.resolve();
+}
 function toggleHold() {
   if (!sipSession || !inCall() || consultSession) return;
   var want = !onHold;
-  setHold(sipSession, want).then(function() { onHold = want; renderCallUI(); })
+  holdLeg(want).then(function() { onHold = want; renderCallUI(); })
     .catch(function() { setStatus("❌ Hold failed", true); });
 }
-function openTransfer() {
+// mode "add" is ➕ Add: the same panel, but only "Call" (a consult that
+// 👥 Merge then joins into a conference).
+function openTransfer(mode) {
   if (!inCall()) return;
+  var add = mode === "add";
+  document.getElementById("xfer-now").classList.toggle("hidden", add);
+  document.getElementById("xfer-talk").textContent = add ? "📞 Call" : "Talk first";
   var mine = myExtension();
   document.getElementById("xfer-exts").innerHTML = XFER_EXTS.filter(function(x) { return x !== mine; })
     .map(function(x) { return '<button onclick="pickTransferExt(this.textContent)">' + x + '</button>'; }).join("");
@@ -3316,7 +3338,7 @@ function consultTransfer() {
   var to = transferInput();
   if (!to || !sipSession) return;
   closeTransfer();
-  var start = onHold ? Promise.resolve() : setHold(sipSession, true).then(function() { onHold = true; });
+  var start = onHold ? Promise.resolve() : holdLeg(true).then(function() { onHold = true; });
   start.then(function() {
     consultTarget = to;
     var inv = new SIP.Inviter(sipUA, sipTarget(to), { sessionDescriptionHandlerOptions: { constraints: { audio: true, video: false } } });
@@ -3350,7 +3372,72 @@ function backToCaller() {
   if (!sipSession || sipSession.state !== SIP.SessionState.Established) { renderCallUI(); return; }
   clearRemoteAudio();
   ensureRemoteAudio(sipSession);
-  setHold(sipSession, false).then(function() { onHold = false; renderCallUI(); }).catch(function() { renderCallUI(); });
+  holdLeg(false).then(function() { onHold = false; renderCallUI(); }).catch(function() { renderCallUI(); });
+}
+// ── conference ─────────────────────────────────────────────────
+// ➕ Add calls someone while the caller waits (as "Talk first" does). Then
+// 👥 Merge REFERs both far ends into a ConfBridge room on Asterisk, 8 + our
+// extension (8201 for 201; docs/asterisk-conference.md), and we dial into
+// it as the host. Once we're in the room, adding someone REFERs just their
+// leg in. The room ends for everyone when the host hangs up.
+function confRoom() { return "8" + myExtension(); }
+function openAddCall() { openTransfer("add"); }
+function referP(session, target) {
+  return new Promise(function(resolve, reject) {
+    session.refer(target, { requestDelegate: { onAccept: function() { resolve(); }, onReject: function() { reject(); } } }).catch(reject);
+  });
+}
+function mergeCall() {
+  if (!consultSession || !sipSession || !currentCall) return;
+  if (consultSession.state !== SIP.SessionState.Established) return;
+  var c = consultSession, who = consultTarget, room = confRoom();
+  consultSession = null; consultTarget = "";
+  noteTransfer("Added " + who + " to a conference");
+  if (currentCall.conf) {
+    currentCall.confWith.push(who);
+    // Asterisk hangs their leg to us up once they're in the room.
+    referP(c, sipTarget(room)).catch(function() { setStatus("❌ Couldn't add " + who, true); endSession(c); });
+    backToCaller();
+    return;
+  }
+  var old = sipSession;
+  // Out of sipSession, so the old legs hanging up doesn't end the call.
+  sipSession = null;
+  currentCall.conf = room;
+  currentCall.confWith = [currentCall.remote, who];
+  renderCallUI();
+  Promise.all([referP(c, sipTarget(room)), referP(old, sipTarget(room))]).then(function() {
+    joinConference(room);
+  }).catch(function() {
+    setStatus("❌ Merge failed", true);
+    if (!currentCall) return;
+    currentCall.conf = null;
+    if (old.state === SIP.SessionState.Established) {
+      sipSession = old;
+      if (c.state === SIP.SessionState.Established) { consultSession = c; consultTarget = who; renderCallUI(); }
+      else backToCaller();
+    } else {
+      // The caller's already gone; whoever made it into the room is there.
+      joinConference(room);
+    }
+  });
+}
+function joinConference(room) {
+  if (!currentCall) return; // hung up while merging
+  var inv = new SIP.Inviter(sipUA, sipTarget(room), { sessionDescriptionHandlerOptions: { constraints: { audio: true, video: false } } });
+  sipSession = inv; onHold = false;
+  clearRemoteAudio();
+  inv.stateChange.on(function(state) {
+    if (state === SIP.SessionState.Established) { ensureRemoteAudio(inv); renderCallUI(); }
+    if (state === SIP.SessionState.Terminated && sipSession === inv) { logHangup(); resetCall(); }
+  });
+  attachRemoteAudio(inv);
+  inv.invite().catch(function() {
+    if (sipSession !== inv) return;
+    setStatus("❌ Couldn't join the conference", true);
+    resetCall();
+  });
+  renderCallUI();
 }
 function parkCall() {
   if (!sipSession || !inCall()) return;
@@ -3447,22 +3534,29 @@ function renderCallUI() {
     return;
   }
   banner.classList.remove("hidden");
-  document.getElementById("banner-remote").textContent = currentCall.remote;
+  var conf = !!currentCall.conf;
+  document.getElementById("banner-remote").textContent = conf ? "👥 " + currentCall.confWith.join(", ") : currentCall.remote;
   var si = { ringing: "🔔 Incoming…", calling: "📞 Calling…", active: "🔊 Connected" }[currentCall.state] || currentCall.state;
   document.getElementById("banner-state").textContent = (currentCall.dir === "in" ? "⬇ " : "⬆ ") + si;
   document.getElementById("banner-answer").classList.toggle("hidden", !(currentCall.state === "ringing" && currentCall.dir === "in"));
   btnCall.classList.add("hidden");
   btnEnd.classList.remove("hidden");
   var active = currentCall.state === "active";
-  if (onHold && !consultSession) document.getElementById("banner-state").textContent = "⏸ On hold";
+  if (conf) document.getElementById("banner-state").textContent = !sipSession ? "👥 Merging…" : onHold ? "👥 Conference · you're muted" : "👥 Conference";
+  else if (onHold && !consultSession) document.getElementById("banner-state").textContent = "⏸ On hold";
   document.getElementById("call-ctl").classList.toggle("hidden", !active || !!consultSession);
-  document.getElementById("ctl-mobile").classList.toggle("hidden", !settings.mobileNumber);
+  // A conference leg can't be transferred, parked or moved, only added to.
+  document.getElementById("ctl-mobile").classList.toggle("hidden", !settings.mobileNumber || conf);
+  document.getElementById("ctl-xfer").classList.toggle("hidden", conf);
+  document.getElementById("ctl-park").classList.toggle("hidden", conf);
   document.getElementById("ctl-hold").classList.toggle("on", onHold);
   document.getElementById("ctl-hold").textContent = onHold ? "▶ Resume" : "⏸ Hold";
   document.getElementById("consult-bar").classList.toggle("hidden", !consultSession);
   if (consultSession) {
     var up = consultSession.state === SIP.SessionState.Established;
-    document.getElementById("consult-state").textContent = (up ? "Talking to " : "Calling ") + consultTarget + " · caller on hold";
+    document.getElementById("consult-state").textContent = (up ? "Talking to " : "Calling ") + consultTarget + (conf ? " · conference waiting" : " · caller on hold");
+    document.getElementById("consult-merge").disabled = !up;
+    document.getElementById("consult-xfer").classList.toggle("hidden", conf);
   }
   showCallPanel(true);
   updateDialBottomVisibility();
@@ -5422,7 +5516,7 @@ function initSoftphone() {
       if (consumeAutoAnswer()) setTimeout(function() { if (currentCall && currentCall.state === "ringing") answerCall(); }, PV.autoAnswerDelayMs);
       inv.stateChange.on(function(state) {
         if (state === SIP.SessionState.Established) { stopRingtone(); ensureRemoteAudio(inv); currentCall.state = "active"; currentCall.answeredAt = Date.now(); renderCallUI(); logCallEvent("answer"); }
-        if (state === SIP.SessionState.Terminated) { stopRingtone(); logHangup(); resetCall(); }
+        if (state === SIP.SessionState.Terminated) { stopRingtone(); if (sipSession === inv) { logHangup(); resetCall(); } }
       });
       // Remote audio is attached once actually answered (see answerCall) —
       // wiring it here would arm attachRemoteAudio's retry loop while the

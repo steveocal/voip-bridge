@@ -30,8 +30,8 @@ export async function transcribeCall(env: Env, callId: string): Promise<string> 
   const row = await env.DB.prepare("SELECT recording, direction FROM call_log WHERE call_id = ?1")
     .bind(callId).first<{ recording: string | null; direction: string | null }>();
   if (!row?.recording) throw new Error("no recording");
-  // rx is what the recorded channel received: the caller on inbound calls
-  // (recorded on the trunk), our own voice on outbound ones.
+  // rx is the caller on inbound calls (recorded on the trunk) and our own
+  // voice on outbound ones (the VPS swaps the files there; see recording.ts).
   const [rx, tx] = await Promise.all([fetchRecording(env, `${row.recording}-rx`), fetchRecording(env, `${row.recording}-tx`)]);
   let sides: { label: string; audio: Audio }[];
   if (rx && tx) {

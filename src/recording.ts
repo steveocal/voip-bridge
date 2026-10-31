@@ -5,8 +5,10 @@ import { ariRecordingFile } from "./asterisk";
 // MixMonitor writes three 8 kHz mono WAVs per call: <name> (both sides mixed,
 // for playback), plus <name>-rx (audio the recorded channel received) and
 // <name>-tx (audio sent to it), for labelling who said what. Inbound the
-// recorded channel is the trunk (rx = caller, tx = us); outbound it is our
-// own phone (rx = us, tx = the far end).
+// recorded channel is the trunk (rx = caller, tx = us). Outbound it is the far
+// end's channel, so the recording lasts through a conference merge or a
+// transfer, and the VPS swaps the two files there, so they still mean
+// rx = us, tx = the far end (scripts/vps-record-far-end.sh).
 // Not MixMonitor's stereo D option: in Asterisk 22.10.1 it doesn't resample,
 // and wideband (Opus) calls came out slowed 6x and unintelligible.
 
