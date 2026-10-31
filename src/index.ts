@@ -87,6 +87,21 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
     return Response.json({ action: "recording", file, transcribed });
   }
 
+  // The Android app placed this call over the phone's SIM (SimCallPlugin):
+  // log it as an outgoing call with did "SIM". The phone's own dialer has it
+  // from then on, so there's no answer/hangup or duration. SIM calls are
+  // mostly to the phone's private contacts, so no contact is created and
+  // nothing goes to Odoo.
+  if (event === "sim") {
+    const partner = await lookupCaller(env, caller);
+    const now = Date.now();
+    await env.DB.prepare(
+      `INSERT INTO call_log (call_id, phone_number, did, direction, state, start_date, end_date, partner_id, extension, user_id)
+       VALUES (?1, ?2, 'SIM', 'outgoing', 'terminated', ?3, ?3, ?4, ?5, ?6) ON CONFLICT(call_id) DO NOTHING`
+    ).bind(callId, caller, now, partner?.id ?? null, extension, userId).run();
+    return Response.json({ action: "sim", partner: partner?.name ?? null });
+  }
+
   if (event === "hangup") {
     const duration = parseInt(params.get("duration") ?? "0", 10);
     const state = duration > 0 ? "terminated" : (direction === "outgoing" ? "aborted" : "missed");

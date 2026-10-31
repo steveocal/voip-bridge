@@ -201,6 +201,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .menu-drawer{position:fixed;top:64px;right:12px;background:#1a1a1a;border:1px solid #2c2c2c;border-radius:12px;padding:6px;z-index:40;min-width:170px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
 .menu-drawer button{display:block;width:100%;text-align:left;background:none;border:none;color:#ececec;padding:12px 14px;font-size:15px;border-radius:8px;cursor:pointer}
 .menu-drawer button:active{background:#2c2c2c}
+.route-sheet{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center;z-index:60}
+.route-sheet .rs-card{background:#161616;border:1px solid #2c2c2c;border-radius:16px 16px 0 0;padding:14px 14px 20px;width:100%;max-width:420px;display:flex;flex-direction:column;gap:8px}
+.route-sheet .rs-title{font-size:13px;color:#aaa;text-align:center;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.route-sheet button{padding:13px;border:none;border-radius:12px;background:#2c2c2c;color:#ececec;font-size:15px;cursor:pointer;text-align:left}
+.route-sheet button.auto{outline:2px solid #10b981}
+.route-sheet button.cancel{text-align:center;background:#1a1a1a;color:#aaa}
+.h-sim{font-size:11px;margin-left:4px;opacity:.8}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px}
 .modal-card{background:#161616;border:1px solid #2c2c2c;border-radius:16px;padding:20px;width:100%;max-width:360px}
 .modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;font-size:17px;font-weight:700}
@@ -705,6 +712,9 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
   <button onclick="openParams()">📋 Parameters</button>
 </div>
 
+<div class="route-sheet hidden" id="route-sheet" onclick="if (event.target === this) closeRouteSheet()">
+  <div class="rs-card" id="route-sheet-card"></div>
+</div>
 <div class="modal hidden" id="settings-modal">
   <div class="modal-card compact">
     <div class="modal-head"><span>⚙️ Settings</span><button onclick="cancelSettings()" aria-label="Cancel">✕</button></div>
@@ -761,6 +771,11 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
         </div>
       </div>
       <div class="loc-status" id="loc-status"></div>
+    </div>
+
+    <div class="switch-row hidden" id="sim-auto-row">
+      <span>Phone contacts call from the SIM</span>
+      <label class="switch"><input type="checkbox" id="set-sim-auto" onchange="setSimAuto(this.checked)"><span class="track"></span></label>
     </div>
 
     <div class="set-field">
@@ -926,6 +941,7 @@ var G_CALL = "Calls & audio", G_LIST = "Lists & search", G_TIME = "Timing (typin
 var J_INK = "Jot: ink", J_WORD = "Jot: word detection", J_LAY = "Jot: layout & splitting", J_DOT = "Jot: periods", J_GEST = "Jot: gestures", J_BOX = "Jot: page & zoom";
 
 defParam(G_CALL, "parkExtension", "Park extension", 700, { min: 1, max: 99999, step: 1, note: "Asterisk's parking extension; Park transfers the call there" });
+defParam(G_CALL, "longPressCallMs", "Hold 📞 for SIM/VoIP", 550, { unit: "ms", min: 250, max: 2000, step: 50, note: "Long-press on a call button (Android app) to choose VoIP or the SIM" });
 defParam(G_CALL, "parkedPollMs", "Parked calls refresh", 5000, { unit: "ms", min: 1000, max: 60000, step: 500, note: "How often the parked-calls strip is checked" });
 defParam(G_CALL, "wsKeepAliveSec", "WebSocket keep-alive", 25, { unit: "s", min: 0, max: 300, step: 5, note: "Ping the SIP server this often (0 = off); applies on next connect" });
 defParam(G_CALL, "reconnectMinMs", "Reconnect first retry", 2000, { unit: "ms", min: 500, max: 60000, step: 500, note: "Wait before the first reconnect after the connection drops; doubles on each failure" });
@@ -3165,6 +3181,9 @@ function dialAction() {
 }
 function dialOut(num) {
   if (!num) return;
+  var pick = routeOverride;
+  routeOverride = null;
+  if ((pick ? pick.route : autoRoute(num)) === "sim") { simCallOut(num, pick && pick.sim); return; }
   num = normalizeDial(num);
   if (!sipUA) { setStatus("❌ Not registered", true); return; }
   var acc = activeAccount();
@@ -3203,6 +3222,138 @@ function normalizeDial(num) {
   // feature codes are never mistaken for one.
   else if (!num.startsWith("+") && num.length > 6) num = "+" + num;
   return num;
+}
+// ── SIM / VoIP (Android app) ───────────────────────────────────
+// The app can also call over the phone's own SIM (SimCall plugin). Numbers
+// in the phone's contacts go over the SIM, everything else (and every
+// extension) over VoIP. Long-press any 📞 to choose: VoIP, or the SIM (each
+// SIM on a dual-SIM phone). Settings → "Phone contacts call from the SIM"
+// turns the automatic part off. The phone's dialer has a SIM call from then
+// on, so it's logged in History (did "SIM") without a duration, recording
+// or notes.
+var routeOverride = null, simList = null;
+function simPlugin() {
+  var Cap = window.Capacitor;
+  if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform()) return null;
+  return (Cap.Plugins && Cap.Plugins.SimCall) || null;
+}
+function simAuto() { return localStorage.getItem("vb_simAuto") !== "0"; }
+function setSimAuto(on) { localStorage.setItem("vb_simAuto", on ? "1" : "0"); }
+// The last 9 digits, so +44 7700 900123, 07700900123 and 447700900123 match.
+function numKey(n) { var d = String(n || "").replace(/[^0-9]/g, ""); return d.length >= 7 ? d.slice(-9) : ""; }
+function deviceContactFor(num) {
+  var k = numKey(num);
+  if (!k || !deviceContacts) return null;
+  for (var i = 0; i < deviceContacts.length; i++) {
+    var ns = deviceContacts[i].numbers || [];
+    for (var j = 0; j < ns.length; j++) if (numKey(ns[j]) === k) return deviceContacts[i];
+  }
+  return null;
+}
+function isExtensionNumber(num) { var d = String(num).replace(/[^+0-9*#]/g, ""); return d.charAt(0) !== "+" && d.length <= 6; }
+function autoRoute(num) {
+  if (!simPlugin() || isExtensionNumber(num)) return "voip";
+  return simAuto() && deviceContactFor(num) ? "sim" : "voip";
+}
+// The SIM dials the number as written in the contact (a local 0… number is
+// local to the SIM's own country, unlike VoIP's 0 = UK). Only Asterisk's
+// bare-digit international numbers get their + back.
+function simNumber(num) {
+  var raw = String(num).replace(/[^+0-9*#]/g, "");
+  if (raw.charAt(0) !== "+" && raw.charAt(0) !== "0" && raw.length > 10) raw = "+" + raw;
+  return raw;
+}
+function simCallOut(num, simId) {
+  var SC = simPlugin(), raw = simNumber(num);
+  if (!SC || !raw) return;
+  SC.call({ number: raw, sim: simId || "" }).then(function(r) {
+    setStatus(r && r.method === "dialer" ? "📱 Press call in the phone's dialer" : "📱 Calling from the SIM", false);
+    setTimeout(function() { if (sipRegistered) setStatus("✅ Registered", false); }, 5000);
+    var body = new URLSearchParams();
+    body.set("event", "sim");
+    body.set("callId", "sim-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8));
+    body.set("caller", raw);
+    body.set("direction", "outgoing");
+    body.set("ext", myExtension());
+    fetch(API + "/call-event", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() })
+      .then(refreshCallLists).catch(function() {});
+  }).catch(function(e) { setStatus("❌ SIM call failed" + (e && e.message ? ": " + e.message : ""), true); });
+}
+function loadSims() {
+  var SC = simPlugin();
+  if (!SC || simList) return Promise.resolve(simList || []);
+  return SC.sims().then(function(r) { simList = (r && r.sims) || []; return simList; }).catch(function() { return []; });
+}
+// Long-press on a call button: VoIP or the SIM(s), the automatic choice
+// outlined. Picking one sets routeOverride and clicks the button again, so
+// whatever number that button calls goes the chosen way.
+var CALL_BTNS = "#nav-dial, .mini-call, #dial-suggestions .call, #cd-callback-btn, #ct-dial-btn, .green[onclick^=dial]";
+var lpTimer = null, lpFired = false, lpX = 0, lpY = 0;
+function callButtonNumber(btn) {
+  if (btn.id === "nav-dial") return document.getElementById("dial-input").value.trim();
+  if (btn.getAttribute("data-num")) return btn.getAttribute("data-num");
+  var row = btn.closest(".sugg-row");
+  if (row) return row.getAttribute("data-num");
+  var oc = btn.getAttribute("onclick") || "";
+  if (oc.indexOf("dialContactView") === 0) return ctContact ? (ctContact.phone || ctContact.mobile || "") : "";
+  if (oc.indexOf("dialBackSelected") === 0) return selected && selected.data ? selected.data.phone_number || "" : "";
+  if (oc.indexOf("dialSelected") === 0) return selected && selected.data ? selected.data.phone || selected.data.mobile || "" : "";
+  return "";
+}
+document.addEventListener("pointerdown", function(e) {
+  var btn = e.target.closest && e.target.closest(CALL_BTNS);
+  if (!btn || !simPlugin() || currentCall) return;
+  var num = callButtonNumber(btn);
+  if (!num || isExtensionNumber(num)) return;
+  lpFired = false; lpX = e.clientX; lpY = e.clientY;
+  clearTimeout(lpTimer);
+  lpTimer = setTimeout(function() {
+    lpTimer = null; lpFired = true;
+    if (navigator.vibrate) navigator.vibrate(30);
+    openRouteSheet(btn, num);
+  }, PV.longPressCallMs);
+}, true);
+function lpCancel() { clearTimeout(lpTimer); lpTimer = null; }
+document.addEventListener("pointerup", lpCancel, true);
+document.addEventListener("pointercancel", lpCancel, true);
+document.addEventListener("pointermove", function(e) { if (lpTimer && (Math.abs(e.clientX - lpX) > 10 || Math.abs(e.clientY - lpY) > 10)) lpCancel(); }, true);
+// The click that ends a long press mustn't also dial.
+document.addEventListener("click", function(e) {
+  if (!lpFired) return;
+  if (e.target.closest && e.target.closest(CALL_BTNS)) { e.preventDefault(); e.stopPropagation(); }
+  lpFired = false;
+}, true);
+document.addEventListener("contextmenu", function(e) { if (e.target.closest && e.target.closest(CALL_BTNS) && simPlugin()) e.preventDefault(); }, true);
+var routeSheetBtn = null;
+function openRouteSheet(btn, num) {
+  routeSheetBtn = btn;
+  var dc = deviceContactFor(num);
+  var auto = autoRoute(num);
+  loadSims().then(function(sims) {
+    var h = '<div class="rs-title">Call ' + esc(dc ? dc.name + " · " + num : num) + '</div>';
+    h += '<button class="' + (auto === "voip" ? "auto" : "") + '" onclick="pickRoute(' + "'voip'" + ')">🌐 VoIP · ext ' + esc(myExtension() || "?") + '</button>';
+    if (sims.length > 1) {
+      sims.forEach(function(sm, i) {
+        h += '<button class="' + (auto === "sim" && i === 0 ? "auto" : "") + '" onclick="pickRoute(' + "'sim'," + i + ')">📱 ' + esc(sm.label) + '</button>';
+      });
+    } else {
+      h += '<button class="' + (auto === "sim" ? "auto" : "") + '" onclick="pickRoute(' + "'sim'" + ')">📱 SIM' + (sims[0] ? " · " + esc(sims[0].label) : "") + '</button>';
+    }
+    h += '<button class="cancel" onclick="closeRouteSheet()">Cancel</button>';
+    document.getElementById("route-sheet-card").innerHTML = h;
+    document.getElementById("route-sheet").classList.remove("hidden");
+  });
+}
+function closeRouteSheet() { document.getElementById("route-sheet").classList.add("hidden"); routeSheetBtn = null; }
+function pickRoute(route, simIndex) {
+  var btn = routeSheetBtn;
+  var sim = route === "sim" && simList && simIndex != null && simList[simIndex] ? simList[simIndex].id : "";
+  closeRouteSheet();
+  if (!btn) return;
+  routeOverride = { route: route, sim: sim };
+  lpFired = false;
+  btn.click();
+  routeOverride = null;
 }
 function hangup() {
   stopRingtone();
@@ -3626,6 +3777,7 @@ function renderHistoryRow(c) {
   var missed = c.state === "missed" || c.state === "rejected" || c.state === "aborted";
   var name = (c.partner_name || "").trim();
   var num = (c.phone_number && c.phone_number !== "unknown") ? String(c.phone_number) : (c.did || "unknown");
+  if (!name && c.did === "SIM") { var dcn = deviceContactFor(num); if (dcn) name = dcn.name; }
   var d = c.start_date ? new Date(c.start_date) : null;
   var when = d ? ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2) : "";
   var key = "h-" + c.id;
@@ -3636,7 +3788,7 @@ function renderHistoryRow(c) {
   var play = c.has_recording ? '<button class="h-ic hist-play" title="Play recording">▶</button>' : '<span class="h-ic"></span>';
   return '<div class="hist-row" data-key="' + esc(key) + '">'
     + '<div class="hist-main">' + dirIcon(dir, missed) + '<span class="h-time">' + when + '</span>'
-    + '<span class="who">' + esc(name || num) + (c.voicemail ? ' <span title="Voicemail">📼</span>' : '') + '</span>'
+    + '<span class="who">' + esc(name || num) + (c.did === "SIM" ? ' <span class="h-sim" title="Called from the SIM">📱</span>' : '') + (c.voicemail ? ' <span title="Voicemail">📼</span>' : '') + '</span>'
     + note + tx + play + '</div>'
     + (c.match ? '<div class="hist-match">' + markMatch(c.match, historyQuery()) + '</div>' : '')
     + '</div>';
@@ -5090,6 +5242,8 @@ function openSettings() {
   document.getElementById("set-dev").checked = settings.devMode;
   document.getElementById("set-quicktext").value = settings.quickText || "";
   document.getElementById("set-mobile").value = settings.mobileNumber || "";
+  document.getElementById("sim-auto-row").classList.toggle("hidden", !simPlugin());
+  document.getElementById("set-sim-auto").checked = simAuto();
   renderAccountSelect();
   renderStaffLocation();
   renderSessionState();
@@ -5612,6 +5766,11 @@ document.addEventListener("DOMContentLoaded", boot);
 document.addEventListener("DOMContentLoaded", apiMe);
 document.addEventListener("DOMContentLoaded", checkAppUpdate);
 document.addEventListener("DOMContentLoaded", loadParked);
+// In the app, read the phone's contacts up front: SIM routing and History's
+// names for SIM calls need them (asks for Contacts once).
+document.addEventListener("DOMContentLoaded", function() {
+  if (simPlugin() && nativeContacts()) loadDeviceContacts().then(function(l) { if (l.length && onDialView()) loadHistory(); });
+});
 </script>
 </body>
 </html>`;
