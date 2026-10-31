@@ -429,7 +429,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <div class="avatar" id="avatar">👤<span class="status-dot warn" id="status-dot" title="Loading…"></span></div>
     <div class="identity">
       <div class="user-name" id="acc-name-display">Ext 201</div>
-      <div class="caller-id" id="acc-caller-display">Caller ID: +44 7898 117226</div>
+      <div class="caller-id" id="acc-caller-display">Caller ID: +44 7520 658657</div>
     </div>
     <div class="reg-status" id="phone-status">Loading…</div>
     <button class="install-btn hidden" id="install-btn" onclick="installApp()">⬇ Install</button>
@@ -717,7 +717,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <div id="account-editor" class="hidden">
       <div class="set-grid">
         <div class="set-field"><label>Name</label><input id="acc-name" type="text" placeholder="Asterisk (WebPhone 201)" autocomplete="off"></div>
-        <div class="set-field"><label>Caller ID</label><input id="acc-callerid" type="text" placeholder="+44 7898 117226" autocomplete="off"></div>
+        <div class="set-field"><label>Caller ID</label><input id="acc-callerid" type="text" placeholder="+44 7520 658657" autocomplete="off"></div>
         <div class="set-field"><label>Username</label><input id="acc-username" type="text" placeholder="201" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
         <div class="set-field"><label>Password</label><input id="acc-password" type="text" placeholder="webphone201" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
         <div class="set-field wide"><label>Proxy / Server</label><input id="acc-server" type="text" placeholder="wss://host/ws" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
@@ -1187,15 +1187,27 @@ function toggleFav(c) {
   persistFavourites();
 }
 
+// Asterisk picks the outbound number per extension ([outbound-dial] on the
+// VPS): 201 sends 01283 246491, the rest the voip.ms mobile number. The
+// Caller ID field only labels it.
+var OUTBOUND_CLI = "+44 7520 658657";
+function defaultCallerId(ext) { return String(ext) === "201" ? "+44 1283 246491" : OUTBOUND_CLI; }
 function defaultAccounts() {
   return [
-    { id: "asterisk", name: "Asterisk (WebPhone 201)", username: "201", password: "webphone201", server: DEFAULT_WS, transport: "wss", domain: "64.176.181.195", callerId: "+44 7898 117226" }
+    { id: "asterisk", name: "Asterisk (WebPhone 201)", username: "201", password: "webphone201", server: DEFAULT_WS, transport: "wss", domain: "64.176.181.195", callerId: defaultCallerId("201") }
   ];
 }
 function loadAccounts() {
   try {
     var raw = localStorage.getItem("vb_accounts");
-    if (raw) { var a = JSON.parse(raw); if (Array.isArray(a) && a.length) return a; }
+    if (raw) {
+      var a = JSON.parse(raw);
+      if (Array.isArray(a) && a.length) {
+        // Accounts saved before the switch still carry the Twilio number.
+        a.forEach(function(x) { if (!x.callerId || x.callerId.replace(/ /g, "") === "+447898117226") x.callerId = defaultCallerId(x.username); });
+        return a;
+      }
+    }
   } catch (e) {}
   return defaultAccounts();
 }
