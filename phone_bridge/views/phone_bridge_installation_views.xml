@@ -59,6 +59,7 @@
                                     <field name="sip_domain"/>
                                     <field name="default_caller_id"/>
                                     <field name="park_extension"/>
+                                    <field name="conference_prefix"/>
                                 </group>
                                 <group string="Secrets for the phone system" invisible="not pbx_secret">
                                     <field name="pbx_secret" password="True"/>

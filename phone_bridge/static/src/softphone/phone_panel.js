@@ -39,6 +39,7 @@ export class PhonePanel extends Component {
             dtmf: false,
             xfer: false,        // the transfer box is open
             xferTo: "",
+            xferMode: "transfer", // "transfer", or "add" for ➕ Add (a conference)
             loading: false,
             activities: [],
             recent: [],
@@ -351,8 +352,11 @@ export class PhonePanel extends Component {
 
     // ── Transfer / park ──
 
-    openTransfer() {
-        this.ui.xfer = !this.ui.xfer;
+    /** mode "add" is ➕ Add: the same box, but only "Call" (a consult that
+     *  👥 Merge then joins into a conference). */
+    openTransfer(mode = "transfer") {
+        this.ui.xfer = !(this.ui.xfer && this.ui.xferMode === mode);
+        this.ui.xferMode = mode;
         this.ui.xferTo = "";
         this.ui.dtmf = false;
     }
@@ -372,7 +376,11 @@ export class PhonePanel extends Component {
     get callStatus() {
         const call = this.state.call;
         if (!call) return "";
-        if (this.state.consult) return this.state.consult.up ? _t("Talking to %s · caller on hold", this.state.consult.target) : _t("Calling %s · caller on hold", this.state.consult.target);
+        const consult = this.state.consult;
+        if (consult && call.conf) return consult.up ? _t("Talking to %s · conference waiting", consult.target) : _t("Calling %s · conference waiting", consult.target);
+        if (consult) return consult.up ? _t("Talking to %s · caller on hold", consult.target) : _t("Calling %s · caller on hold", consult.target);
+        if (this.state.merging) return _t("Merging…");
+        if (call.conf && call.held) return _t("Conference · you're muted");
         if (call.held) return _t("On hold");
         if (call.state === "ringing") return call.dir === "in" ? _t("Incoming call") : _t("Calling…");
         const s = Math.max(0, Math.floor((this.ui.now - call.answeredAt) / 1000));

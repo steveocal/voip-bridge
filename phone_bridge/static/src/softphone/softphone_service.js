@@ -23,10 +23,11 @@ export const softphoneService = {
             status: "off",      // off | connecting | registered | error
             error: "",
             open: false,        // panel shown
-            call: null,         // { id, dir: "in"|"out", number, partner, state: "ringing"|"active", answeredAt, muted, activity }
+            call: null,         // { id, dir: "in"|"out", number, partner, state: "ringing"|"active", answeredAt, muted, activity, conf, confWith }
             finishedActivity: null, // the activity the last call was made for, to offer "Mark done"
             callsChanged: 0,    // bumped after every call, so lists reload
-            consult: null,      // { target, up } while talking to a transfer target, the caller on hold
+            consult: null,      // { target, up } while talking to a transfer target or someone to add, the caller on hold
+            merging: false,     // 👥 Merge is moving everyone into the conference room
             parked: [],         // [{ slot, number, name }] waiting in the PBX's parking lot
         });
         let config = null;
@@ -135,11 +136,26 @@ export const softphoneService = {
         function target(number) {
             return SIP.UserAgent.makeURI(`sip:${normalise(number)}@${config.domain}`);
         }
-        function refer(to) {
+        function referOn(s, to) {
             return new Promise((resolve, reject) => {
-                session.refer(to, { requestDelegate: { onAccept: resolve, onReject: () => reject(new Error(_t("Transfer refused"))) } })
+                s.refer(to, { requestDelegate: { onAccept: resolve, onReject: () => reject(new Error(_t("Transfer refused"))) } })
                     .catch(reject);
             });
+        }
+        function refer(to) {
+            return referOn(session, to);
+        }
+        function setSending(s, on) {
+            for (const sender of s?.sessionDescriptionHandler?.peerConnection?.getSenders() || []) {
+                if (sender.track?.kind === "audio") sender.track.enabled = on;
+            }
+        }
+        // In a conference, hold just stops our mic: a re-INVITE there gains
+        // nothing, and the room's audio isn't played while we talk to someone
+        // else (attachAudio plays one call at a time).
+        async function holdLeg(hold) {
+            if (state.call?.conf) setSending(session, !hold && !state.call.muted);
+            else await setHold(session, hold);
         }
         function endSession(s) {
             if (s.state === SIP.SessionState.Established) s.bye().catch(() => {});
@@ -152,7 +168,7 @@ export const softphoneService = {
             state.consult = null;
             if (session?.state !== SIP.SessionState.Established) return;
             attachAudio(session);
-            await setHold(session, false).catch(() => {});
+            await holdLeg(false).catch(() => {});
             if (state.call) state.call.held = false;
         }
         async function loadParked() {
@@ -169,8 +185,61 @@ export const softphoneService = {
             }
         }
 
+        // ── Conference ──
+        // ➕ Add calls someone while the caller waits, as "Talk first" does.
+        // 👥 Merge then REFERs both far ends into the PBX's conference room
+        // for this extension (Conference Prefix + extension, e.g. 8201) and
+        // dials into it as the host. Once in the room, merging someone
+        // REFERs just their leg in. The PBX ends the room for everyone when
+        // the host hangs up (docs/asterisk.md).
+        function conferenceRoom() {
+            return target(config.conference_prefix + config.extension);
+        }
+        function joinConference(room) {
+            if (!state.call) return; // hung up while merging
+            const inv = new SIP.Inviter(ua, room, { sessionDescriptionHandlerOptions: { constraints: { audio: true, video: false } } });
+            session = inv;
+            state.merging = false;
+            state.call.held = false;
+            audio.srcObject = null;
+            inv.stateChange.addListener((st) => {
+                if (session !== inv) return;
+                if (st === SIP.SessionState.Established) {
+                    attachAudio(inv);
+                    setSending(inv, !state.call?.muted);
+                } else if (st === SIP.SessionState.Terminated) {
+                    finishCall();
+                }
+            });
+            inv.invite().catch(() => {
+                if (session !== inv) return;
+                notification.add(_t("Couldn't join the conference"), { type: "danger" });
+                finishCall();
+            });
+        }
+
+        function finishCall() {
+            stopRing();
+            closeNotification();
+            const call = state.call;
+            const duration = call?.answeredAt ? Math.round((Date.now() - call.answeredAt) / 1000) : 0;
+            event("hangup", { duration }).then(() => state.callsChanged++);
+            audio.srcObject = null;
+            session = null;
+            if (consultSession) endSession(consultSession);
+            consultSession = null;
+            state.consult = null;
+            state.merging = false;
+            loadParked();
+            if (call?.activity) state.finishedActivity = { ...call.activity, answered: !!call.answeredAt };
+            state.call = null;
+        }
+
         function watch(s) {
             s.stateChange.addListener((st) => {
+                // A merge moves the call onto the conference leg; this leg
+                // hanging up then isn't the call ending.
+                if (session !== s) return;
                 if (st === SIP.SessionState.Established) {
                     stopRing();
                     closeNotification();
@@ -181,19 +250,7 @@ export const softphoneService = {
                     }
                     event("answer");
                 } else if (st === SIP.SessionState.Terminated) {
-                    stopRing();
-                    closeNotification();
-                    const call = state.call;
-                    const duration = call?.answeredAt ? Math.round((Date.now() - call.answeredAt) / 1000) : 0;
-                    event("hangup", { duration }).then(() => state.callsChanged++);
-                    audio.srcObject = null;
-                    session = null;
-                    if (consultSession) endSession(consultSession);
-                    consultSession = null;
-                    state.consult = null;
-                    loadParked();
-                    if (call?.activity) state.finishedActivity = { ...call.activity, answered: !!call.answeredAt };
-                    state.call = null;
+                    finishCall();
                 }
             });
         }
@@ -335,7 +392,10 @@ export const softphoneService = {
                 }
             },
             hangup() {
-                if (!session) return;
+                if (!session) {
+                    if (state.merging) finishCall();
+                    return;
+                }
                 stopRing();
                 const st = session.state;
                 if (st === SIP.SessionState.Established) session.bye().catch(() => {});
@@ -346,15 +406,17 @@ export const softphoneService = {
                 const pc = session?.sessionDescriptionHandler?.peerConnection;
                 if (!pc || !state.call) return;
                 state.call.muted = !state.call.muted;
+                // Muting while held (in a conference) must not unmute the mic.
+                const sending = !state.call.muted && !(state.call.conf && state.call.held);
                 for (const sender of pc.getSenders()) {
-                    if (sender.track?.kind === "audio") sender.track.enabled = !state.call.muted;
+                    if (sender.track?.kind === "audio") sender.track.enabled = sending;
                 }
             },
             async toggleHold() {
                 if (session?.state !== SIP.SessionState.Established || state.consult || !state.call) return;
                 const hold = !state.call.held;
                 try {
-                    await setHold(session, hold);
+                    await holdLeg(hold);
                     state.call.held = hold;
                 } catch (e) {
                     notification.add(e.message || _t("Hold failed"), { type: "danger" });
@@ -372,7 +434,7 @@ export const softphoneService = {
                 const to = target(number);
                 if (!to || session?.state !== SIP.SessionState.Established || consultSession) return;
                 try {
-                    if (!state.call.held) await setHold(session, true);
+                    if (!state.call.held) await holdLeg(true);
                     state.call.held = true;
                 } catch (e) {
                     notification.add(e.message || _t("Hold failed"), { type: "danger" });
@@ -402,6 +464,54 @@ export const softphoneService = {
                 consultSession = null;
                 endSession(c);
                 backToCaller();
+            },
+            canConference() {
+                return !!(config?.conference_prefix && config.extension);
+            },
+            /** Join the caller and the person we've been talking to into one call. */
+            async merge() {
+                const c = consultSession;
+                if (c?.state !== SIP.SessionState.Established || !state.call || !config?.conference_prefix) return;
+                const room = conferenceRoom();
+                const who = state.consult.target;
+                consultSession = null;
+                state.consult = null;
+                if (state.call.conf) {
+                    state.call.confWith.push(who);
+                    // The PBX hangs their leg to us up once they're in the room.
+                    referOn(c, room).catch((e) => {
+                        notification.add(e.message || _t("Couldn't add %s", who), { type: "danger" });
+                        endSession(c);
+                    });
+                    await backToCaller();
+                    return;
+                }
+                const old = session;
+                // Out of `session`, so the old legs hanging up doesn't end the call.
+                session = null;
+                state.merging = true;
+                state.call.conf = true;
+                state.call.confWith = [state.call.partner?.name || state.call.number, who];
+                try {
+                    await Promise.all([referOn(c, room), referOn(old, room)]);
+                } catch (e) {
+                    notification.add(e.message || _t("Merge failed"), { type: "danger" });
+                    if (!state.call) return;
+                    if (old.state === SIP.SessionState.Established) {
+                        session = old;
+                        state.merging = false;
+                        state.call.conf = false;
+                        if (c.state === SIP.SessionState.Established) {
+                            consultSession = c;
+                            state.consult = { target: who, up: true };
+                        } else {
+                            await backToCaller();
+                        }
+                        return;
+                    }
+                    // The caller is already in the room; whoever made it is there.
+                }
+                joinConference(room);
             },
             canPark() {
                 return !!config?.park_extension;

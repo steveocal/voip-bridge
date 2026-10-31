@@ -22,10 +22,11 @@
                 <div class="o_pb_incall">
                     <div class="o_pb_avatar"><i class="fa fa-user"/></div>
                     <div class="o_pb_who">
-                        <a t-if="state.call.partner and state.call.partner.id" href="#" t-on-click.prevent="() => this.openPartner(state.call.partner.id)" t-esc="state.call.partner.name"/>
+                        <span t-if="state.call.conf"><i class="fa fa-users"/> <t t-esc="state.call.confWith.join(', ')"/></span>
+                        <a t-elif="state.call.partner and state.call.partner.id" href="#" t-on-click.prevent="() => this.openPartner(state.call.partner.id)" t-esc="state.call.partner.name"/>
                         <span t-else="" t-esc="state.call.partner ? state.call.partner.name : state.call.number"/>
                     </div>
-                    <div class="o_pb_number" t-if="state.call.partner" t-esc="state.call.number"/>
+                    <div class="o_pb_number" t-if="state.call.partner and !state.call.conf" t-esc="state.call.number"/>
                     <div class="o_pb_callstatus" t-esc="callStatus"/>
                     <div t-if="state.call.activity" class="o_pb_callact"><i class="fa fa-tasks"/> <t t-esc="state.call.activity.summary"/></div>
 
@@ -35,24 +36,32 @@
                         </button>
                     </div>
 
-                    <div t-if="state.call.state === 'active' and !state.consult" class="o_pb_ctlrow">
+                    <div t-if="state.call.state === 'active' and !state.consult and !state.merging" class="o_pb_ctlrow">
                         <button class="btn btn-sm" t-att-class="state.call.held ? 'btn-warning' : 'btn-secondary'" t-on-click="() => phone.toggleHold()">
                             <i t-att-class="state.call.held ? 'fa fa-play' : 'fa fa-pause'"/> <t t-if="state.call.held">Resume</t><t t-else="">Hold</t>
                         </button>
-                        <button class="btn btn-sm btn-secondary" t-att-class="{'active': ui.xfer}" t-on-click="openTransfer"><i class="fa fa-share"/> Transfer</button>
-                        <button t-if="phone.canPark()" class="btn btn-sm btn-secondary" t-on-click="() => phone.park()"><i class="fa fa-product-hunt"/> Park</button>
+                        <!-- A conference leg can't be transferred or parked, only added to. -->
+                        <button t-if="!state.call.conf" class="btn btn-sm btn-secondary" t-att-class="{'active': ui.xfer and ui.xferMode === 'transfer'}" t-on-click="() => this.openTransfer('transfer')"><i class="fa fa-share"/> Transfer</button>
+                        <button t-if="phone.canConference()" class="btn btn-sm btn-secondary" t-att-class="{'active': ui.xfer and ui.xferMode === 'add'}" t-on-click="() => this.openTransfer('add')"><i class="fa fa-user-plus"/> Add</button>
+                        <button t-if="phone.canPark() and !state.call.conf" class="btn btn-sm btn-secondary" t-on-click="() => phone.park()"><i class="fa fa-product-hunt"/> Park</button>
                     </div>
-                    <div t-if="ui.xfer and !state.consult" class="o_pb_xfer">
+                    <div t-if="ui.xfer and !state.consult and !state.merging" class="o_pb_xfer">
                         <input class="form-control form-control-sm" type="tel" placeholder="Extension or number" t-model="ui.xferTo"
-                               t-on-keydown="(ev) => ev.key === 'Enter' and this.transfer(true)"/>
+                               t-on-keydown="(ev) => ev.key === 'Enter' and this.transfer(ui.xferMode !== 'add')"/>
                         <div class="d-flex gap-2 mt-2">
-                            <button class="btn btn-sm btn-success flex-fill" t-on-click="() => this.transfer(true)">Transfer now</button>
-                            <button class="btn btn-sm btn-secondary flex-fill" t-on-click="() => this.transfer(false)">Talk first</button>
+                            <t t-if="ui.xferMode === 'add'">
+                                <button class="btn btn-sm btn-success flex-fill" t-on-click="() => this.transfer(false)"><i class="fa fa-phone"/> Call</button>
+                            </t>
+                            <t t-else="">
+                                <button class="btn btn-sm btn-success flex-fill" t-on-click="() => this.transfer(true)">Transfer now</button>
+                                <button class="btn btn-sm btn-secondary flex-fill" t-on-click="() => this.transfer(false)">Talk first</button>
+                            </t>
                         </div>
                     </div>
                     <div t-if="state.consult" class="d-flex gap-2 mt-3">
-                        <button class="btn btn-sm btn-success" t-att-disabled="!state.consult.up" t-on-click="() => phone.completeTransfer()"><i class="fa fa-check"/> Transfer</button>
-                        <button class="btn btn-sm btn-secondary" t-on-click="() => phone.cancelConsult()"><i class="fa fa-undo"/> Back to caller</button>
+                        <button t-if="phone.canConference()" class="btn btn-sm btn-primary" t-att-disabled="!state.consult.up" t-on-click="() => phone.merge()"><i class="fa fa-users"/> Merge</button>
+                        <button t-if="!state.call.conf" class="btn btn-sm btn-success" t-att-disabled="!state.consult.up" t-on-click="() => phone.completeTransfer()"><i class="fa fa-check"/> Transfer</button>
+                        <button class="btn btn-sm btn-secondary" t-on-click="() => phone.cancelConsult()"><i class="fa fa-undo"/> Back</button>
                     </div>
 
                     <div class="o_pb_callbtns">
@@ -92,14 +101,14 @@
                 </div>
 
                 <div class="o_pb_body">
-                    <!-- Activities: calls to make -->
+                    <!-- Activities: everything planned for the user, calls or not -->
                     <t t-if="ui.tab === 'activities'">
-                        <div class="o_pb_h2">Calls to make</div>
-                        <div t-if="!ui.activities.length and !ui.loading" class="o_pb_none">No call activities. Plan one with the "Call" activity type on any record.</div>
+                        <div t-if="!ui.activities.length and !ui.loading" class="o_pb_none">No activities. Plan one on any record.</div>
                         <div t-foreach="ui.activities" t-as="act" t-key="act.id" class="o_pb_row" t-att-class="'o_pb_act_' + act.state">
                             <div class="o_pb_main" t-on-click="() => this.openRecord(act.res_model, act.res_id)">
                                 <div class="o_pb_name" t-esc="act.partner ? act.partner.name : act.record_name"/>
-                                <div class="o_pb_sub o_pb_when"><t t-esc="act.summary"/> · <t t-esc="act.deadline"/></div>
+                                <div class="o_pb_sub o_pb_when"><i t-att-class="'fa ' + act.icon" t-att-title="act.type"/> <t t-esc="act.summary"/> · <t t-esc="act.deadline"/></div>
+                                <div class="o_pb_sub" t-if="act.note" t-esc="act.note"/>
                                 <div class="o_pb_sub" t-if="act.partner and act.partner.name !== act.record_name" t-esc="act.record_name"/>
                             </div>
                             <button class="o_pb_icon" t-on-click="() => this.activityDone(act)" title="Mark done"><i class="fa fa-check"/></button>

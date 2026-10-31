@@ -32,6 +32,7 @@ class PhoneBridgeController(http.Controller):
             "caller_id": inst.default_caller_id or "",
             "country_code": inst.country_code or "44",
             "park_extension": inst.park_extension or "",
+            "conference_prefix": inst.conference_prefix or "",
         }
         config["enabled"] = all(config[k] for k in ("ws_url", "domain", "extension", "password"))
         return config
@@ -184,12 +185,11 @@ class PhoneBridgeController(http.Controller):
         return "", None
 
     @http.route("/phone_bridge/activities", type="json", auth="user")
-    def activities(self, limit=50):
-        """The user's open "Call" activities, soonest first, each with the
-        number to ring, as in Odoo Enterprise's phone."""
+    def activities(self, limit=100):
+        """All the user's open activities, soonest first, each with the
+        number to ring for its record (if there is one)."""
         acts = request.env["mail.activity"].search([
             ("user_id", "=", request.env.uid),
-            ("activity_type_id.category", "=", "phonecall"),
         ], order="date_deadline, id", limit=limit)
         out = []
         for act in acts:
@@ -200,6 +200,9 @@ class PhoneBridgeController(http.Controller):
             out.append({
                 "id": act.id,
                 "summary": act.summary or act.activity_type_id.name,
+                "type": act.activity_type_id.name or "",
+                "icon": act.activity_type_id.icon or "fa-tasks",
+                "is_call": act.activity_type_id.category == "phonecall",
                 "note": act.note and re.sub(r"<[^>]+>", " ", act.note).strip()[:140],
                 "deadline": fields.Date.to_string(act.date_deadline),
                 "state": act.state,  # overdue / today / planned
