@@ -198,7 +198,7 @@
                     <!-- Keypad -->
                     <t t-elif="ui.tab === 'keypad'">
                         <div class="o_pb_dialrow">
-                            <input class="o_pb_dialinput" type="tel" placeholder="Number" t-att-value="ui.number"
+                            <input class="o_pb_dialinput" type="tel" placeholder="Number" t-ref="dialInput" t-att-value="ui.number"
                                    t-on-input="onKeypadInput" t-on-keydown="onKeypadKeydown"/>
                             <button class="o_pb_icon" t-if="ui.number" t-on-click="backspace" title="Delete"><i class="fa fa-long-arrow-left"/></button>
                         </div>
@@ -219,7 +219,7 @@
                             </button>
                         </div>
                         <div class="text-center mt-2">
-                            <button class="o_pb_round o_pb_green" t-on-click="dialTyped" t-att-disabled="!ui.number or state.status !== 'registered'" title="Call">
+                            <button type="button" class="o_pb_round o_pb_green" t-on-click="() => this.dialTyped()" t-att-disabled="state.status !== 'registered'" title="Call">
                                 <i class="fa fa-phone"/>
                             </button>
                         </div>

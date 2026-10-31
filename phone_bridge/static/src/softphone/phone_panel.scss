@@ -28,7 +28,13 @@ $pb-red: #ef4444;
     overflow: hidden;
     font-size: 14px;
 
-    button { color: inherit; }
+    // Plain buttons take the panel's text colour; Bootstrap .btn keeps its own.
+    button:not(.btn) { color: inherit; }
+    // Grey buttons that read on the dark panel (Odoo's own are near white).
+    .btn-secondary, .btn-light {
+        background: #2c323b; border-color: #3a414c; color: #c8cdd3;
+        &:hover, &:focus, &.active { background: #3a414c; border-color: #4a525e; color: #e9ecef; }
+    }
 }
 
 .o_pb_head {

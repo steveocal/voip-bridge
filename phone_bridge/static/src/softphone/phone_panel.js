@@ -1,4 +1,4 @@
-import { Component, onWillStart, onWillUnmount, useEffect, useState } from "@odoo/owl";
+import { Component, onWillStart, onWillUnmount, useEffect, useRef, useState } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { useService } from "@web/core/utils/hooks";
 import { user } from "@web/core/user";
@@ -29,6 +29,7 @@ export class PhonePanel extends Component {
         this.action = useService("action");
         this.state = useState(this.phone.state);
         this.keys = KEYS;
+        this.dialInput = useRef("dialInput");
         this.ui = useState({
             tab: localStorage.getItem("phone_bridge.tab") || "activities",
             contactsTab: localStorage.getItem("phone_bridge.contactsTab") || "all",
@@ -296,7 +297,9 @@ export class PhonePanel extends Component {
     }
 
     dialTyped() {
-        const n = this.ui.number.trim();
+        // The input's own value too, in case it was filled without an input
+        // event (autofill, paste in some browsers).
+        const n = (this.ui.number || this.dialInput.el?.value || "").trim();
         if (!n) return;
         const picked = this.ui.picked && this.ui.picked.num === this.ui.number ? this.ui.picked.partner : null;
         this.phone.dial(n, picked ? { partner: picked } : {});
