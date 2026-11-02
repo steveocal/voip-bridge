@@ -21,6 +21,12 @@ export function ariSyncGreetings(env: Env) {
   return ariFetch(env, "channels?endpoint=Local/s@greetings-sync&context=greetings-sync&extension=noop&priority=1&timeout=30", { method: "POST" });
 }
 
+/** Runs [pbx-sync] (pbx-sync.sh) the same way: the PBX pulls its extensions
+ *  from /pbx/sync. */
+export function ariSyncExtensions(env: Env) {
+  return ariFetch(env, "channels?endpoint=Local/s@pbx-sync&context=pbx-sync&extension=noop&priority=1&timeout=30", { method: "POST" });
+}
+
 export async function ariRequest(env: Env, path: string, method = "GET", body?: Record<string, unknown>) {
   const url = `${env.ASTERISK_URL}/ari/${path}`;
   const auth = btoa(`${env.ASTERISK_USER}:${env.ASTERISK_PASS}`);

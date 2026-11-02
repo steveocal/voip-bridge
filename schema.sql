@@ -137,7 +137,13 @@ CREATE TABLE IF NOT EXISTS extensions (
   user_id INTEGER,
   user_name TEXT,
   user_email TEXT,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  -- What the PBX builds the extension from (0015, src/pbxsync.ts).
+  name TEXT,
+  sip_password TEXT,
+  device_type TEXT,
+  wake_app INTEGER,
+  active INTEGER
 );
 CREATE TABLE IF NOT EXISTS user_settings (
   user_id INTEGER NOT NULL,

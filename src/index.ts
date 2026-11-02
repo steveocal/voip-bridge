@@ -12,6 +12,7 @@ import type { Contact, Message } from "./odoo";
 import { jotToText } from "./jottext";
 import { groupCallLegs } from "./calllegs";
 import { type User, sessionUser, handleLogin, handleMe, extensionOwners, extensionUser, syncExtensions, canSee } from "./users";
+import { handlePbxStatus, handlePbxSync, handlePbxSynced, pbxAllowed } from "./pbxsync";
 import { handleStaffEmployees, handleStaffLogin, handleStaffLocation } from "./staff";
 import { handleWebCallback, handleWebCallbackConfig, handleWebCallbackStatus, handleWebCallbackEvent } from "./webcallback";
 
@@ -852,6 +853,10 @@ export default {
     else if (request.method === "POST" && url.pathname === "/push/register") response = await handlePushRegister(request, env);
     else if ((request.method === "POST" || request.method === "GET") && url.pathname === "/push/wake") response = await handlePushWake(request, env);
     else if (request.method === "GET" && url.pathname === "/caller-lookup") response = await handleCallerLookup(request, env);
+    // The PBX pulls its extensions (pbxsync.ts). These hold SIP passwords:
+    // the PBX secret only, never a signed-in user.
+    else if (m === "GET" && p === "/pbx/sync") response = await pbxAllowed(request, env) ? await handlePbxSync(env) : Response.json({ error: "forbidden" }, { status: 403 });
+    else if (m === "POST" && p === "/pbx/synced") response = await pbxAllowed(request, env) ? await handlePbxSynced(request, env) : Response.json({ error: "forbidden" }, { status: 403 });
     else if (request.method === "GET" && url.pathname === "/voicemail/sync") response = await handleVoicemailSync(env);
     else if (request.method === "POST" && url.pathname === "/voicemail/synced") response = await handleVoicemailSynced(request, env);
     else if (request.method === "GET" && /^\/greetings\/\d+\/audio$/.test(url.pathname)) response = await handleGreetingAudio(env, parseInt(url.pathname.split("/")[2], 10));
@@ -865,6 +870,7 @@ export default {
       else if (m === "POST" && p === "/google/disconnect") response = await handleGoogleDisconnect(env, user.id);
       else if (m === "GET" && p === "/google/status") response = Response.json({ account: await googleAccount(env, user.id) });
       else if (m === "POST" && p === "/extensions/sync") response = Response.json({ extensions: await syncExtensions(env) });
+      else if (m === "GET" && p === "/pbx/status") response = await handlePbxStatus(env);
       else if (request.method === "POST" && url.pathname === "/click2call") response = await handleClick2Call(request, env);
       else if (request.method === "POST" && url.pathname === "/answer") response = await handleAnswer(request, env);
       else if (request.method === "POST" && url.pathname === "/hangup-call") response = await handleHangupCall(request, env);
