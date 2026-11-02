@@ -17,7 +17,8 @@ pbx-sync.sh ──▶ /etc/asterisk/pjsip-phone-bridge-extensions.conf ──▶
   `ext <number> <webrtc|sip> <wake 0|1> <password> <caller name>`. Opened only
   by `X-Pbx-Secret: <PUSH_SECRET>`, never a signed-in user, as it holds the
   passwords. `GET /pbx/status` (signed in) says whether the PBX has caught up.
-- **VPS** (`asterisk/pbx-sync.sh`, on change and every 5 min): writes an
+- **VPS** (`asterisk/pbx-sync.sh`, every minute from the host crontab, and on
+  change when Odoo can reach the worker): writes an
   endpoint, auth and aor per extension on the templates in
   `asterisk/pjsip-phone-bridge.conf`, reloads PJSIP only when the file changed,
   keeps astdb `pbx/push_extensions` for the app push-wake, and reports a hash
@@ -94,7 +95,9 @@ the hangup event comes from there), `[pb-ring-app]` (an app leg, woken
 first), `[pb-ring-mobile]` (a mobile or forward leg, after its delay, from
 our voip.ms number) and `[ext-dial]` with forwarding. A number with no
 `pbroute` key keeps the hand-written ring list, so numbers move one at a
-time: set one up in Odoo and its calls follow Odoo within seconds; delete it
+time: set one up in Odoo and its calls follow Odoo within about two minutes
+(the VPS checks every minute; the worker re-reads Odoo when its copy is over
+a minute old); delete it
 there and the old routing is back.
 
 Setting it up (once):

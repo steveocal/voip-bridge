@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds this PBX's extensions from the ones in Odoo, so no one adds them here
 # by hand. Run by [pbx-sync] in the dialplan (the worker triggers it through
-# ARI whenever the extensions change) and every 5 minutes from the host's
+# ARI whenever the extensions change) and every minute from the host's
 # crontab as a safety net.
 #
 # GET /pbx/sync answers (src/pbxsync.ts):

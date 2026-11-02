@@ -7,7 +7,7 @@
 #
 # Installs asterisk/pbx-sync.sh and asterisk/pjsip-phone-bridge.conf, adds the
 # two #includes to pjsip.conf, the [pbx-sync] context (the worker runs it over
-# ARI after a change), a 5-minute crontab entry, and /etc/asterisk/
+# ARI after a change), a crontab entry every minute, and /etc/asterisk/
 # phone-bridge.env (worker URL + PUSH_SECRET, taken from the dialplan).
 # Dialplan: internal calls ring any number that is a PJSIP endpoint (not just
 # the hardcoded 200-204), and the app push-wake works for any extension Odoo
@@ -98,8 +98,8 @@ fi
 
 if crontab -l 2>/dev/null | grep -q 'pbx-sync.sh'; then echo "crontab: there, unchanged"
 else
-  (crontab -l 2>/dev/null; echo '*/5 * * * * docker exec -u asterisk asterisk /etc/asterisk/pbx-sync.sh >/dev/null 2>&1') | crontab -
-  echo "crontab: pbx-sync every 5 minutes added"
+  (crontab -l 2>/dev/null; echo '* * * * * docker exec -u asterisk asterisk /etc/asterisk/pbx-sync.sh >/dev/null 2>&1') | crontab -
+  echo "crontab: pbx-sync every minute added"
 fi
 
 docker exec asterisk asterisk -rx "dialplan reload" >/dev/null
