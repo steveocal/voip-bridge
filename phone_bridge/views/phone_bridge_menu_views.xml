@@ -1,0 +1,80 @@
+<?xml version="1.0"?>
+<odoo>
+    <record id="phone_bridge_menu_list" model="ir.ui.view">
+        <field name="name">phone_bridge.menu.list</field>
+        <field name="model">phone_bridge.menu</field>
+        <field name="arch" type="xml">
+            <list string="Phone Menus">
+                <field name="name"/>
+                <field name="prompt"/>
+                <field name="voice" optional="hide"/>
+                <field name="direct_dial" optional="show"/>
+                <field name="noinput_action" optional="show"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="phone_bridge_menu_form" model="ir.ui.view">
+        <field name="name">phone_bridge.menu.form</field>
+        <field name="model">phone_bridge.menu</field>
+        <field name="arch" type="xml">
+            <form string="Phone Menu">
+                <sheet>
+                    <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger" invisible="active"/>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="e.g. Main menu"/></h1>
+                    </div>
+                    <group>
+                        <field name="prompt" placeholder="Thanks for calling. For sales press 1, for accounts press 2."/>
+                        <field name="voice"/>
+                        <field name="active" invisible="1"/>
+                    </group>
+                    <field name="option_ids">
+                        <list editable="bottom">
+                            <field name="sequence" widget="handle"/>
+                            <field name="key"/>
+                            <field name="action"/>
+                            <field name="extension_ids" widget="many2many_tags" options="{'no_create': True}"
+                                   invisible="action != 'ring'" required="action == 'ring'"/>
+                            <field name="number" invisible="action != 'forward'" required="action == 'forward'"
+                                   placeholder="+44 7700 900123"/>
+                            <field name="submenu_id" invisible="action != 'menu'" required="action == 'menu'"/>
+                        </list>
+                    </field>
+                    <group>
+                        <group string="Keys">
+                            <field name="timeout"/>
+                            <field name="retries"/>
+                            <field name="direct_dial"/>
+                            <field name="ring_seconds"/>
+                        </group>
+                        <group string="When No Key Is Pressed">
+                            <field name="noinput_action"/>
+                            <field name="noinput_extension_ids" widget="many2many_tags" options="{'no_create': True}"
+                                   invisible="noinput_action != 'ring'" required="noinput_action == 'ring'"/>
+                            <field name="noinput_number" invisible="noinput_action != 'forward'"
+                                   required="noinput_action == 'forward'" placeholder="+44 7700 900123"/>
+                            <field name="noinput_menu_id" invisible="noinput_action != 'menu'"
+                                   required="noinput_action == 'menu'"/>
+                        </group>
+                    </group>
+                    <div class="text-muted">
+                        The prompt is turned into speech when it is saved and reaches the phone system within about
+                        two minutes. "Ring extensions" keys ring those extensions, then go to voicemail.
+                    </div>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_phone_bridge_menu" model="ir.actions.act_window">
+        <field name="name">Phone Menus</field>
+        <field name="res_model">phone_bridge.menu</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Add a phone menu</p>
+            <p>Callers hear the prompt and press a key. Use it on a Phone Number ("Answer With: Play a menu"),
+               or out of hours.</p>
+        </field>
+    </record>
+</odoo>

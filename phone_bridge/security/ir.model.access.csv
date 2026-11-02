@@ -6,3 +6,7 @@ access_phone_bridge_extension_user,phone_bridge.extension user,model_phone_bridg
 access_phone_bridge_extension_admin,phone_bridge.extension admin,model_phone_bridge_extension,base.group_system,1,1,1,1
 access_phone_bridge_number_user,phone_bridge.number user,model_phone_bridge_number,base.group_user,1,0,0,0
 access_phone_bridge_number_admin,phone_bridge.number admin,model_phone_bridge_number,base.group_system,1,1,1,1
+access_phone_bridge_menu_user,phone_bridge.menu user,model_phone_bridge_menu,base.group_user,1,0,0,0
+access_phone_bridge_menu_admin,phone_bridge.menu admin,model_phone_bridge_menu,base.group_system,1,1,1,1
+access_phone_bridge_menu_option_user,phone_bridge.menu.option user,model_phone_bridge_menu_option,base.group_user,1,0,0,0
+access_phone_bridge_menu_option_admin,phone_bridge.menu.option admin,model_phone_bridge_menu_option,base.group_system,1,1,1,1

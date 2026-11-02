@@ -10,6 +10,8 @@
                 <field name="extension_ids" widget="many2many_tags"/>
                 <field name="ring_mobiles" optional="show"/>
                 <field name="ring_seconds" optional="hide"/>
+                <field name="answer" optional="show"/>
+                <field name="calendar_id" optional="show"/>
                 <field name="no_answer"/>
                 <field name="record" optional="show"/>
             </list>
@@ -29,9 +31,12 @@
                     </div>
                     <group>
                         <group string="Who Answers">
-                            <field name="extension_ids" widget="many2many_tags" options="{'no_create': True}"/>
-                            <field name="ring_mobiles"/>
-                            <field name="ring_seconds"/>
+                            <field name="answer"/>
+                            <field name="menu_id" invisible="answer != 'menu'" required="answer == 'menu'"/>
+                            <field name="extension_ids" widget="many2many_tags" options="{'no_create': True}"
+                                   invisible="answer != 'ring'"/>
+                            <field name="ring_mobiles" invisible="answer != 'ring'"/>
+                            <field name="ring_seconds" invisible="answer != 'ring'"/>
                             <field name="active" invisible="1"/>
                         </group>
                         <group string="When Nobody Answers">
@@ -39,6 +44,17 @@
                             <field name="no_answer_number" invisible="no_answer != 'forward'"
                                    required="no_answer == 'forward'" placeholder="+44 7700 900123"/>
                             <field name="record"/>
+                        </group>
+                        <group string="Opening Hours">
+                            <field name="calendar_id"/>
+                            <field name="closed_action" invisible="not calendar_id"/>
+                            <field name="closed_number" invisible="not calendar_id or closed_action != 'forward'"
+                                   required="calendar_id and closed_action == 'forward'" placeholder="+44 7700 900123"/>
+                            <field name="closed_menu_id" invisible="not calendar_id or closed_action != 'menu'"
+                                   required="calendar_id and closed_action == 'menu'"/>
+                            <field name="closed_message" invisible="not calendar_id"
+                                   placeholder="We're closed at the moment. Our hours are 9 till 5, Monday to Friday."/>
+                            <field name="voice" invisible="not calendar_id or not closed_message"/>
                         </group>
                     </group>
                     <div class="text-muted">

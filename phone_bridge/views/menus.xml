@@ -12,4 +12,6 @@
         action="action_phone_bridge_extension" sequence="20"/>
     <menuitem id="menu_phone_bridge_numbers" name="Phone Numbers" parent="menu_phone_bridge_config"
         action="action_phone_bridge_number" sequence="30"/>
+    <menuitem id="menu_phone_bridge_menus" name="Phone Menus" parent="menu_phone_bridge_config"
+        action="action_phone_bridge_menu" sequence="40"/>
 </odoo>

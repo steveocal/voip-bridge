@@ -65,7 +65,7 @@ function asteriskPbx(env) {
     },
     // [web-callback] rings the agents with the visitor as the caller, and
     // once one answers dials the visitor from the website number.
-    async webCallback({ id, name, number }) {
+    async webCallback({ id: id2, name, number }) {
       const params = new URLSearchParams({
         endpoint: "Local/agents@web-callback/n",
         context: "web-callback",
@@ -75,7 +75,7 @@ function asteriskPbx(env) {
         timeout: "60"
       });
       const r = await ariRequest(env, `channels?${params}`, "POST", {
-        variables: { __CB_ID: id, __CB_NUMBER: number, __CB_NAME: name.replace(/[^\p{L}\p{N} .'-]/gu, "") }
+        variables: { __CB_ID: id2, __CB_NUMBER: number, __CB_NAME: name.replace(/[^\p{L}\p{N} .'-]/gu, "") }
       });
       if (!r?.id) console.error("web-callback originate failed:", r?.message);
       return !!r?.id;
@@ -135,10 +135,10 @@ __name(isOwnEmail, "isOwnEmail");
 function toInternational(cfg, number) {
   const raw = (number || "").trim();
   if (raw.startsWith("+")) return "+" + raw.replace(/\D/g, "");
-  const digits = raw.replace(/\D/g, "");
-  if (digits.startsWith("00")) return "+" + digits.slice(2);
-  if (digits.startsWith("0")) return "+" + cfg.countryCode + digits.slice(1);
-  return digits;
+  const digits2 = raw.replace(/\D/g, "");
+  if (digits2.startsWith("00")) return "+" + digits2.slice(2);
+  if (digits2.startsWith("0")) return "+" + cfg.countryCode + digits2.slice(1);
+  return digits2;
 }
 __name(toInternational, "toInternational");
 
@@ -384,17 +384,17 @@ function parseValue(xml) {
 }
 __name(parseValue, "parseValue");
 function phoneKey(number) {
-  const digits = (number || "").replace(/\D/g, "");
-  return digits.length >= 7 ? digits.slice(-9) : "";
+  const digits2 = (number || "").replace(/\D/g, "");
+  return digits2.length >= 7 ? digits2.slice(-9) : "";
 }
 __name(phoneKey, "phoneKey");
 function displayNumber(env, number) {
   const cc = config(env).countryCode;
-  const digits = (number || "").replace(/\D/g, "");
-  if (digits.startsWith(cc) && digits.length > cc.length + 8) return "0" + digits.slice(cc.length);
-  if (digits.startsWith("0")) return digits;
-  if (cc !== "1" && digits.length === 10) return "+1" + digits;
-  return digits.length > 10 ? "+" + digits : digits;
+  const digits2 = (number || "").replace(/\D/g, "");
+  if (digits2.startsWith(cc) && digits2.length > cc.length + 8) return "0" + digits2.slice(cc.length);
+  if (digits2.startsWith("0")) return digits2;
+  if (cc !== "1" && digits2.length === 10) return "+1" + digits2;
+  return digits2.length > 10 ? "+" + digits2 : digits2;
 }
 __name(displayNumber, "displayNumber");
 async function lookupCaller(env, number) {
@@ -445,15 +445,15 @@ async function createContactForNumber(env, number, when = Date.now(), knownName)
   return contact;
 }
 __name(createContactForNumber, "createContactForNumber");
-async function renameContact(env, id, name) {
+async function renameContact(env, id2, name) {
   const uid = await odooAuth(env);
   if (!uid) return false;
-  const r = await odooCall(env, uid, "res.partner", "write", [[id], { name }]);
+  const r = await odooCall(env, uid, "res.partner", "write", [[id2], { name }]);
   if (r.fault || r.parsed !== true) {
     console.error("Odoo contact rename failed:", r.fault ?? r._xml);
     return false;
   }
-  await env.DB.prepare("UPDATE contacts SET name=?1, updated_at=?2 WHERE id=?3").bind(name, Date.now(), id).run();
+  await env.DB.prepare("UPDATE contacts SET name=?1, updated_at=?2 WHERE id=?3").bind(name, Date.now(), id2).run();
   return true;
 }
 __name(renameContact, "renameContact");
@@ -528,12 +528,12 @@ async function callActivities(env, userId, limit = 50) {
   return out;
 }
 __name(callActivities, "callActivities");
-async function activityDone(env, userId, id, feedback = "") {
+async function activityDone(env, userId, id2, feedback = "") {
   const uid = await odooAuth(env);
   if (!uid) return false;
-  const mine = await odooCall(env, uid, "mail.activity", "search_count", [[["id", "=", id], ["user_id", "=", userId]]]);
+  const mine = await odooCall(env, uid, "mail.activity", "search_count", [[["id", "=", id2], ["user_id", "=", userId]]]);
   if (mine.parsed !== 1) return false;
-  const r = await odooCall(env, uid, "mail.activity", "action_feedback", [[id]], feedback ? { feedback } : {});
+  const r = await odooCall(env, uid, "mail.activity", "action_feedback", [[id2]], feedback ? { feedback } : {});
   if (r.fault && !/marshal None/.test(r.fault)) {
     console.error("Odoo activity done failed:", r.fault);
     return false;
@@ -847,7 +847,7 @@ async function pushCallHistory(env, limit = 20) {
     const next = await env.DB.prepare(
       `SELECT call_id FROM call_log WHERE ${UNSENT} ORDER BY start_date LIMIT ?1`
     ).bind(tried.size + 1).all();
-    const callId = (next.results ?? []).map((r) => r.call_id).find((id) => !tried.has(id));
+    const callId = (next.results ?? []).map((r) => r.call_id).find((id2) => !tried.has(id2));
     if (!callId) break;
     tried.add(callId);
     try {
@@ -1019,6 +1019,302 @@ async function upsertMessages(env, msgs) {
 }
 __name(upsertMessages, "upsertMessages");
 
+// src/ivr.ts
+var TTS_MODEL = "@cf/deepgram/aura-1";
+var VOICES = /* @__PURE__ */ new Set(["angus", "asteria", "arcas", "orion", "orpheus", "athena", "luna", "zeus", "perseus", "helios", "hera", "stella"]);
+var PHONE = /^[1-9]\d{6,14}$/;
+var DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+var MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+var LEAVE_DAYS = 330;
+var str = /* @__PURE__ */ __name((v) => typeof v === "string" ? v : null, "str");
+var id = /* @__PURE__ */ __name((v) => Array.isArray(v) ? v[0] : typeof v === "number" ? v : null, "id");
+var int = /* @__PURE__ */ __name((v, lo, hi, d) => typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : d, "int");
+var digits = /* @__PURE__ */ __name((v) => str(v)?.replace(/\D/g, "") || null, "digits");
+var voice = /* @__PURE__ */ __name((v) => typeof v === "string" && VOICES.has(v) ? v : "athena", "voice");
+async function promptHash(voiceName, text) {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(voiceName + "\n" + text));
+  return [...new Uint8Array(d)].slice(0, 8).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+__name(promptHash, "promptHash");
+function validTz(tz) {
+  if (typeof tz !== "string" || !/^[A-Za-z0-9_+\/-]{1,64}$/.test(tz)) return "UTC";
+  try {
+    new Intl.DateTimeFormat("en-GB", { timeZone: tz });
+    return tz;
+  } catch {
+    return "UTC";
+  }
+}
+__name(validTz, "validTz");
+var hhmm = /* @__PURE__ */ __name((h) => {
+  const m = Math.min(23 * 60 + 59, Math.max(0, Math.round(h * 60)));
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}, "hhmm");
+function local(utc, tz) {
+  const t = Date.parse(utc.replace(" ", "T") + "Z");
+  if (!Number.isFinite(t)) return null;
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(new Date(t)).map((x) => [x.type, x.value]));
+  return { y: +p.year, m: +p.month, d: +p.day, min: +p.hour * 60 + +p.minute };
+}
+__name(local, "local");
+function hoursSpecs(tz, attendances, leaves) {
+  const open = /* @__PURE__ */ new Set();
+  for (const a of attendances) {
+    if (a.display_type || a.day_period === "lunch") continue;
+    const dow = Number(a.dayofweek);
+    const from = Number(a.hour_from), to = Number(a.hour_to);
+    if (!(dow >= 0 && dow <= 6) || !(to > from)) continue;
+    open.add(`${hhmm(from)}-${to >= 24 ? "23:59" : hhmm(to)},${DAYS[dow]},*,*`);
+  }
+  const shut = /* @__PURE__ */ new Set();
+  for (const l of leaves) {
+    const a = local(str(l.date_from) ?? "", tz), b = local(str(l.date_to) ?? "", tz);
+    if (!a || !b) continue;
+    let day = Date.UTC(a.y, a.m - 1, a.d);
+    const last = Date.UTC(b.y, b.m - 1, b.d);
+    for (let n = 0; day <= last && n < 62; n++, day += 864e5) {
+      const dt2 = new Date(day);
+      const from = day === Date.UTC(a.y, a.m - 1, a.d) ? a.min : 0;
+      const to = day === last ? b.min : 23 * 60 + 59;
+      if (to <= from) continue;
+      shut.add(`${hhmm(from / 60)}-${hhmm(to / 60)},*,${dt2.getUTCDate()},${MONTHS[dt2.getUTCMonth()]}`);
+    }
+  }
+  return { tz, open: [...open].sort(), shut: [...shut].sort() };
+}
+__name(hoursSpecs, "hoursSpecs");
+function action(kind, number, menu, exts, secs) {
+  const k = str(kind) ?? "voicemail";
+  if (k === "forward") return { kind: "forward", number: digits(number) };
+  if (k === "menu") return { kind: "menu", menu: id(menu) };
+  if (k === "ring") return { kind: "ring", exts, secs };
+  if (k === "hangup" || k === "repeat") return { kind: k };
+  return { kind: "voicemail" };
+}
+__name(action, "action");
+async function syncIvr(env, uid, numberOfExt) {
+  const sr = /* @__PURE__ */ __name((model, domain, fields) => odooCall(env, uid, model, "search_read", [domain], { fields }), "sr");
+  const [nr, mr, or] = await Promise.all([
+    sr("phone_bridge.number", [], ["number", "answer", "menu_id", "calendar_id", "closed_action", "closed_number", "closed_menu_id", "closed_message", "voice"]),
+    sr("phone_bridge.menu", [], ["prompt", "voice", "timeout", "retries", "direct_dial", "ring_seconds", "noinput_action", "noinput_extension_ids", "noinput_number", "noinput_menu_id"]),
+    sr("phone_bridge.menu.option", [], ["menu_id", "key", "action", "extension_ids", "number", "submenu_id"])
+  ]);
+  if (nr.fault || mr.fault || or.fault) {
+    console.warn("Odoo phone menus / hours not read; left as they were:", String(nr.fault || mr.fault || or.fault).slice(-300));
+    return null;
+  }
+  const exts = /* @__PURE__ */ __name((v) => (Array.isArray(v) ? v : []).map((i) => numberOfExt.get(i)).filter((x) => !!x).sort(), "exts");
+  const nums = nr.parsed ?? [];
+  const calIds = [...new Set(nums.map((n) => id(n.calendar_id)).filter((x) => !!x))];
+  const cals = /* @__PURE__ */ new Map();
+  if (calIds.length) {
+    const now2 = /* @__PURE__ */ new Date();
+    const fmt = /* @__PURE__ */ __name((d) => d.toISOString().slice(0, 19).replace("T", " "), "fmt");
+    const [cr, ar, lr] = await Promise.all([
+      odooCall(env, uid, "resource.calendar", "read", [calIds], { fields: ["tz"] }),
+      sr("resource.calendar.attendance", [["calendar_id", "in", calIds]], ["calendar_id", "dayofweek", "hour_from", "hour_to", "day_period", "display_type"]),
+      sr("resource.calendar.leaves", [
+        ["resource_id", "=", false],
+        ["date_to", ">=", fmt(now2)],
+        ["date_from", "<=", fmt(new Date(now2.getTime() + LEAVE_DAYS * 864e5))],
+        "|",
+        ["calendar_id", "in", calIds],
+        ["calendar_id", "=", false]
+      ], ["calendar_id", "date_from", "date_to"])
+    ]);
+    if (cr.fault || ar.fault || lr.fault) {
+      console.warn("Odoo working schedules not read; left as they were:", String(cr.fault || ar.fault || lr.fault).slice(-300));
+      return null;
+    }
+    for (const c of cr.parsed ?? []) {
+      const cid = c.id;
+      cals.set(cid, hoursSpecs(
+        validTz(c.tz),
+        (ar.parsed ?? []).filter((a) => id(a.calendar_id) === cid),
+        (lr.parsed ?? []).filter((l) => !id(l.calendar_id) || id(l.calendar_id) === cid)
+      ));
+    }
+  }
+  const opts = or.parsed ?? [];
+  const menus = (mr.parsed ?? []).map((m) => {
+    const ringSecs = int(m.ring_seconds, 5, 300, 30);
+    const keys = {};
+    for (const o of opts) {
+      if (id(o.menu_id) !== m.id) continue;
+      const k = str(o.key);
+      if (k && /^[0-9*#]$/.test(k)) keys[k] = action(o.action, o.number, o.submenu_id, exts(o.extension_ids), ringSecs);
+    }
+    return {
+      id: m.id,
+      prompt: (str(m.prompt) ?? "").trim().slice(0, 1e3),
+      voice: voice(m.voice),
+      timeout: int(m.timeout, 1, 30, 5),
+      retries: int(m.retries, 0, 5, 2),
+      direct: !!m.direct_dial,
+      ringSecs,
+      keys,
+      noinput: action(m.noinput_action, m.noinput_number, m.noinput_menu_id, exts(m.noinput_extension_ids), ringSecs)
+    };
+  });
+  const numbers = [];
+  for (const n of nums) {
+    const num = digits(n.number);
+    if (!num) continue;
+    const cal = id(n.calendar_id);
+    numbers.push({
+      number: num,
+      answer: n.answer === "menu" ? "menu" : "ring",
+      menu: id(n.menu_id),
+      hours: cal ? cals.get(cal) ?? null : null,
+      closed: action(n.closed_action, n.closed_number, n.closed_menu_id, [], 0),
+      closedPrompt: cal ? (str(n.closed_message) ?? "").trim().slice(0, 1e3) || null : null,
+      voice: voice(n.voice)
+    });
+  }
+  const ivr = { numbers, menus };
+  const prompts = /* @__PURE__ */ new Map();
+  for (const m of menus) if (m.prompt) prompts.set(await promptHash(m.voice, m.prompt), [m.voice, m.prompt]);
+  for (const n of numbers) if (n.closedPrompt) prompts.set(await promptHash(n.voice, n.closedPrompt), [n.voice, n.closedPrompt]);
+  const now = Date.now();
+  const stmts = [
+    env.DB.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('pbx_ivr', ?1, ?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at").bind(JSON.stringify(ivr), now),
+    env.DB.prepare("DELETE FROM pbx_prompts WHERE hash NOT IN (SELECT value FROM json_each(?1))").bind(JSON.stringify([...prompts.keys()]))
+  ];
+  for (const [hash, [v, text]] of prompts) {
+    stmts.push(env.DB.prepare("INSERT OR IGNORE INTO pbx_prompts (hash, voice, text, created_at) VALUES (?1, ?2, ?3, ?4)").bind(hash, v, text, now));
+  }
+  return stmts;
+}
+__name(syncIvr, "syncIvr");
+async function ivrSyncLines(env, routed, legsOf) {
+  const raw = (await env.DB.prepare("SELECT value FROM settings WHERE key = 'pbx_ivr'").first())?.value;
+  if (!raw) return [];
+  let ivr;
+  try {
+    ivr = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  const menuIds = new Set(ivr.menus.map((m) => m.id));
+  const act = /* @__PURE__ */ __name((a, inMenu) => {
+    if (a.kind === "forward") return a.number && PHONE.test(a.number) ? `fwd${a.number}` : "vm";
+    if (a.kind === "menu") return a.menu && menuIds.has(a.menu) ? `menu${a.menu}` : "vm";
+    if (a.kind === "ring") return `ring${a.secs ?? 30}:${legsOf(a.exts ?? []).join(",") || "-"}`;
+    if (a.kind === "hangup") return "hangup";
+    if (a.kind === "repeat" && inMenu) return "repeat";
+    return "vm";
+  }, "act");
+  const lines = [];
+  const prompts = /* @__PURE__ */ new Set();
+  for (const n of ivr.numbers) {
+    if (!routed.has(n.number)) continue;
+    const day = n.answer === "menu" && n.menu && menuIds.has(n.menu) ? `menu${n.menu}` : "ring";
+    if (day === "ring" && !n.hours) continue;
+    let np = "-";
+    if (n.hours && n.closedPrompt) {
+      np = await promptHash(n.voice, n.closedPrompt);
+      prompts.add(np);
+    }
+    lines.push(`when ${n.number} ${day} ${n.hours ? act(n.closed, false) : "-"} ${np}`);
+    if (n.hours) {
+      for (const s2 of n.hours.open) lines.push(`hours ${n.number} ${n.hours.tz} open ${s2}`);
+      for (const s2 of n.hours.shut) lines.push(`hours ${n.number} ${n.hours.tz} shut ${s2}`);
+    }
+  }
+  const KEY = { "*": "s", "#": "h" };
+  for (const m of ivr.menus) {
+    let p = "-";
+    if (m.prompt) {
+      p = await promptHash(m.voice, m.prompt);
+      prompts.add(p);
+    }
+    lines.push(`menu ${m.id} ${p} ${m.timeout} ${m.retries} ${m.direct ? 1 : 0}`);
+    for (const [k, a] of Object.entries(m.keys).sort()) lines.push(`key ${m.id} ${KEY[k] ?? k} ${act(a, true)}`);
+    lines.push(`key ${m.id} t ${act(m.noinput, false)}`);
+  }
+  for (const h of [...prompts].sort()) lines.push(`prompt ${h}`);
+  return lines;
+}
+__name(ivrSyncLines, "ivrSyncLines");
+function wav(pcm, rate = 8e3) {
+  const out = new Uint8Array(44 + pcm.length);
+  const v = new DataView(out.buffer);
+  const s2 = /* @__PURE__ */ __name((o, t) => [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0))), "s");
+  s2(0, "RIFF");
+  v.setUint32(4, 36 + pcm.length, true);
+  s2(8, "WAVE");
+  s2(12, "fmt ");
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true);
+  v.setUint32(28, rate * 2, true);
+  v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true);
+  s2(36, "data");
+  v.setUint32(40, pcm.length, true);
+  out.set(pcm, 44);
+  return out;
+}
+__name(wav, "wav");
+async function bytesOf(out) {
+  if (out instanceof Uint8Array) return out;
+  if (out instanceof ArrayBuffer) return new Uint8Array(out);
+  if (out instanceof Response) return new Uint8Array(await out.arrayBuffer());
+  if (out && typeof out.getReader === "function") return new Uint8Array(await new Response(out).arrayBuffer());
+  const b64 = out?.audio;
+  if (typeof b64 === "string") return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  throw new Error("text to speech gave no audio");
+}
+__name(bytesOf, "bytesOf");
+function pcmOf(b) {
+  const tag = /* @__PURE__ */ __name((o) => String.fromCharCode(...b.subarray(o, o + 4)), "tag");
+  if (b.length < 12 || tag(0) !== "RIFF") return b.length % 2 ? b.subarray(0, b.length - 1) : b;
+  const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  for (let o = 12; o + 8 <= b.length; ) {
+    const size = v.getUint32(o + 4, true);
+    if (tag(o) === "data") {
+      const d = b.subarray(o + 8, Math.min(b.length, o + 8 + size));
+      return d.length % 2 ? d.subarray(0, d.length - 1) : d;
+    }
+    o += 8 + size + size % 2;
+  }
+  return new Uint8Array(0);
+}
+__name(pcmOf, "pcmOf");
+async function speak(env, voiceName, text) {
+  const out = await env.AI.run(TTS_MODEL, { text, speaker: voice(voiceName), encoding: "linear16", container: "none", sample_rate: 8e3 });
+  const pcm = pcmOf(await bytesOf(out));
+  if (pcm.length < 1600) throw new Error(`text to speech gave ${pcm.length} bytes`);
+  return wav(pcm);
+}
+__name(speak, "speak");
+async function handlePbxPrompt(env, hash) {
+  if (!/^[0-9a-f]{16}$/.test(hash)) return new Response("bad prompt\n", { status: 400 });
+  const row = await env.DB.prepare("SELECT voice, text, audio FROM pbx_prompts WHERE hash = ?1").bind(hash).first();
+  if (!row) return new Response("no such prompt\n", { status: 404 });
+  let audio = row.audio ? new Uint8Array(row.audio) : null;
+  if (!audio || !audio.length) {
+    try {
+      audio = await speak(env, row.voice, row.text);
+    } catch (e) {
+      console.error("prompt", hash, "text to speech failed:", e);
+      return new Response("text to speech failed\n", { status: 502 });
+    }
+    await env.DB.prepare("UPDATE pbx_prompts SET audio = ?1 WHERE hash = ?2").bind(audio, hash).run();
+  }
+  return new Response(audio, { headers: { "Content-Type": "audio/wav", "Cache-Control": "no-store" } });
+}
+__name(handlePbxPrompt, "handlePbxPrompt");
+
 // src/pbxsync.ts
 var FRESH_MS = 6e4;
 function putSetting(env, key, value) {
@@ -1037,7 +1333,7 @@ function callerName(s2) {
 __name(callerName, "callerName");
 var PASSWORD = /^[A-Za-z0-9._~-]{6,64}$/;
 var NUMBER = /^\d{2,6}$/;
-var PHONE = /^[1-9]\d{6,14}$/;
+var PHONE2 = /^[1-9]\d{6,14}$/;
 var FWD_MODES = { always: "always", busy: "busy", noanswer: "noanswer", busy_noanswer: "busynoanswer" };
 var clamp = /* @__PURE__ */ __name((v, lo, hi, dflt) => v == null || !Number.isFinite(v) ? dflt : Math.min(hi, Math.max(lo, Math.round(v))), "clamp");
 async function userSwitches(env) {
@@ -1069,35 +1365,44 @@ async function pbxSyncText(env) {
     lines.push(`ext ${r.number} ${type} ${wake} ${r.sip_password} ${callerName(r.user_name || r.name || "")}`.trimEnd());
   }
   const vmUser = /* @__PURE__ */ __name((r) => r.user_id != null && sw.vm.has(r.user_id), "vmUser");
-  const forwardTo = /* @__PURE__ */ __name((r) => r.forward_mode && FWD_MODES[r.forward_mode] && PHONE.test(r.forward_number ?? "") ? r.forward_number : null, "forwardTo");
+  const forwardTo = /* @__PURE__ */ __name((r) => r.forward_mode && FWD_MODES[r.forward_mode] && PHONE2.test(r.forward_number ?? "") ? r.forward_number : null, "forwardTo");
+  const legOf = /* @__PURE__ */ __name((x) => {
+    const r = inPbx.get(x);
+    if (!r || vmUser(r)) return null;
+    const fwd = forwardTo(r);
+    if (fwd && r.forward_mode === "always") return `m0x${fwd}`;
+    return r.wake_app && r.device_type !== "sip" ? `a${r.number}` : `e${r.number}`;
+  }, "legOf");
   for (const r of inPbx.values()) {
     if (vmUser(r)) lines.push(`fwd ${r.number} vm 0 -`);
     else if (forwardTo(r)) lines.push(`fwd ${r.number} ${FWD_MODES[r.forward_mode]} ${clamp(r.forward_seconds, 5, 120, 20)} ${r.forward_number}`);
   }
+  const routed = /* @__PURE__ */ new Set();
   for (const n of nums) {
-    if (n.active === 0 || !PHONE.test(n.number)) continue;
+    if (n.active === 0 || !PHONE2.test(n.number)) continue;
     const legs = [];
     const add = /* @__PURE__ */ __name((leg) => {
       if (!legs.includes(leg)) legs.push(leg);
     }, "add");
     const owners = /* @__PURE__ */ new Map();
     for (const x of (n.extensions ?? "").split(",")) {
+      const leg = legOf(x);
+      if (!leg) continue;
+      add(leg);
       const r = inPbx.get(x);
-      if (!r || vmUser(r)) continue;
-      const fwd = forwardTo(r);
-      if (fwd && r.forward_mode === "always") add(`m0x${fwd}`);
-      else add(r.wake_app && r.device_type !== "sip" ? `a${r.number}` : `e${r.number}`);
       if (r.user_id != null && !owners.has(r.user_id)) owners.set(r.user_id, r);
     }
     if (n.ring_mobiles) {
       for (const [userId, r] of owners) {
-        if (!PHONE.test(r.user_mobile ?? "")) continue;
+        if (!PHONE2.test(r.user_mobile ?? "")) continue;
         add(`m${sw.mobileFirst.has(userId) ? 0 : clamp(r.user_mobile_delay, 0, 120, 20)}x${r.user_mobile}`);
       }
     }
-    const noAnswer = n.no_answer === "hangup" ? "hangup" : n.no_answer === "forward" && PHONE.test(n.no_answer_number ?? "") ? `fwd${n.no_answer_number}` : "vm";
+    const noAnswer = n.no_answer === "hangup" ? "hangup" : n.no_answer === "forward" && PHONE2.test(n.no_answer_number ?? "") ? `fwd${n.no_answer_number}` : "vm";
     lines.push(`route ${n.number} ${clamp(n.ring_seconds, 5, 300, 45)} ${n.record ? 1 : 0} ${noAnswer} ${legs.join(",") || "-"}`);
+    routed.add(n.number);
   }
+  lines.push(...await ivrSyncLines(env, routed, (exts) => [...new Set(exts.map(legOf).filter((l) => !!l))]));
   return lines.join("\n") + "\n";
 }
 __name(pbxSyncText, "pbxSyncText");
@@ -1187,12 +1492,12 @@ async function syncExtensions(env) {
     else numbers = n.parsed ?? [];
   }
   const now = Date.now();
-  const str = /* @__PURE__ */ __name((v) => typeof v === "string" ? v : null, "str");
-  const digits = /* @__PURE__ */ __name((v) => {
-    const d = str(v)?.replace(/\D/g, "") ?? "";
+  const str2 = /* @__PURE__ */ __name((v) => typeof v === "string" ? v : null, "str");
+  const digits2 = /* @__PURE__ */ __name((v) => {
+    const d = str2(v)?.replace(/\D/g, "") ?? "";
     return d || null;
   }, "digits");
-  const int = /* @__PURE__ */ __name((v) => typeof v === "number" ? v : null, "int");
+  const int2 = /* @__PURE__ */ __name((v) => typeof v === "number" ? v : null, "int");
   const stmts = [env.DB.prepare("DELETE FROM extensions")];
   const numberOfExt = /* @__PURE__ */ new Map();
   for (const e of exts) {
@@ -1208,39 +1513,43 @@ async function syncExtensions(env) {
       Array.isArray(e.user_id) ? String(e.user_id[1]) : "",
       user ? String(user.email || user.login || "") : "",
       now,
-      str(e.name),
-      full ? str(e.sip_password) : null,
-      full ? str(e.device_type) : null,
+      str2(e.name),
+      full ? str2(e.sip_password) : null,
+      full ? str2(e.device_type) : null,
       full ? e.wake_app ? 1 : 0 : null,
       full ? e.active === false ? 0 : 1 : null,
-      fwd ? str(e.forward_mode) : null,
-      fwd ? digits(e.forward_number) : null,
-      fwd ? int(e.forward_seconds) : null,
-      user ? digits(user.phone_bridge_mobile) : null,
-      user ? int(user.phone_bridge_mobile_delay) : null
+      fwd ? str2(e.forward_mode) : null,
+      fwd ? digits2(e.forward_number) : null,
+      fwd ? int2(e.forward_seconds) : null,
+      user ? digits2(user.phone_bridge_mobile) : null,
+      user ? int2(user.phone_bridge_mobile_delay) : null
     ));
   }
   if (numbers) {
     stmts.push(env.DB.prepare("DELETE FROM pbx_numbers"));
     for (const n of numbers) {
-      const num = digits(n.number);
+      const num = digits2(n.number);
       if (!num) continue;
-      const rings = (Array.isArray(n.extension_ids) ? n.extension_ids : []).map((id) => numberOfExt.get(id)).filter(Boolean).sort();
+      const rings = (Array.isArray(n.extension_ids) ? n.extension_ids : []).map((id2) => numberOfExt.get(id2)).filter(Boolean).sort();
       stmts.push(env.DB.prepare(
         "INSERT OR REPLACE INTO pbx_numbers (number, name, extensions, ring_mobiles, ring_seconds, no_answer, no_answer_number, record, active, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
       ).bind(
         num,
-        str(n.name),
+        str2(n.name),
         rings.join(","),
         n.ring_mobiles ? 1 : 0,
-        int(n.ring_seconds),
-        str(n.no_answer),
-        digits(n.no_answer_number),
+        int2(n.ring_seconds),
+        str2(n.no_answer),
+        digits2(n.no_answer_number),
         n.record ? 1 : 0,
         n.active === false ? 0 : 1,
         now
       ));
     }
+  }
+  if (numbers) {
+    const ivr = await syncIvr(env, uid, numberOfExt);
+    if (ivr) stmts.push(...ivr);
   }
   stmts.push(env.DB.prepare(
     "UPDATE call_log SET user_id = (SELECT x.user_id FROM extensions x WHERE x.number = call_log.extension) WHERE user_id IS NULL AND extension IS NOT NULL"
@@ -1316,15 +1625,15 @@ async function sessionUser(request, env) {
   const bearer = /^Bearer (.+)$/.exec(request.headers.get("Authorization") || "")?.[1] || (request.method === "GET" ? new URL(request.url).searchParams.get("session") : null);
   if (!bearer) return null;
   if (env.API_TOKEN && await same(bearer, env.API_TOKEN)) {
-    const id2 = parseInt(request.headers.get("X-Odoo-User") || "0");
-    return { id: id2, name: "", ext: "", service: true };
+    const id3 = parseInt(request.headers.get("X-Odoo-User") || "0");
+    return { id: id3, name: "", ext: "", service: true };
   }
   const payload = await unsign(env, bearer);
   if (!payload) return null;
   const [kind, uid, ext, exp] = payload.split(".");
   if (kind !== "s" || !uid || Number(exp) < Date.now()) return null;
-  const id = parseInt(uid);
-  return { id, name: userNames.get(id) ?? "", ext };
+  const id2 = parseInt(uid);
+  return { id: id2, name: userNames.get(id2) ?? "", ext };
 }
 __name(sessionUser, "sessionUser");
 function sessionToken(env, userId, ext) {
@@ -1513,8 +1822,8 @@ async function handleGoogleDisconnect(env, userId) {
   return Response.json({ ok: true });
 }
 __name(handleGoogleDisconnect, "handleGoogleDisconnect");
-async function getMessage(env, token, id) {
-  const url = new URL(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}`);
+async function getMessage(env, token, id2) {
+  const url = new URL(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id2}`);
   url.searchParams.set("format", "metadata");
   url.searchParams.append("metadataHeaders", "From");
   url.searchParams.append("metadataHeaders", "To");
@@ -1552,7 +1861,7 @@ async function searchGmailMessages(env, userId, email, limit = 30) {
   }
   const data = await listRes.json();
   const ids = (data.messages ?? []).map((m) => m.id);
-  const results = await Promise.all(ids.map((id) => getMessage(env, token, id)));
+  const results = await Promise.all(ids.map((id2) => getMessage(env, token, id2)));
   return results.filter((m) => m !== null);
 }
 __name(searchGmailMessages, "searchGmailMessages");
@@ -1569,7 +1878,7 @@ async function searchRecentGmailMessages(env, userId, days = 7, limit = 30) {
   }
   const data = await listRes.json();
   const ids = (data.messages ?? []).map((m) => m.id);
-  const results = await Promise.all(ids.map((id) => getMessage(env, token, id)));
+  const results = await Promise.all(ids.map((id2) => getMessage(env, token, id2)));
   return results.filter((m) => m !== null);
 }
 __name(searchRecentGmailMessages, "searchRecentGmailMessages");
@@ -1770,7 +2079,8 @@ var PBX = [
   ["POST", /^\/web-callback\/event$/],
   ["GET", /^\/voicemail\/sync$/],
   ["POST", /^\/voicemail\/synced$/],
-  ["GET", /^\/voicemail\/boxes\/[^/]+\/greeting$/]
+  ["GET", /^\/voicemail\/boxes\/[^/]+\/greeting$/],
+  ["GET", /^\/pbx\/prompt\/[0-9a-f]{16}$/]
 ];
 var SECRET = [
   ["GET", /^\/pbx\/sync$/],
@@ -6670,9 +6980,9 @@ async function handlePutBox(request, env, box) {
   const now = Date.now();
   const writes = [];
   if (typeof body.greeting === "string") {
-    let wav;
+    let wav2;
     try {
-      wav = toAsteriskWav(Uint8Array.from(atob(body.greeting), (c) => c.charCodeAt(0)));
+      wav2 = toAsteriskWav(Uint8Array.from(atob(body.greeting), (c) => c.charCodeAt(0)));
     } catch (e) {
       return Response.json({ error: String(e.message || e) }, { status: 400 });
     }
@@ -6680,7 +6990,7 @@ async function handlePutBox(request, env, box) {
       `INSERT INTO voicemail_boxes (box, enabled, greeting, greeting_version, duration_ms, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?4)
        ON CONFLICT(box) DO UPDATE SET enabled=excluded.enabled, greeting=excluded.greeting, greeting_version=excluded.greeting_version,
          duration_ms=excluded.duration_ms, updated_at=excluded.updated_at`
-    ).bind(box, enabled, wav, now, Math.round((wav.length - 44) / 2 / RATE * 1e3)));
+    ).bind(box, enabled, wav2, now, Math.round((wav2.length - 44) / 2 / RATE * 1e3)));
   } else if (body.greeting === null) {
     writes.push(env.DB.prepare(
       `INSERT INTO voicemail_boxes (box, enabled, updated_at) VALUES (?1, ?2, ?3)
@@ -6839,21 +7149,21 @@ function fmtLocal(cfg, at) {
 __name(fmtLocal, "fmtLocal");
 function normaliseCallbackNumber(input, country) {
   const raw = (input || "").trim();
-  let digits = raw.replace(/\D/g, "");
+  let digits2 = raw.replace(/\D/g, "");
   if (raw.startsWith("+")) {
-  } else if (digits.startsWith("00")) digits = digits.slice(2);
-  else if (country === "IE") digits = "353" + digits.replace(/^0/, "");
-  else digits = "44" + digits.replace(/^0/, "");
-  if (digits.startsWith("44")) {
-    const n = digits.slice(2);
+  } else if (digits2.startsWith("00")) digits2 = digits2.slice(2);
+  else if (country === "IE") digits2 = "353" + digits2.replace(/^0/, "");
+  else digits2 = "44" + digits2.replace(/^0/, "");
+  if (digits2.startsWith("44")) {
+    const n = digits2.slice(2);
     if (!/^(1\d{8,9}|2\d{9}|3\d{9}|7[1-57-9]\d{8})$/.test(n)) return null;
-    return "+" + digits;
+    return "+" + digits2;
   }
-  if (digits.startsWith("353")) {
-    const n = digits.slice(3);
+  if (digits2.startsWith("353")) {
+    const n = digits2.slice(3);
     if (/^1[58]/.test(n)) return null;
     if (!/^([124-79]\d{6,8}|8[35-9]\d{7})$/.test(n)) return null;
-    return "+" + digits;
+    return "+" + digits2;
   }
   return null;
 }
@@ -6915,14 +7225,14 @@ async function handleWebCallback(request, env, ctx) {
     const valid = laterSlots(cfg, now).some((d) => d.times.some((t) => t.at === at));
     preferredAt = valid ? at : null;
   }
-  const id = newId();
-  const callId = `web-${id}`;
+  const id2 = newId();
+  const callId = `web-${id2}`;
   const notes = `<p><b>Website callback request</b>: ${esc(name)}, ${esc(phone)}</p><p>${mode === "now" ? "Asked to be called now." : preferredAt ? `Asked to be called ${esc(fmtLocal(cfg, preferredAt))}.` : "Asked to be called back."}</p>` + (page ? `<p>From ${esc(page)}</p>` : "");
   await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO web_callbacks (id, name, phone, mode, preferred_at, page, ip, state, created_at, updated_at)
        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)`
-    ).bind(id, name, phone, mode, preferredAt, page, ip, mode === "now" ? "calling" : "scheduled", now),
+    ).bind(id2, name, phone, mode, preferredAt, page, ip, mode === "now" ? "calling" : "scheduled", now),
     env.DB.prepare(
       `INSERT INTO call_log (call_id, phone_number, did, direction, state, start_date, end_date, notes_html, write_date)
        VALUES (?1, ?2, ?3, 'incoming', ?4, ?5, ?6, ?7, ?5)`
@@ -6931,13 +7241,13 @@ async function handleWebCallback(request, env, ctx) {
   if (mode === "now") {
     let ok = false;
     try {
-      ok = await pbx(env).webCallback({ id, name, number: phone });
+      ok = await pbx(env).webCallback({ id: id2, name, number: phone });
     } catch (e) {
       console.error("web-callback originate failed:", e);
     }
     if (!ok) {
       mode = "later";
-      await markMissed(env, id, "<p>Couldn't start the call.</p>", "failed");
+      await markMissed(env, id2, "<p>Couldn't start the call.</p>", "failed");
     }
   }
   ctx.waitUntil((async () => {
@@ -6948,46 +7258,46 @@ async function handleWebCallback(request, env, ctx) {
     }
     if (mode === "later") await pushCallToOdoo(env, callId).catch((e) => console.error("pushCallToOdoo failed:", e));
   })());
-  const state = (await env.DB.prepare("SELECT state FROM web_callbacks WHERE id = ?1").bind(id).first())?.state;
-  return Response.json({ ok: true, id, state });
+  const state = (await env.DB.prepare("SELECT state FROM web_callbacks WHERE id = ?1").bind(id2).first())?.state;
+  return Response.json({ ok: true, id: id2, state });
 }
 __name(handleWebCallback, "handleWebCallback");
 async function handleWebCallbackStatus(request, env) {
-  const id = new URL(request.url).searchParams.get("id") ?? "";
-  const row = await env.DB.prepare("SELECT state FROM web_callbacks WHERE id = ?1").bind(id).first();
+  const id2 = new URL(request.url).searchParams.get("id") ?? "";
+  const row = await env.DB.prepare("SELECT state FROM web_callbacks WHERE id = ?1").bind(id2).first();
   if (!row) return Response.json({ error: "not found" }, { status: 404 });
   return Response.json({ state: row.state }, { headers: { "Cache-Control": "no-store" } });
 }
 __name(handleWebCallbackStatus, "handleWebCallbackStatus");
-async function markMissed(env, id, note, state = "missed") {
+async function markMissed(env, id2, note, state = "missed") {
   const now = Date.now();
   await env.DB.batch([
-    env.DB.prepare("UPDATE web_callbacks SET state = ?1, updated_at = ?2 WHERE id = ?3").bind(state, now, id),
-    env.DB.prepare("UPDATE call_log SET state = 'missed', end_date = ?1 WHERE call_id = ?2").bind(now, `web-${id}`)
+    env.DB.prepare("UPDATE web_callbacks SET state = ?1, updated_at = ?2 WHERE id = ?3").bind(state, now, id2),
+    env.DB.prepare("UPDATE call_log SET state = 'missed', end_date = ?1 WHERE call_id = ?2").bind(now, `web-${id2}`)
   ]);
-  await appendNote(env, `web-${id}`, note);
+  await appendNote(env, `web-${id2}`, note);
 }
 __name(markMissed, "markMissed");
 async function handleWebCallbackEvent(request, env, ctx) {
   const params = new URLSearchParams(await request.text());
-  const id = params.get("id") ?? "";
-  const callId = `web-${id}`;
+  const id2 = params.get("id") ?? "";
+  const callId = `web-${id2}`;
   const event = params.get("event");
   const now = Date.now();
   if (event === "agent") {
     await env.DB.batch([
-      env.DB.prepare("UPDATE web_callbacks SET state = 'connecting', updated_at = ?1 WHERE id = ?2").bind(now, id),
+      env.DB.prepare("UPDATE web_callbacks SET state = 'connecting', updated_at = ?1 WHERE id = ?2").bind(now, id2),
       env.DB.prepare("UPDATE call_log SET state = 'ongoing' WHERE call_id = ?1").bind(callId)
     ]);
   } else if (event === "missed") {
-    await markMissed(env, id, "<p>Nobody answered, so this needs calling back.</p>");
+    await markMissed(env, id2, "<p>Nobody answered, so this needs calling back.</p>");
     ctx.waitUntil(pushCallToOdoo(env, callId).catch((e) => console.error("pushCallToOdoo failed:", e)));
   } else if (event === "done") {
     const status = params.get("status") ?? "";
     const talk = parseInt(params.get("talk") ?? "0") || 0;
     const answered = status === "ANSWER";
     await env.DB.batch([
-      env.DB.prepare("UPDATE web_callbacks SET state = ?1, updated_at = ?2 WHERE id = ?3").bind(answered ? "connected" : "no-answer", now, id),
+      env.DB.prepare("UPDATE web_callbacks SET state = ?1, updated_at = ?2 WHERE id = ?3").bind(answered ? "connected" : "no-answer", now, id2),
       env.DB.prepare("UPDATE call_log SET state = ?1, end_date = ?2 WHERE call_id = ?3").bind(answered ? "terminated" : "missed", now, callId)
     ]);
     await appendNote(env, callId, answered ? `<p>Connected (${Math.floor(talk / 60)}m ${talk % 60}s).</p>` : `<p>Called back but the visitor didn't answer (${esc(status.toLowerCase() || "no answer")}).</p>`);
@@ -7348,7 +7658,7 @@ async function handleCreateMissingContacts(env) {
   return Response.json({ ok: true, created, linked, failed, remaining: Math.max(0, todo.size - processed) });
 }
 __name(handleCreateMissingContacts, "handleCreateMissingContacts");
-async function handleRenameContact(request, env, id) {
+async function handleRenameContact(request, env, id2) {
   let body;
   try {
     body = await request.json();
@@ -7357,8 +7667,8 @@ async function handleRenameContact(request, env, id) {
   }
   const name = (body.name ?? "").trim();
   if (!name) return Response.json({ error: "name required" }, { status: 400 });
-  const ok = await renameContact(env, id, name);
-  return ok ? Response.json({ ok: true, id, name }) : Response.json({ error: "Odoo update failed" }, { status: 502 });
+  const ok = await renameContact(env, id2, name);
+  return ok ? Response.json({ ok: true, id: id2, name }) : Response.json({ error: "Odoo update failed" }, { status: 502 });
 }
 __name(handleRenameContact, "handleRenameContact");
 async function mayOpenCall(env, user, callId) {
@@ -7504,23 +7814,23 @@ async function handleActivities(env, user) {
   }
 }
 __name(handleActivities, "handleActivities");
-async function handleActivityDone(request, env, user, id) {
+async function handleActivityDone(request, env, user, id2) {
   const body = await request.json().catch(() => ({}));
-  const ok = await activityDone(env, user.id, id, body.feedback || "");
+  const ok = await activityDone(env, user.id, id2, body.feedback || "");
   return Response.json({ ok }, { status: ok ? 200 : 502 });
 }
 __name(handleActivityDone, "handleActivityDone");
 async function handleMessageDetail(request, env, user) {
   const url = new URL(request.url);
-  const id = parseInt(url.searchParams.get("id") ?? "0");
+  const id2 = parseInt(url.searchParams.get("id") ?? "0");
   const gmailId = url.searchParams.get("gmail_id") ?? "";
-  if (!id && gmailId) {
+  if (!id2 && gmailId) {
     const { text, html } = await getGmailBody(env, user.id, gmailId);
     if (!text && !html) return Response.json({ error: "body unavailable" }, { status: 404 });
     return Response.json({ message: { gmail_id: gmailId, source: "gmail", body: text, body_html: html } });
   }
-  if (!id) return Response.json({ error: "missing id" }, { status: 400 });
-  const row = await env.DB.prepare("SELECT * FROM messages WHERE id = ?1").bind(id).first();
+  if (!id2) return Response.json({ error: "missing id" }, { status: 400 });
+  const row = await env.DB.prepare("SELECT * FROM messages WHERE id = ?1").bind(id2).first();
   if (!row || row.source === "gmail" && row.user_id !== user.id) return Response.json({ error: "not found" }, { status: 404 });
   if (row.source === "gmail" && row.gmail_id) {
     const { text, html } = await getGmailBody(env, user.id, String(row.gmail_id));
@@ -7652,7 +7962,7 @@ function m2oLabel(v) {
   return Array.isArray(v) ? String(v[1] ?? "") : "";
 }
 __name(m2oLabel, "m2oLabel");
-async function fetchOdooContact(env, id) {
+async function fetchOdooContact(env, id2) {
   const uid = await odooAuth(env);
   if (!uid) return null;
   const result = await odooCall(
@@ -7660,7 +7970,7 @@ async function fetchOdooContact(env, id) {
     uid,
     "res.partner",
     "search_read",
-    [[["id", "=", id]]],
+    [[["id", "=", id2]]],
     { fields: CONTACT_DETAIL_FIELDS, limit: 1 }
   );
   const p = (result.parsed || [])[0];
@@ -7674,17 +7984,17 @@ async function fetchOdooContact(env, id) {
   return contact;
 }
 __name(fetchOdooContact, "fetchOdooContact");
-async function handleContactDetail(env, id, cachedOnly, user) {
-  const [odooContact, totals] = cachedOnly ? [null, null] : await Promise.all([fetchOdooContact(env, id), contactTotals(env, id)]);
+async function handleContactDetail(env, id2, cachedOnly, user) {
+  const [odooContact, totals] = cachedOnly ? [null, null] : await Promise.all([fetchOdooContact(env, id2), contactTotals(env, id2)]);
   const contact = odooContact ?? await env.DB.prepare(
     "SELECT id, name, company_type, is_company, phone, mobile, email, website, vat, function, city, active FROM contacts WHERE id = ?1"
-  ).bind(id).first();
+  ).bind(id2).first();
   if (!contact) return Response.json({ error: "not found" }, { status: 404 });
   const keys = [contact.phone, contact.mobile].map((p) => digitsOf(String(p || "")).slice(-7)).filter((d) => d.length >= 7);
   const where = ["c.partner_id = ?1", ...keys.map((_, i) => `c.phone_number LIKE ?${i + 2}`)].join(" OR ");
   const calls = await env.DB.prepare(
     `${CALL_HISTORY_SELECT} WHERE ${where} ORDER BY COALESCE(c.start_date, c.create_date) DESC LIMIT 100`
-  ).bind(id, ...keys.map((k) => `%${k}%`)).all();
+  ).bind(id2, ...keys.map((k) => `%${k}%`)).all();
   return Response.json({ contact, totals, calls: await mergeCallLegs(env, calls.results || [], user) });
 }
 __name(handleContactDetail, "handleContactDetail");
@@ -7782,6 +8092,7 @@ var index_default = {
     else if (request.method === "GET" && /^\/voicemail\/boxes\/[^/]+\/greeting$/.test(url.pathname)) response = await handleBoxGreeting(env, url.pathname.split("/")[3]);
     else if (request.method === "GET" && url.pathname === "/pbx/sync") response = await handlePbxSync(env);
     else if (request.method === "POST" && url.pathname === "/pbx/synced") response = await handlePbxSynced(request, env);
+    else if (request.method === "GET" && url.pathname.startsWith("/pbx/prompt/")) response = await handlePbxPrompt(env, url.pathname.slice(12));
     else if (request.method === "GET" && url.pathname === "/pbx/status") response = await handlePbxStatus(env);
     else if (request.method === "GET" && url.pathname === "/voicemail/sync") response = await handleVoicemailSync(env);
     else if (request.method === "POST" && url.pathname === "/voicemail/synced") response = await handleVoicemailSynced(request, env);

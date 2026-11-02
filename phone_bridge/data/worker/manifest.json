@@ -1,10 +1,10 @@
 {
   "name": "odoo-phone-bridge",
   "version": "0.4.0",
-  "built_at": "2026-11-02T17:40:21.392Z",
+  "built_at": "2026-11-02T18:32:33.078Z",
   "compatibility_date": "2025-08-08",
   "main_module": "index.js",
-  "main_module_sha256": "aa7b1422d18873c428e269f2c0842bfde4a226a5eea97f02a339f62825130f61",
+  "main_module_sha256": "d7c6dccec68ae42faf87b199da5efb59289d31214f77d71bfad9d39d7f4005c3",
   "bindings": [
     {
       "type": "durable_object_namespace",
@@ -290,6 +290,10 @@
     {
       "name": "0006_pbx_routing.sql",
       "sql": "-- Apply: (applied by the Odoo addon's provisioner with the others)\n-- Inbound routing from Odoo (phone_bridge 0.8): the phone numbers callers\n-- ring (phone_bridge.number), each extension's forwarding, and each user's\n-- mobile. The PBX pulls them with the extensions (GET /pbx/sync). See\n-- src/pbxsync.ts.\nALTER TABLE extensions ADD COLUMN forward_mode TEXT;        -- never | always | busy | noanswer | busy_noanswer\nALTER TABLE extensions ADD COLUMN forward_number TEXT;      -- digits only, e.g. 447700900123\nALTER TABLE extensions ADD COLUMN forward_seconds INTEGER;\nALTER TABLE extensions ADD COLUMN user_mobile TEXT;         -- the owner's \"Mobile to Ring\", digits only\nALTER TABLE extensions ADD COLUMN user_mobile_delay INTEGER;\nCREATE TABLE IF NOT EXISTS pbx_numbers (\n  number TEXT PRIMARY KEY,              -- digits only, e.g. 441283246490\n  name TEXT,\n  extensions TEXT,                      -- comma-separated extension numbers that ring\n  ring_mobiles INTEGER,\n  ring_seconds INTEGER,\n  no_answer TEXT,                       -- voicemail | forward | hangup\n  no_answer_number TEXT,                -- digits only\n  record INTEGER,\n  active INTEGER,\n  updated_at INTEGER NOT NULL\n);\n"
+    },
+    {
+      "name": "0007_pbx_ivr.sql",
+      "sql": "-- Apply: (applied by the Odoo addon's provisioner with the others)\n-- Opening hours and phone menus from Odoo (phone_bridge 0.9). The menus,\n-- the numbers' answer / out-of-hours settings and their Working Schedules\n-- are one JSON document (settings key pbx_ivr); the prompts' speech is kept\n-- here, made by Workers AI on the PBX's first GET /pbx/prompt/<hash>. See\n-- src/ivr.ts.\nCREATE TABLE IF NOT EXISTS pbx_prompts (\n  hash TEXT PRIMARY KEY,                -- 16 hex of sha256(voice, text): the file name on the PBX\n  voice TEXT NOT NULL,\n  text TEXT NOT NULL,\n  audio BLOB,                           -- 8 kHz 16-bit mono WAV; NULL until first asked for\n  created_at INTEGER NOT NULL\n);\n"
     }
   ],
   "assets": {

@@ -3,4 +3,5 @@ from . import res_partner
 from . import phone_bridge_installation
 from . import res_users
 from . import phone_bridge_number
+from . import phone_bridge_menu
 from . import phone_bridge_extension

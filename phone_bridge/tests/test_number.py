@@ -87,3 +87,53 @@ class TestNumberRouting(TransactionCase):
         user.with_user(user).write({"phone_bridge_mobile": "+447700900125", "phone_bridge_mobile_delay": 10})
         self.assertEqual(user.phone_bridge_mobile, "+447700900125")
         self.assertIn(SYNC, self.sent)
+
+
+@tagged("post_install", "-at_install")
+class TestMenusAndHours(TransactionCase):
+    def setUp(self):
+        super().setUp()
+        self.sent = []
+        patcher = patch.object(PhoneBridgeInstallation, "_worker_request",
+                               lambda inst, method, path, payload=None: self.sent.append((method, path, payload)) or {})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.Menu = self.env["phone_bridge.menu"]
+        self.Num = self.env["phone_bridge.number"]
+        self.ext = self.env["phone_bridge.extension"].create({"number": "9411"})
+
+    def test_menu_syncs_and_checks(self):
+        self.sent.clear()
+        menu = self.Menu.create({"name": "Main", "prompt": "For sales press 1.", "option_ids": [
+            (0, 0, {"key": "1", "action": "ring", "extension_ids": [(6, 0, self.ext.ids)]}),
+            (0, 0, {"key": "2", "action": "forward", "number": "+44 7700 900125"}),
+        ]})
+        self.assertIn(SYNC, self.sent)
+        self.assertEqual(menu.option_ids.filtered(lambda o: o.key == "2").number, "+447700900125")
+        self.sent.clear()
+        menu.option_ids[0].write({"key": "3"})
+        self.assertIn(SYNC, self.sent)
+        with self.assertRaises(ValidationError):
+            menu.write({"timeout": 0})
+        with self.assertRaises(ValidationError):
+            menu.write({"noinput_action": "menu"})
+        with self.assertRaises(ValidationError):
+            self.env["phone_bridge.menu.option"].create({"menu_id": menu.id, "key": "4", "action": "forward"})
+        with self.assertRaises(ValidationError):
+            menu.write({"prompt": "x" * 1001})
+
+    def test_number_menu_and_hours(self):
+        menu = self.Menu.create({"name": "Night", "prompt": "We're closed."})
+        cal = self.env["resource.calendar"].create({"name": "Office", "tz": "Europe/London"})
+        with self.assertRaises(ValidationError):
+            self.Num.create({"number": "+441283246481", "answer": "menu"})
+        num = self.Num.create({"number": "+441283246481", "answer": "menu", "menu_id": menu.id})
+        with self.assertRaises(ValidationError):
+            num.write({"calendar_id": cal.id, "closed_action": "forward"})
+        with self.assertRaises(ValidationError):
+            num.write({"calendar_id": cal.id, "closed_action": "menu"})
+        self.sent.clear()
+        num.write({"calendar_id": cal.id, "closed_action": "forward", "closed_number": "+44 7700 900126",
+                   "closed_message": "Sorry, we're closed."})
+        self.assertEqual(num.closed_number, "+447700900126")
+        self.assertIn(SYNC, self.sent)

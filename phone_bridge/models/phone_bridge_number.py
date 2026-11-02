@@ -41,7 +41,27 @@ class PhoneBridgeNumber(models.Model):
                                  "When Nobody Answers", default="voicemail", required=True)
     no_answer_number = fields.Char("Forward To", help="In international format, e.g. +44 7700 900123.")
     record = fields.Boolean("Record Calls", default=True)
+    answer = fields.Selection([("ring", "Ring extensions"), ("menu", "Play a menu")], "Answer With",
+                              default="ring", required=True,
+                              help="During opening hours (or always, without opening hours).")
+    menu_id = fields.Many2one("phone_bridge.menu", "Menu")
+    calendar_id = fields.Many2one("resource.calendar", "Opening Hours",
+                                  help="A Working Schedule (with its public holidays and closures). Outside it, "
+                                       "calls get the out-of-hours handling below. Empty: always open.")
+    closed_message = fields.Text("Out-of-Hours Message",
+                                 help="Spoken first out of hours, e.g. \"We're closed. Our hours are 9 to 5.\" Optional.")
+    voice = fields.Selection("_voices", default="athena", required=True)
+    closed_action = fields.Selection([("voicemail", "Voicemail"), ("forward", "Forward to a number"),
+                                      ("menu", "Play a menu"), ("hangup", "Hang up")],
+                                     "Out of Hours", default="voicemail", required=True)
+    closed_number = fields.Char("Forward To (Out of Hours)")
+    closed_menu_id = fields.Many2one("phone_bridge.menu", "Menu (Out of Hours)")
     active = fields.Boolean(default=True)
+
+    @api.model
+    def _voices(self):
+        from .phone_bridge_menu import VOICES
+        return VOICES
 
     _sql_constraints = [("number_uniq", "unique(number)", "That number is already set up.")]
 
@@ -50,7 +70,8 @@ class PhoneBridgeNumber(models.Model):
         for num in self:
             num.display_name = f"{num.number} {num.name}" if num.name else num.number
 
-    @api.constrains("number", "no_answer", "no_answer_number", "ring_seconds")
+    @api.constrains("number", "no_answer", "no_answer_number", "ring_seconds", "answer", "menu_id",
+                    "calendar_id", "closed_action", "closed_number", "closed_menu_id", "closed_message")
     def _check_number(self):
         for num in self:
             if normalize_number(num.number) != num.number:
@@ -59,10 +80,18 @@ class PhoneBridgeNumber(models.Model):
                 raise ValidationError(_("Enter the number to forward to in international format, e.g. +44 7700 900123."))
             if not 5 <= num.ring_seconds <= 300:
                 raise ValidationError(_("Ring for 5 to 300 seconds."))
+            if num.answer == "menu" and not num.menu_id:
+                raise ValidationError(_("Choose the menu to answer with."))
+            if num.calendar_id and num.closed_action == "forward" and not normalize_number(num.closed_number):
+                raise ValidationError(_("Enter the out-of-hours number in international format, e.g. +44 7700 900123."))
+            if num.calendar_id and num.closed_action == "menu" and not num.closed_menu_id:
+                raise ValidationError(_("Choose the out-of-hours menu."))
+            if len(num.closed_message or "") > 1000:
+                raise ValidationError(_("Keep the out-of-hours message to 1000 characters."))
 
     @staticmethod
     def _clean(vals):
-        for f in ("number", "no_answer_number"):
+        for f in ("number", "no_answer_number", "closed_number"):
             if vals.get(f):
                 vals[f] = normalize_number(vals[f]) or vals[f]
         return vals
