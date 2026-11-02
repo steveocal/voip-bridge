@@ -4,3 +4,5 @@ access_phone_bridge_call_admin,phone_bridge.call admin,model_phone_bridge_call,b
 access_phone_bridge_installation_admin,phone_bridge.installation admin,model_phone_bridge_installation,base.group_system,1,1,1,0
 access_phone_bridge_extension_user,phone_bridge.extension user,model_phone_bridge_extension,base.group_user,1,0,0,0
 access_phone_bridge_extension_admin,phone_bridge.extension admin,model_phone_bridge_extension,base.group_system,1,1,1,1
+access_phone_bridge_number_user,phone_bridge.number user,model_phone_bridge_number,base.group_user,1,0,0,0
+access_phone_bridge_number_admin,phone_bridge.number admin,model_phone_bridge_number,base.group_system,1,1,1,1

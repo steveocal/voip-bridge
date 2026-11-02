@@ -4,6 +4,8 @@ import secrets
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
+from .phone_bridge_number import normalize_number
+
 _logger = logging.getLogger(__name__)
 
 
@@ -42,6 +44,16 @@ class PhoneBridgeExtension(models.Model):
                               help="The Android app signs in as this extension: send it a push to wake it before ringing.")
     active = fields.Boolean(default=True)
 
+    forward_mode = fields.Selection([("never", "Never"), ("always", "Always"), ("busy", "When busy or offline"),
+                                     ("noanswer", "When not answered"),
+                                     ("busy_noanswer", "When busy, offline or not answered")],
+                                    "Forward Calls", default="never", required=True,
+                                    help="Send this extension's calls to another number. \"Always\" also applies "
+                                         "when one of the phone numbers rings this extension.")
+    forward_number = fields.Char("Forward To", help="In international format, e.g. +44 7700 900123.")
+    forward_seconds = fields.Integer("Ring For (Seconds)", default=20,
+                                     help="How long this extension rings before the call is forwarded.")
+
     voicemail_enabled = fields.Boolean("Voicemail", default=True,
                                        help="Unanswered calls go to voicemail. When off, callers hear a busy tone.")
     greeting = fields.Binary(attachment=True, help="A WAV recording (16-bit, any sample rate, up to 2 minutes). "
@@ -77,14 +89,23 @@ class PhoneBridgeExtension(models.Model):
             if pw and (len(pw) < 6 or len(pw) > 64 or not all(c.isascii() and (c.isalnum() or c in "._~-") for c in pw)):
                 raise ValidationError(_("A SIP password is 6 to 64 letters, digits or . _ ~ -"))
 
+    @api.constrains("forward_mode", "forward_number", "forward_seconds")
+    def _check_forward(self):
+        for ext in self:
+            if ext.forward_mode != "never" and not normalize_number(ext.forward_number):
+                raise ValidationError(_("Enter the number to forward to in international format, e.g. +44 7700 900123."))
+            if ext.forward_mode in ("noanswer", "busy_noanswer") and not 5 <= ext.forward_seconds <= 120:
+                raise ValidationError(_("Ring for 5 to 120 seconds before forwarding."))
+
     # ── Keep the worker's copy in step ──
 
     VOICEMAIL_FIELDS = ("number", "voicemail_enabled", "greeting", "active")
-    PBX_FIELDS = ("number", "name", "user_id", "sip_password", "device_type", "wake_app", "active")
+    PBX_FIELDS = ("number", "name", "user_id", "sip_password", "device_type", "wake_app", "active",
+                  "forward_mode", "forward_number", "forward_seconds")
 
     @api.model_create_multi
     def create(self, vals_list):
-        exts = super().create(vals_list)
+        exts = super().create([self._clean_forward(dict(v)) for v in vals_list])
         for ext in exts:
             ext._push_box(with_greeting=True)
         self._sync_pbx()
@@ -92,7 +113,7 @@ class PhoneBridgeExtension(models.Model):
 
     def write(self, vals):
         old_numbers = {ext.id: ext.number for ext in self} if "number" in vals or vals.get("active") is False else {}
-        res = super().write(vals)
+        res = super().write(self._clean_forward(dict(vals)))
         if any(f in vals for f in self.VOICEMAIL_FIELDS):
             installation = self.env["phone_bridge.installation"]._get_installation()
             for ext in self:
@@ -113,12 +134,19 @@ class PhoneBridgeExtension(models.Model):
         self._sync_pbx()
         return res
 
+    @staticmethod
+    def _clean_forward(vals):
+        if vals.get("forward_number"):
+            vals["forward_number"] = normalize_number(vals["forward_number"]) or vals["forward_number"]
+        return vals
+
     @api.model
     def _sync_pbx(self):
         """Have the worker re-read the extensions and pass them to the PBX.
         Saving never fails on this: the PBX also pulls them every few minutes."""
         try:
-            self.env["phone_bridge.installation"]._get_installation()._worker_request("POST", "/extensions/sync")
+            # sudo: also runs when a user saves their own mobile in Preferences.
+            self.env["phone_bridge.installation"].sudo()._get_installation()._worker_request("POST", "/extensions/sync")
         except UserError as e:
             _logger.warning("phone_bridge: extension sync to the worker failed: %s", e)
 

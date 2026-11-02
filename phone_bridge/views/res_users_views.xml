@@ -10,6 +10,8 @@
                     <group>
                         <field name="phone_bridge_extension_ids" invisible="1"/>
                         <field name="phone_bridge_extension_id" readonly="0" options="{'no_create': True, 'no_open': True}"/>
+                        <field name="phone_bridge_mobile" readonly="0" placeholder="+44 7700 900123"/>
+                        <field name="phone_bridge_mobile_delay" readonly="0" invisible="not phone_bridge_mobile"/>
                     </group>
                 </page>
             </xpath>
@@ -31,8 +33,10 @@
                         </list>
                     </field>
                     <field name="share" invisible="1"/>
-                    <group invisible="share">
-                        <field name="phone_bridge_extension_id" options="{'no_create': True}"/>
+                    <group>
+                        <field name="phone_bridge_extension_id" options="{'no_create': True}" invisible="share"/>
+                        <field name="phone_bridge_mobile" placeholder="+44 7700 900123"/>
+                        <field name="phone_bridge_mobile_delay" invisible="not phone_bridge_mobile"/>
                     </group>
                     <div class="text-muted" invisible="not share">
                         Portal and public users take calls in the phone app or dashboard, signing in with

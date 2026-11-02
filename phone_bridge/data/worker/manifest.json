@@ -1,10 +1,10 @@
 {
   "name": "odoo-phone-bridge",
   "version": "0.4.0",
-  "built_at": "2026-11-02T11:53:26.332Z",
+  "built_at": "2026-11-02T17:40:21.392Z",
   "compatibility_date": "2025-08-08",
   "main_module": "index.js",
-  "main_module_sha256": "55e421d20803d1556112ae19f83b3615e2dc3dd502f4b7e5483596fc4a5833d4",
+  "main_module_sha256": "aa7b1422d18873c428e269f2c0842bfde4a226a5eea97f02a339f62825130f61",
   "bindings": [
     {
       "type": "durable_object_namespace",
@@ -286,6 +286,10 @@
     {
       "name": "0005_pbx_extensions.sql",
       "sql": "-- The PBX builds its extensions from Odoo's (phone_bridge.extension): the\n-- worker keeps a copy here and the PBX pulls it (GET /pbx/sync, pbx-sync.sh).\n-- See src/pbxsync.ts.\nALTER TABLE extensions ADD COLUMN name TEXT;\nALTER TABLE extensions ADD COLUMN sip_password TEXT;\nALTER TABLE extensions ADD COLUMN device_type TEXT;     -- webrtc | sip\nALTER TABLE extensions ADD COLUMN wake_app INTEGER;     -- 1 = push-wake the Android app before ringing\nALTER TABLE extensions ADD COLUMN active INTEGER;       -- 0 = archived in Odoo (kept for call history owners)\n"
+    },
+    {
+      "name": "0006_pbx_routing.sql",
+      "sql": "-- Apply: (applied by the Odoo addon's provisioner with the others)\n-- Inbound routing from Odoo (phone_bridge 0.8): the phone numbers callers\n-- ring (phone_bridge.number), each extension's forwarding, and each user's\n-- mobile. The PBX pulls them with the extensions (GET /pbx/sync). See\n-- src/pbxsync.ts.\nALTER TABLE extensions ADD COLUMN forward_mode TEXT;        -- never | always | busy | noanswer | busy_noanswer\nALTER TABLE extensions ADD COLUMN forward_number TEXT;      -- digits only, e.g. 447700900123\nALTER TABLE extensions ADD COLUMN forward_seconds INTEGER;\nALTER TABLE extensions ADD COLUMN user_mobile TEXT;         -- the owner's \"Mobile to Ring\", digits only\nALTER TABLE extensions ADD COLUMN user_mobile_delay INTEGER;\nCREATE TABLE IF NOT EXISTS pbx_numbers (\n  number TEXT PRIMARY KEY,              -- digits only, e.g. 441283246490\n  name TEXT,\n  extensions TEXT,                      -- comma-separated extension numbers that ring\n  ring_mobiles INTEGER,\n  ring_seconds INTEGER,\n  no_answer TEXT,                       -- voicemail | forward | hangup\n  no_answer_number TEXT,                -- digits only\n  record INTEGER,\n  active INTEGER,\n  updated_at INTEGER NOT NULL\n);\n"
     }
   ],
   "assets": {

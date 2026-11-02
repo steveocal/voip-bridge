@@ -10,4 +10,6 @@
         action="action_phone_bridge_installation" sequence="10"/>
     <menuitem id="menu_phone_bridge_extensions" name="Extensions" parent="menu_phone_bridge_config"
         action="action_phone_bridge_extension" sequence="20"/>
+    <menuitem id="menu_phone_bridge_numbers" name="Phone Numbers" parent="menu_phone_bridge_config"
+        action="action_phone_bridge_number" sequence="30"/>
 </odoo>

@@ -1037,16 +1037,66 @@ function callerName(s2) {
 __name(callerName, "callerName");
 var PASSWORD = /^[A-Za-z0-9._~-]{6,64}$/;
 var NUMBER = /^\d{2,6}$/;
-async function pbxSyncText(env) {
+var PHONE = /^[1-9]\d{6,14}$/;
+var FWD_MODES = { always: "always", busy: "busy", noanswer: "noanswer", busy_noanswer: "busynoanswer" };
+var clamp = /* @__PURE__ */ __name((v, lo, hi, dflt) => v == null || !Number.isFinite(v) ? dflt : Math.min(hi, Math.max(lo, Math.round(v))), "clamp");
+async function userSwitches(env) {
   const rows = (await env.DB.prepare(
-    "SELECT number, name, user_name, sip_password, device_type, wake_app, active FROM extensions ORDER BY number"
+    "SELECT user_id, key FROM user_settings WHERE key IN ('vm_direct', 'ring_mobile_first') AND value = '1'"
   ).all()).results ?? [];
+  const vm = /* @__PURE__ */ new Set(), mobileFirst = /* @__PURE__ */ new Set();
+  for (const r of rows) (r.key === "vm_direct" ? vm : mobileFirst).add(r.user_id);
+  return { vm, mobileFirst };
+}
+__name(userSwitches, "userSwitches");
+async function pbxSyncText(env) {
+  const [rows, nums, sw] = await Promise.all([
+    env.DB.prepare(
+      "SELECT number, name, user_id, user_name, sip_password, device_type, wake_app, active, forward_mode, forward_number, forward_seconds, user_mobile, user_mobile_delay FROM extensions ORDER BY number"
+    ).all().then((r) => r.results ?? []),
+    env.DB.prepare(
+      "SELECT number, extensions, ring_mobiles, ring_seconds, no_answer, no_answer_number, record, active FROM pbx_numbers ORDER BY number"
+    ).all().then((r) => r.results ?? []),
+    userSwitches(env)
+  ]);
   const lines = ["version 1"];
+  const inPbx = /* @__PURE__ */ new Map();
   for (const r of rows) {
     if (r.active === 0 || !NUMBER.test(r.number) || !PASSWORD.test(r.sip_password ?? "")) continue;
+    inPbx.set(r.number, r);
     const type = r.device_type === "sip" ? "sip" : "webrtc";
     const wake = type === "webrtc" && r.wake_app ? 1 : 0;
     lines.push(`ext ${r.number} ${type} ${wake} ${r.sip_password} ${callerName(r.user_name || r.name || "")}`.trimEnd());
+  }
+  const vmUser = /* @__PURE__ */ __name((r) => r.user_id != null && sw.vm.has(r.user_id), "vmUser");
+  const forwardTo = /* @__PURE__ */ __name((r) => r.forward_mode && FWD_MODES[r.forward_mode] && PHONE.test(r.forward_number ?? "") ? r.forward_number : null, "forwardTo");
+  for (const r of inPbx.values()) {
+    if (vmUser(r)) lines.push(`fwd ${r.number} vm 0 -`);
+    else if (forwardTo(r)) lines.push(`fwd ${r.number} ${FWD_MODES[r.forward_mode]} ${clamp(r.forward_seconds, 5, 120, 20)} ${r.forward_number}`);
+  }
+  for (const n of nums) {
+    if (n.active === 0 || !PHONE.test(n.number)) continue;
+    const legs = [];
+    const add = /* @__PURE__ */ __name((leg) => {
+      if (!legs.includes(leg)) legs.push(leg);
+    }, "add");
+    const owners = /* @__PURE__ */ new Map();
+    for (const x of (n.extensions ?? "").split(",")) {
+      const r = inPbx.get(x);
+      if (!r || vmUser(r)) continue;
+      const fwd = forwardTo(r);
+      if (fwd && r.forward_mode === "always") add(`m0x${fwd}`);
+      else add(r.wake_app && r.device_type !== "sip" ? `a${r.number}` : `e${r.number}`);
+      if (r.user_id != null && !owners.has(r.user_id)) owners.set(r.user_id, r);
+    }
+    if (n.ring_mobiles) {
+      for (const [userId, r] of owners) {
+        if (!PHONE.test(r.user_mobile ?? "")) continue;
+        add(`m${sw.mobileFirst.has(userId) ? 0 : clamp(r.user_mobile_delay, 0, 120, 20)}x${r.user_mobile}`);
+      }
+    }
+    const noAnswer = n.no_answer === "hangup" ? "hangup" : n.no_answer === "forward" && PHONE.test(n.no_answer_number ?? "") ? `fwd${n.no_answer_number}` : "vm";
+    lines.push(`route ${n.number} ${clamp(n.ring_seconds, 5, 300, 45)} ${n.record ? 1 : 0} ${noAnswer} ${legs.join(",") || "-"}`);
   }
   return lines.join("\n") + "\n";
 }
@@ -1101,42 +1151,96 @@ async function syncExtensions(env) {
   const uid = await odooAuth(env);
   if (!uid) return null;
   const read = /* @__PURE__ */ __name((fields) => odooCall(env, uid, "phone_bridge.extension", "search_read", [[]], { fields, context: { active_test: false } }), "read");
-  let full = true;
-  let r = await read(["number", "user_id", "name", "sip_password", "device_type", "wake_app", "active"]);
+  const PBX2 = ["number", "user_id", "name", "sip_password", "device_type", "wake_app", "active"];
+  const FWD = ["forward_mode", "forward_number", "forward_seconds"];
+  let level = 2;
+  let r = await read([...PBX2, ...FWD]);
   if (r.fault) {
-    full = false;
+    level = 1;
+    r = await read(PBX2);
+  }
+  if (r.fault) {
+    console.warn("Odoo extensions: PBX fields refused, owners only:", String(r.fault).slice(-400));
+    level = 0;
     r = await read(["number", "user_id"]);
   }
   if (r.fault) {
     console.error("Odoo extensions read failed:", r.fault);
     return null;
   }
+  const full = level >= 1;
   const exts = r.parsed ?? [];
   const userIds = [...new Set(exts.map((e) => Array.isArray(e.user_id) ? e.user_id[0] : 0).filter(Boolean))];
-  const emails = /* @__PURE__ */ new Map();
+  const users = /* @__PURE__ */ new Map();
   if (userIds.length) {
-    const u = await odooCall(env, uid, "res.users", "read", [userIds], { fields: ["email", "login"] });
-    for (const row of u.parsed ?? []) emails.set(row.id, String(row.email || row.login || ""));
+    let u = level >= 2 ? await odooCall(env, uid, "res.users", "read", [userIds], { fields: ["email", "login", "phone_bridge_mobile", "phone_bridge_mobile_delay"] }) : null;
+    if (!u || u.fault) u = await odooCall(env, uid, "res.users", "read", [userIds], { fields: ["email", "login"] });
+    for (const row of u.parsed ?? []) users.set(row.id, row);
+  }
+  let numbers = null;
+  if (level >= 2) {
+    const n = await odooCall(env, uid, "phone_bridge.number", "search_read", [[]], {
+      fields: ["number", "name", "extension_ids", "ring_mobiles", "ring_seconds", "no_answer", "no_answer_number", "record", "active"],
+      context: { active_test: false }
+    });
+    if (n.fault) console.warn("Odoo phone numbers read failed; PBX routing left as it was:", String(n.fault).slice(-400));
+    else numbers = n.parsed ?? [];
   }
   const now = Date.now();
   const str = /* @__PURE__ */ __name((v) => typeof v === "string" ? v : null, "str");
+  const digits = /* @__PURE__ */ __name((v) => {
+    const d = str(v)?.replace(/\D/g, "") ?? "";
+    return d || null;
+  }, "digits");
+  const int = /* @__PURE__ */ __name((v) => typeof v === "number" ? v : null, "int");
   const stmts = [env.DB.prepare("DELETE FROM extensions")];
+  const numberOfExt = /* @__PURE__ */ new Map();
   for (const e of exts) {
+    numberOfExt.set(e.id, String(e.number));
     const userId = Array.isArray(e.user_id) ? e.user_id[0] : null;
+    const user = userId ? users.get(userId) : void 0;
+    const fwd = level >= 2;
     stmts.push(env.DB.prepare(
-      "INSERT OR REPLACE INTO extensions (number, user_id, user_name, user_email, updated_at, name, sip_password, device_type, wake_app, active) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
+      "INSERT OR REPLACE INTO extensions (number, user_id, user_name, user_email, updated_at, name, sip_password, device_type, wake_app, active, forward_mode, forward_number, forward_seconds, user_mobile, user_mobile_delay) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)"
     ).bind(
       String(e.number),
       userId,
       Array.isArray(e.user_id) ? String(e.user_id[1]) : "",
-      userId ? emails.get(userId) ?? "" : "",
+      user ? String(user.email || user.login || "") : "",
       now,
       str(e.name),
       full ? str(e.sip_password) : null,
       full ? str(e.device_type) : null,
       full ? e.wake_app ? 1 : 0 : null,
-      full ? e.active === false ? 0 : 1 : null
+      full ? e.active === false ? 0 : 1 : null,
+      fwd ? str(e.forward_mode) : null,
+      fwd ? digits(e.forward_number) : null,
+      fwd ? int(e.forward_seconds) : null,
+      user ? digits(user.phone_bridge_mobile) : null,
+      user ? int(user.phone_bridge_mobile_delay) : null
     ));
+  }
+  if (numbers) {
+    stmts.push(env.DB.prepare("DELETE FROM pbx_numbers"));
+    for (const n of numbers) {
+      const num = digits(n.number);
+      if (!num) continue;
+      const rings = (Array.isArray(n.extension_ids) ? n.extension_ids : []).map((id) => numberOfExt.get(id)).filter(Boolean).sort();
+      stmts.push(env.DB.prepare(
+        "INSERT OR REPLACE INTO pbx_numbers (number, name, extensions, ring_mobiles, ring_seconds, no_answer, no_answer_number, record, active, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
+      ).bind(
+        num,
+        str(n.name),
+        rings.join(","),
+        n.ring_mobiles ? 1 : 0,
+        int(n.ring_seconds),
+        str(n.no_answer),
+        digits(n.no_answer_number),
+        n.record ? 1 : 0,
+        n.active === false ? 0 : 1,
+        now
+      ));
+    }
   }
   stmts.push(env.DB.prepare(
     "UPDATE call_log SET user_id = (SELECT x.user_id FROM extensions x WHERE x.number = call_log.extension) WHERE user_id IS NULL AND extension IS NOT NULL"

@@ -10,6 +10,7 @@
                 <field name="user_id"/>
                 <field name="user_share" optional="hide"/>
                 <field name="device_type" optional="show"/>
+                <field name="forward_mode" optional="show"/>
                 <field name="voicemail_enabled"/>
                 <field name="greeting_filename" string="Greeting" optional="show"/>
                 <field name="voicemail_email" optional="show"/>
@@ -40,6 +41,12 @@
                             <field name="sip_password" password="True"/>
                             <field name="wake_app" invisible="device_type != 'webrtc'"/>
                             <field name="active" invisible="1"/>
+                        </group>
+                        <group string="Forwarding">
+                            <field name="forward_mode"/>
+                            <field name="forward_number" invisible="forward_mode == 'never'"
+                                   required="forward_mode != 'never'" placeholder="+44 7700 900123"/>
+                            <field name="forward_seconds" invisible="forward_mode not in ('noanswer', 'busy_noanswer')"/>
                         </group>
                         <group string="Voicemail">
                             <field name="voicemail_enabled"/>
