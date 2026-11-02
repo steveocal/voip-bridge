@@ -1,6 +1,7 @@
 import type { Env } from "./types";
 import { odooAuth, odooCall } from "./odoo";
 import { nudgePbxIfChanged } from "./pbxsync";
+import { syncIvr } from "./ivr";
 
 // ── Users ─────────────────────────────────────────────────────
 // Every extension belongs to an Odoo user (Odoo phone_bridge.extension
@@ -33,7 +34,7 @@ let ownersCache: { at: number; map: Map<string, ExtensionOwner> } | null = null;
  *  an extension but no user their owner. Returns the extension count, or
  *  null when Odoo can't be reached. Also keeps what the PBX builds its
  *  extensions and inbound routing from (pbxsync.ts: forwarding, the owners'
- *  mobiles, phone_bridge.number), and nudges it when that changed. An older
+ *  mobiles, phone_bridge.number, the menus and opening hours), and nudges it when that changed. An older
  *  addon gives what it has: without phone_bridge 0.8 there is no routing
  *  (the PBX keeps its own), before 0.7 only the owners. */
 export async function syncExtensions(env: Env): Promise<number | null> {
@@ -100,6 +101,11 @@ export async function syncExtensions(env: Env): Promise<number | null> {
       ).bind(num, str(n.name), rings.join(","), n.ring_mobiles ? 1 : 0, int(n.ring_seconds), str(n.no_answer), digits(n.no_answer_number),
         n.record ? 1 : 0, n.active === false ? 0 : 1, now));
     }
+  }
+  // Menus and opening hours (phone_bridge 0.9), with the routing.
+  if (numbers) {
+    const ivr = await syncIvr(env, uid, numberOfExt);
+    if (ivr) stmts.push(...ivr);
   }
   stmts.push(env.DB.prepare(
     "UPDATE call_log SET user_id = (SELECT x.user_id FROM extensions x WHERE x.number = call_log.extension) WHERE user_id IS NULL AND extension IS NOT NULL"

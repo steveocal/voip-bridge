@@ -1,6 +1,7 @@
 import type { Env } from "./types";
 import { ariSyncExtensions } from "./asterisk";
 import { same, syncExtensions } from "./users";
+import { ivrSyncLines } from "./ivr";
 
 // ── PBX extensions from Odoo ──────────────────────────────────
 // Odoo's phone_bridge.extension records are the extensions: nobody adds them
@@ -73,7 +74,8 @@ async function userSwitches(env: Env): Promise<{ vm: Set<number>; mobileFirst: S
  *  ring at once: e<ext> an extension, a<ext> one woken on the Android app
  *  first, m<delay>x<number> a mobile or forward after <delay> seconds; "-"
  *  is none, straight to the no-answer action. Numbers are digits only. A
- *  number with no route line keeps the PBX's own routing. */
+ *  number with no route line keeps the PBX's own routing. Then the menus and
+ *  opening hours (ivr.ts: when / hours / menu / key / prompt lines). */
 export async function pbxSyncText(env: Env): Promise<string> {
   const [rows, nums, sw] = await Promise.all([
     env.DB.prepare(
@@ -95,21 +97,30 @@ export async function pbxSyncText(env: Env): Promise<string> {
   }
   const vmUser = (r: ExtRow) => r.user_id != null && sw.vm.has(r.user_id);
   const forwardTo = (r: ExtRow) => (r.forward_mode && FWD_MODES[r.forward_mode] && PHONE.test(r.forward_number ?? "") ? r.forward_number! : null);
+  // An extension as a ring-list leg: its "always" forwarding, the app woken
+  // first, or the phone itself; none when its user's 📼 is on.
+  const legOf = (x: string) => {
+    const r = inPbx.get(x);
+    if (!r || vmUser(r)) return null;
+    const fwd = forwardTo(r);
+    if (fwd && r.forward_mode === "always") return `m0x${fwd}`;
+    return r.wake_app && r.device_type !== "sip" ? `a${r.number}` : `e${r.number}`;
+  };
   for (const r of inPbx.values()) {
     if (vmUser(r)) lines.push(`fwd ${r.number} vm 0 -`);
     else if (forwardTo(r)) lines.push(`fwd ${r.number} ${FWD_MODES[r.forward_mode!]} ${clamp(r.forward_seconds, 5, 120, 20)} ${r.forward_number}`);
   }
+  const routed = new Set<string>();
   for (const n of nums) {
     if (n.active === 0 || !PHONE.test(n.number)) continue;
     const legs: string[] = [];
     const add = (leg: string) => { if (!legs.includes(leg)) legs.push(leg); };
     const owners = new Map<number, ExtRow>();
     for (const x of (n.extensions ?? "").split(",")) {
-      const r = inPbx.get(x);
-      if (!r || vmUser(r)) continue;
-      const fwd = forwardTo(r);
-      if (fwd && r.forward_mode === "always") add(`m0x${fwd}`);
-      else add(r.wake_app && r.device_type !== "sip" ? `a${r.number}` : `e${r.number}`);
+      const leg = legOf(x);
+      if (!leg) continue;
+      add(leg);
+      const r = inPbx.get(x)!;
       if (r.user_id != null && !owners.has(r.user_id)) owners.set(r.user_id, r);
     }
     if (n.ring_mobiles) {
@@ -121,7 +132,9 @@ export async function pbxSyncText(env: Env): Promise<string> {
     const noAnswer = n.no_answer === "hangup" ? "hangup"
       : n.no_answer === "forward" && PHONE.test(n.no_answer_number ?? "") ? `fwd${n.no_answer_number}` : "vm";
     lines.push(`route ${n.number} ${clamp(n.ring_seconds, 5, 300, 45)} ${n.record ? 1 : 0} ${noAnswer} ${legs.join(",") || "-"}`);
+    routed.add(n.number);
   }
+  lines.push(...await ivrSyncLines(env, routed, (exts) => [...new Set(exts.map(legOf).filter((l): l is string => !!l))]));
   return lines.join("\n") + "\n";
 }
 

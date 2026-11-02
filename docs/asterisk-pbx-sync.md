@@ -112,3 +112,41 @@ mobile; the catch-all ring list), 441283246490 / 491 / 492, and Twilio's
 +447898117226. Still hard-coded: the website callback's agent ring list
 (`[web-callback]`) and the outbound caller ID per extension
 (`[outbound-dial]`).
+
+# Opening hours and phone menus from Odoo
+
+- **Phone Number → Answer With**: ring the extensions (as above) or play a
+  **Phone Menu**.
+- **Phone Number → Opening Hours**: a Working Schedule (Employees /
+  Settings → Working Schedules), with its time zone, lunch breaks and its
+  public holidays / closures (global time off, for that schedule or for
+  all). Outside it: voicemail, forward, a menu or hang up, after an optional
+  spoken message. No schedule: always open.
+- **Phone → Configuration → Phone Menus** (`phone_bridge.menu`): a prompt
+  (text, spoken by a Workers AI Aura voice), keys 0–9 * # (ring extensions,
+  forward, voicemail, another menu, repeat, hang up), how long to wait,
+  how often to repeat, what happens with no key, and optionally "callers can
+  dial an extension".
+
+```
+Odoo ──▶ worker (settings pbx_ivr; pbx_prompts: text → speech on first fetch)
+worker GET /pbx/sync: when / hours / menu / key / prompt lines ──▶ pbx-sync.sh
+pbx-sync.sh ──▶ astdb pbwhen, pbhours, pbmenu, pbkey; GET /pbx/prompt/<hash>
+             ──▶ /var/spool/asterisk/phone-bridge-prompts/<hash>.wav
+[pb-route] ──Gosub──▶ [pb-ivr] ──▶ [pb-hours] (IFTIME per spec, in the zone)
+                               └─▶ [pb-do] / [pb-menu] ──▶ ring, forward, vm…
+```
+
+`asterisk/extensions-phone-bridge-ivr.conf` has the contexts. A number with
+no menu and no opening hours has no `pbwhen` key and rings as before. Holidays
+are sent for the next 330 days only (Asterisk time specs have no year). A
+prompt that hasn't been fetched yet is skipped, not fatal; the sync retries
+it every minute. Changing a prompt's text or voice makes a new file.
+
+Setting it up (once):
+
+1. `npx wrangler d1 execute voip-bridge-d1 --remote --yes --command "CREATE TABLE IF NOT EXISTS pbx_prompts (hash TEXT PRIMARY KEY, voice TEXT NOT NULL, text TEXT NOT NULL, audio BLOB, created_at INTEGER NOT NULL)"`
+   (migrations/0017_pbx_ivr.sql)
+2. Deploy the worker; upgrade the Odoo addon to phone_bridge 18.0.0.9.0
+   (adds a dependency on `resource`).
+3. `bash scripts/vps-setup-pbx-ivr.sh`.

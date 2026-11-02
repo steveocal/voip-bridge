@@ -9,6 +9,7 @@
 #   ext <number> <webrtc|sip> <wake 0|1> <password> <caller name>
 #   fwd <extension> <always|busy|noanswer|busynoanswer|vm> <ring seconds> <number|->
 #   route <our number> <ring seconds> <record 0|1> <vm|hangup|fwd<number>> <legs|->
+#   when / hours / menu / key / prompt: menus and opening hours (below)
 # Each extension becomes an endpoint, auth and aor in $OUT, on the templates
 # in pjsip-phone-bridge.conf. An extension that is already defined by hand in
 # another pjsip*.conf is skipped (and logged), so hand-made ones can be moved
@@ -107,6 +108,82 @@ sync_family() {
 }
 sync_family pbroute "$routes"
 sync_family pbfwd "$fwds"
+
+# Menus and opening hours (src/ivr.ts). astdb, read by [pb-ivr]:
+#   pbwhen/<our number> = <ring|menu>|<menu id|->|<out-of-hours action>|<prompt|->
+#   pbhours/<our number> = <time zone>|<open specs !-joined, or ->|<shut specs, or ->
+#   pbmenu/<id> = <prompt|->|<key timeout>|<retries>|<direct dial 0|1>
+#   pbkey/<menu id>-<0-9|s|h|t> = <action>
+# Actions: vm, hangup, repeat, fwd|<number>, menu|<id>, ring|<secs>|<Dial targets|->
+# (out of hours: the same, or -|- with no hours). Prompts are WAV files in
+# $PROMPTS, fetched once each; ones no longer used are deleted.
+ivr=$(echo "$cfg" | awk '
+  function phone(n) { return n ~ /^[1-9][0-9]*$/ && length(n) >= 7 && length(n) <= 15 }
+  function dial(s,   n, legs, i, t, v, d, mv, out) {
+    if (s == "-") return "-"
+    out = ""; n = split(s, legs, ",")
+    for (i = 1; i <= n; i++) {
+      t = substr(legs[i], 1, 1); v = substr(legs[i], 2)
+      if ((t == "e" || t == "a") && v ~ /^[0-9]+$/ && length(v) >= 2 && length(v) <= 6)
+        d = (t == "e") ? "PJSIP/" v : "Local/" v "@pb-ring-app/n"
+      else if (t == "m" && split(v, mv, "x") == 2 && mv[1] ~ /^[0-9]+$/ && mv[1] <= 120 && phone(mv[2]))
+        d = "Local/" v "@pb-ring-mobile/n"
+      else continue
+      out = out (out == "" ? "" : "&") d
+    }
+    return out == "" ? "-" : out
+  }
+  # One action token as astdb fields; "" when it is not valid.
+  function act(a,   s, c) {
+    if (a == "vm" || a == "hangup" || a == "repeat") return a
+    if (a ~ /^fwd/ && phone(substr(a, 4))) return "fwd|" substr(a, 4)
+    if (a ~ /^menu[0-9]+$/) return "menu|" substr(a, 5)
+    if (a ~ /^ring[0-9]+:/) {
+      c = index(a, ":"); s = substr(a, 5, c - 5) + 0
+      if (s >= 5 && s <= 300) return "ring|" s "|" dial(substr(a, c + 1))
+    }
+    return ""
+  }
+  function hash(h) { return h == "-" || h ~ /^[0-9a-f]+$/ && length(h) == 16 }
+  function spec(s) { return s ~ /^[0-9:*-]+,[a-z*-]+,[0-9*-]+,[a-z*-]+$/ }
+  $1 == "when" && phone($2) && ($3 == "ring" || $3 ~ /^menu[0-9]+$/) && hash($5) {
+    n = ($4 == "-") ? "-|-" : act($4)
+    if (n == "" || n == "repeat" || n ~ /^ring/) next
+    if (n == "vm" || n == "hangup") n = n "|-"
+    print "pbwhen", $2, ($3 == "ring" ? "ring|-" : "menu|" substr($3, 5)) "|" n "|" $5
+  }
+  $1 == "hours" && phone($2) && $3 ~ /^[A-Za-z0-9_+\/-]+$/ && ($4 == "open" || $4 == "shut") && spec($5) {
+    tz[$2] = $3
+    if ($4 == "open") op[$2] = op[$2] (op[$2] == "" ? "" : "!") $5
+    else sh[$2] = sh[$2] (sh[$2] == "" ? "" : "!") $5
+  }
+  $1 == "menu" && $2 ~ /^[0-9]+$/ && hash($3) && $4 ~ /^[0-9]+$/ && $4 >= 1 && $4 <= 30 && $5 ~ /^[0-5]$/ && ($6 == "0" || $6 == "1") {
+    print "pbmenu", $2, $3 "|" $4 "|" $5 "|" $6
+  }
+  $1 == "key" && $2 ~ /^[0-9]+$/ && $3 ~ /^([0-9]|s|h|t)$/ && (k = act($4)) != "" && !($3 == "t" && k == "repeat") {
+    print "pbkey", $2 "-" $3, k
+  }
+  $1 == "prompt" && hash($2) && $2 != "-" { print "prompt", $2 }
+  END { for (d in tz) print "pbhours", d, tz[d] "|" (op[d] == "" ? "-" : op[d]) "|" (sh[d] == "" ? "-" : sh[d]) }')
+fam() { echo "$ivr" | awk -v f="$1" '$1 == f { print $2, $3 }'; }
+sync_family pbwhen "$(fam pbwhen)"
+sync_family pbhours "$(fam pbhours)"
+sync_family pbmenu "$(fam pbmenu)"
+sync_family pbkey "$(fam pbkey)"
+
+PROMPTS=${PROMPTS:-/var/spool/asterisk/phone-bridge-prompts}
+mkdir -p "$PROMPTS"
+want=$(echo "$ivr" | awk '$1 == "prompt" { print $2 }')
+for h in $want; do
+  [ -s "$PROMPTS/$h.wav" ] && continue
+  curl -sf --max-time 60 -H "X-Pbx-Secret: $PBX_SECRET" -o "$PROMPTS/$h.tmp" "$WORKER/pbx/prompt/$h" &&
+    chmod 644 "$PROMPTS/$h.tmp" && mv "$PROMPTS/$h.tmp" "$PROMPTS/$h.wav" || { rm -f "$PROMPTS/$h.tmp"; echo "pbx-sync: prompt $h not fetched; next time" >&2; }
+done
+for f in "$PROMPTS"/*.wav; do
+  [ -e "$f" ] || continue
+  h=$(basename "$f" .wav)
+  echo "$want" | grep -q -x -F "$h" || rm -f "$f"
+done
 
 # Only report what was applied, so the worker can tell it's in step.
 applied=$(printf '%s\n' "$cfg" | sha256sum | cut -d' ' -f1)
