@@ -40,7 +40,12 @@ export async function syncExtensions(env: Env): Promise<number | null> {
   const read = (fields: string[]) => odooCall(env, uid, "phone_bridge.extension", "search_read", [[]], { fields, context: { active_test: false } });
   let full = true;
   let r = await read(["number", "user_id", "name", "sip_password", "device_type", "wake_app", "active"]);
-  if (r.fault) { full = false; r = await read(["number", "user_id"]); }
+  if (r.fault) {
+    // Odoo's own reason (addon not upgraded, or the login can't read
+    // sip_password), else the PBX just stays at "not available yet".
+    console.warn("Odoo extensions: PBX fields refused, owners only:", String(r.fault).slice(-400));
+    full = false; r = await read(["number", "user_id"]);
+  }
   if (r.fault) { console.error("Odoo extensions read failed:", r.fault); return null; }
   const exts = (r.parsed ?? []) as Array<Record<string, unknown>>;
   const userIds = [...new Set(exts.map(e => Array.isArray(e.user_id) ? e.user_id[0] as number : 0).filter(Boolean))];

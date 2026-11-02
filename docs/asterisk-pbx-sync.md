@@ -42,11 +42,21 @@ pbx-sync.sh ──▶ /etc/asterisk/pjsip-phone-bridge-extensions.conf ──▶
    `[NNN-auth]` block in `pjsip.conf`, the right device type, and "Wake the
    Phone App" for the Android app (202).
 2. On the VPS, back up `pjsip.conf` and delete the extension's three blocks
-   (`[NNN]` endpoint, `[NNN-auth]`, `[NNN]` aor).
-3. `docker exec -u asterisk asterisk /etc/asterisk/pbx-sync.sh`; check
-   `pjsip show endpoint NNN` and that the phone re-registers.
+   (`[NNN]` endpoint, `[NNN-auth]`, `[NNN]` aor). Keep anything that follows
+   the last block (comments, the two `#include pjsip-phone-bridge…` lines):
+   deleting "up to the next section" also takes those, and without the
+   includes every Odoo extension disappears on the next reload.
+3. `docker exec -u asterisk asterisk /etc/asterisk/pbx-sync.sh`, then
+   `module reload res_pjsip.so` if the sync didn't (it only reloads when its
+   own file changed); check `pjsip show endpoint NNN` and that the phone
+   re-registers.
 
-Not moved by this: ext 200 (desk phone with `ALERT_INFO = Ring Answer`, which
-the desk-phone template doesn't set), and the trunks. Inbound ring lists
-(`[default]`, `[voipms-inbound]`) still name extensions; that's the routing
-step.
+The sync also counts numeric sections in `pjsip_wizard.conf`'s includes as
+"by hand": the image's sample `pjsip_endpoint.conf` (a `[200]` on a missing
+wizard template, never loaded) was renamed `.disabled_*` for that reason.
+
+All extensions came from Odoo as of 2 Nov 2026: 200 (desk phone; the
+desk-phone template carries its `ALERT_INFO = Ring Answer`), 201, 202, 203,
+211, 300. 204 and 212 were deleted. `pjsip.conf` keeps only the trunks.
+Inbound ring lists (`[default]`, `[voipms-inbound]`) still name extensions;
+that's the routing step.
