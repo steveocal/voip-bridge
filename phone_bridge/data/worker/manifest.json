@@ -1,10 +1,10 @@
 {
   "name": "odoo-phone-bridge",
   "version": "0.4.0",
-  "built_at": "2026-10-27T10:39:29.050Z",
+  "built_at": "2026-11-02T11:53:26.332Z",
   "compatibility_date": "2025-08-08",
   "main_module": "index.js",
-  "main_module_sha256": "31c9c7e2eecea61cff094cc6e6e089cf22f57c3e9fc517ead56a9f67b772fb7a",
+  "main_module_sha256": "55e421d20803d1556112ae19f83b3615e2dc3dd502f4b7e5483596fc4a5833d4",
   "bindings": [
     {
       "type": "durable_object_namespace",
@@ -47,6 +47,14 @@
       "group": "Security",
       "label": "PBX secret",
       "help": "Shared with the phone system for its calls into the worker."
+    },
+    {
+      "name": "SESSION_SECRET",
+      "kind": "secret",
+      "required": false,
+      "group": "Security",
+      "label": "Session secret",
+      "help": "Signs each user's dashboard and app sign-in. Leave empty to derive it from the API token."
     },
     {
       "name": "ODOO_URL",
@@ -270,6 +278,14 @@
     {
       "name": "0003_call_extension.sql",
       "sql": "-- The extension a softphone/app was signed in as when it logged this leg\n-- (sent as ext=), so Odoo's Phone → Calls can show each extension's calls.\n-- NULL for the PBX's own trunk-leg events.\nALTER TABLE call_log ADD COLUMN extension TEXT;\n"
+    },
+    {
+      "name": "0004_multi_user.sql",
+      "sql": "-- Multi-user: every extension belongs to an Odoo user (Odoo\n-- phone_bridge.extension.user_id), and calls, settings, favourites and the\n-- Google account are that user's. See src/users.ts.\n-- Applied in order with the others by the provisioner (models/cloudflare.py).\n\n-- Odoo's extension → user map, refreshed from Odoo every few minutes.\nCREATE TABLE IF NOT EXISTS extensions (\n  number TEXT PRIMARY KEY,\n  user_id INTEGER,              -- res.users.id (NULL = nobody's)\n  user_name TEXT,\n  user_email TEXT,\n  updated_at INTEGER NOT NULL\n);\n\n-- Per-user dashboard settings (favourites, quick text, …). The old global\n-- `settings` rows stay as defaults for users who haven't set their own.\nCREATE TABLE IF NOT EXISTS user_settings (\n  user_id INTEGER NOT NULL,\n  key TEXT NOT NULL,\n  value TEXT,\n  updated_at INTEGER,\n  PRIMARY KEY (user_id, key)\n);\n\n-- Each user's own Google account (Gmail + Google Contacts).\nCREATE TABLE IF NOT EXISTS user_google (\n  user_id INTEGER PRIMARY KEY,\n  email TEXT,\n  refresh_token TEXT NOT NULL,\n  updated_at INTEGER NOT NULL\n);\n\n-- call_log.user_id (the leg's extension's user) already exists.\nCREATE INDEX IF NOT EXISTS idx_call_log_user ON call_log(user_id);\n-- Gmail rows are the reading user's mailbox; Odoo rows stay shared (NULL).\nALTER TABLE messages ADD COLUMN user_id INTEGER;\n"
+    },
+    {
+      "name": "0005_pbx_extensions.sql",
+      "sql": "-- The PBX builds its extensions from Odoo's (phone_bridge.extension): the\n-- worker keeps a copy here and the PBX pulls it (GET /pbx/sync, pbx-sync.sh).\n-- See src/pbxsync.ts.\nALTER TABLE extensions ADD COLUMN name TEXT;\nALTER TABLE extensions ADD COLUMN sip_password TEXT;\nALTER TABLE extensions ADD COLUMN device_type TEXT;     -- webrtc | sip\nALTER TABLE extensions ADD COLUMN wake_app INTEGER;     -- 1 = push-wake the Android app before ringing\nALTER TABLE extensions ADD COLUMN active INTEGER;       -- 0 = archived in Odoo (kept for call history owners)\n"
     }
   ],
   "assets": {

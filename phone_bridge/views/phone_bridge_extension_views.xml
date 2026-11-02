@@ -9,6 +9,7 @@
                 <field name="name"/>
                 <field name="user_id"/>
                 <field name="user_share" optional="hide"/>
+                <field name="device_type" optional="show"/>
                 <field name="voicemail_enabled"/>
                 <field name="greeting_filename" string="Greeting" optional="show"/>
                 <field name="voicemail_email" optional="show"/>
@@ -35,7 +36,9 @@
                                 A portal or public user signs in with the phone app or dashboard only:
                                 no softphone in Odoo, and voicemail comes by email without a to-do.
                             </div>
+                            <field name="device_type"/>
                             <field name="sip_password" password="True"/>
+                            <field name="wake_app" invisible="device_type != 'webrtc'"/>
                             <field name="active" invisible="1"/>
                         </group>
                         <group string="Voicemail">
@@ -60,7 +63,7 @@
         <field name="view_mode">list,form</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">Add your phone system's extensions</p>
-            <p>Each extension gets its own voicemail box, greeting and email address.</p>
+            <p>The phone system creates each extension from here, with its own voicemail box, greeting and email address.</p>
         </field>
     </record>
 </odoo>

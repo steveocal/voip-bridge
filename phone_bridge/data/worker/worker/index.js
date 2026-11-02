@@ -58,6 +58,11 @@ function asteriskPbx(env) {
       const res = await ariFetch(env, "channels?endpoint=Local/s@greetings-sync&context=greetings-sync&extension=noop&priority=1&timeout=30", { method: "POST" });
       if (!res.ok) throw new Error(`ARI returned ${res.status}`);
     },
+    // Runs [pbx-sync] (pbx-sync.sh), the same way.
+    async syncExtensions() {
+      const res = await ariFetch(env, "channels?endpoint=Local/s@pbx-sync&context=pbx-sync&extension=noop&priority=1&timeout=30", { method: "POST" });
+      if (!res.ok) throw new Error(`ARI returned ${res.status}`);
+    },
     // [web-callback] rings the agents with the visitor as the caller, and
     // once one answers dials the visitor from the website number.
     async webCallback({ id, name, number }) {
@@ -452,6 +457,90 @@ async function renameContact(env, id, name) {
   return true;
 }
 __name(renameContact, "renameContact");
+var ACTIVITY_PHONE_FIELDS = ["phone", "mobile", "partner_phone"];
+async function callActivities(env, userId, limit = 50) {
+  const uid = await odooAuth(env);
+  if (!uid) throw new Error("Odoo unavailable");
+  const r = await odooCall(
+    env,
+    uid,
+    "mail.activity",
+    "search_read",
+    [[["user_id", "=", userId], ["activity_type_id.category", "=", "phonecall"]]],
+    { fields: ["summary", "note", "date_deadline", "state", "res_model", "res_id", "res_name", "activity_type_id"], order: "date_deadline, id", limit }
+  );
+  if (r.fault) throw new Error(r.fault);
+  const acts = r.parsed ?? [];
+  const records = /* @__PURE__ */ new Map();
+  const byModel = /* @__PURE__ */ new Map();
+  for (const a of acts) {
+    const m = s(a.res_model);
+    if (!byModel.has(m)) byModel.set(m, []);
+    byModel.get(m).push(a.res_id);
+  }
+  for (const [model, ids] of byModel) {
+    const fg = await odooCall(env, uid, model, "fields_get", [], { attributes: ["type"] });
+    const have = fg.parsed ?? {};
+    const fields = [...ACTIVITY_PHONE_FIELDS, "partner_id"].filter((f) => f in have);
+    const rr = await odooCall(env, uid, model, "read", [ids], { fields: [...fields, "display_name"] });
+    for (const rec of rr.parsed ?? []) records.set(`${model}:${rec.id}`, rec);
+  }
+  const partnerIds = /* @__PURE__ */ new Set();
+  for (const rec of records.values()) {
+    if (!ACTIVITY_PHONE_FIELDS.some((f) => rec[f]) && Array.isArray(rec.partner_id)) partnerIds.add(rec.partner_id[0]);
+  }
+  const partners = /* @__PURE__ */ new Map();
+  if (partnerIds.size) {
+    const pr = await odooCall(env, uid, "res.partner", "read", [[...partnerIds]], { fields: ["phone", "mobile"] });
+    for (const p of pr.parsed ?? []) partners.set(p.id, p);
+  }
+  const out = [];
+  for (const a of acts) {
+    const model = s(a.res_model), resId = a.res_id;
+    const rec = records.get(`${model}:${resId}`);
+    if (!rec) continue;
+    let phone = "";
+    for (const f of ACTIVITY_PHONE_FIELDS) if (rec[f]) {
+      phone = s(rec[f]);
+      break;
+    }
+    let partner = null;
+    if (model === "res.partner") partner = { id: resId, name: s(rec.display_name) };
+    else if (Array.isArray(rec.partner_id)) partner = { id: rec.partner_id[0], name: s(rec.partner_id[1]) };
+    if (!phone && partner) {
+      const p = model === "res.partner" ? rec : partners.get(partner.id);
+      if (p) phone = s(p.phone) || s(p.mobile);
+    }
+    const type = Array.isArray(a.activity_type_id) ? s(a.activity_type_id[1]) : "";
+    out.push({
+      id: a.id,
+      summary: s(a.summary) || type || "Call",
+      note: s(a.note).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 140),
+      deadline: s(a.date_deadline),
+      state: s(a.state),
+      record_name: s(rec.display_name) || s(a.res_name),
+      res_model: model,
+      res_id: resId,
+      partner,
+      phone
+    });
+  }
+  return out;
+}
+__name(callActivities, "callActivities");
+async function activityDone(env, userId, id, feedback = "") {
+  const uid = await odooAuth(env);
+  if (!uid) return false;
+  const mine = await odooCall(env, uid, "mail.activity", "search_count", [[["id", "=", id], ["user_id", "=", userId]]]);
+  if (mine.parsed !== 1) return false;
+  const r = await odooCall(env, uid, "mail.activity", "action_feedback", [[id]], feedback ? { feedback } : {});
+  if (r.fault && !/marshal None/.test(r.fault)) {
+    console.error("Odoo activity done failed:", r.fault);
+    return false;
+  }
+  return true;
+}
+__name(activityDone, "activityDone");
 async function searchContacts(env, query = "", limit = 50) {
   const uid = await odooAuth(env);
   if (!uid) return [];
@@ -920,21 +1009,288 @@ async function upsertMessages(env, msgs) {
       ).bind(m.odoo_id, m.contact_id ?? null, m.res_model ?? "", m.res_id ?? null, m.subject ?? "", m.body ?? "", m.email_from ?? "", m.author_id ?? null, m.message_type ?? "", m.direction ?? "", m.date ?? null, Date.now()));
     } else if (m.gmail_id != null) {
       statements.push(env.DB.prepare(
-        `INSERT INTO messages (gmail_id, contact_id, subject, body, email_from, direction, source, date, updated_at)
-         VALUES (?1,?2,?3,?4,?5,?6,'gmail',?7,?8)
-         ON CONFLICT(gmail_id) DO UPDATE SET subject=excluded.subject, body=excluded.body, email_from=excluded.email_from, direction=excluded.direction, date=excluded.date, updated_at=excluded.updated_at`
-      ).bind(m.gmail_id, m.contact_id ?? null, m.subject ?? "", m.body ?? "", m.email_from ?? "", m.direction ?? "", m.date ?? null, Date.now()));
+        `INSERT INTO messages (gmail_id, contact_id, subject, body, email_from, direction, source, date, updated_at, user_id)
+         VALUES (?1,?2,?3,?4,?5,?6,'gmail',?7,?8,?9)
+         ON CONFLICT(gmail_id) DO UPDATE SET subject=excluded.subject, body=excluded.body, email_from=excluded.email_from, direction=excluded.direction, date=excluded.date, updated_at=excluded.updated_at, user_id=excluded.user_id`
+      ).bind(m.gmail_id, m.contact_id ?? null, m.subject ?? "", m.body ?? "", m.email_from ?? "", m.direction ?? "", m.date ?? null, Date.now(), m.user_id ?? null));
     }
   }
   if (statements.length) await env.DB.batch(statements);
 }
 __name(upsertMessages, "upsertMessages");
 
+// src/pbxsync.ts
+var FRESH_MS = 6e4;
+function putSetting(env, key, value) {
+  return env.DB.prepare(
+    "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at"
+  ).bind(key, value, Date.now());
+}
+__name(putSetting, "putSetting");
+async function getSetting(env, key) {
+  return (await env.DB.prepare("SELECT value FROM settings WHERE key = ?1").bind(key).first())?.value ?? "";
+}
+__name(getSetting, "getSetting");
+function callerName(s2) {
+  return s2.normalize("NFKD").replace(/[^A-Za-z0-9 .'-]/g, "").replace(/\s+/g, " ").trim().slice(0, 40);
+}
+__name(callerName, "callerName");
+var PASSWORD = /^[A-Za-z0-9._~-]{6,64}$/;
+var NUMBER = /^\d{2,6}$/;
+async function pbxSyncText(env) {
+  const rows = (await env.DB.prepare(
+    "SELECT number, name, user_name, sip_password, device_type, wake_app, active FROM extensions ORDER BY number"
+  ).all()).results ?? [];
+  const lines = ["version 1"];
+  for (const r of rows) {
+    if (r.active === 0 || !NUMBER.test(r.number) || !PASSWORD.test(r.sip_password ?? "")) continue;
+    const type = r.device_type === "sip" ? "sip" : "webrtc";
+    const wake = type === "webrtc" && r.wake_app ? 1 : 0;
+    lines.push(`ext ${r.number} ${type} ${wake} ${r.sip_password} ${callerName(r.user_name || r.name || "")}`.trimEnd());
+  }
+  return lines.join("\n") + "\n";
+}
+__name(pbxSyncText, "pbxSyncText");
+async function sha256Hex(s2) {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s2));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+__name(sha256Hex, "sha256Hex");
+async function nudgePbxIfChanged(env) {
+  try {
+    const want = await sha256Hex(await pbxSyncText(env));
+    if (want === await getSetting(env, "pbx_wanted")) return;
+    await putSetting(env, "pbx_wanted", want).run();
+    await pbx(env).syncExtensions();
+  } catch (e) {
+    console.error("pbx extension sync nudge failed:", e);
+  }
+}
+__name(nudgePbxIfChanged, "nudgePbxIfChanged");
+async function handlePbxSync(env) {
+  const at = Number(await getSetting(env, "pbx_exts_at")) || 0;
+  if (Date.now() - at > FRESH_MS) await syncExtensions(env);
+  if (!(Number(await getSetting(env, "pbx_exts_at")) > 0)) {
+    return new Response("extension details not available from Odoo yet\n", { status: 503, headers: { "Content-Type": "text/plain" } });
+  }
+  return new Response(await pbxSyncText(env), { headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } });
+}
+__name(handlePbxSync, "handlePbxSync");
+async function handlePbxSynced(request, env) {
+  const applied = new URLSearchParams(await request.text()).get("applied") ?? "";
+  if (!/^[0-9a-f]{64}$/.test(applied)) return Response.json({ error: "bad hash" }, { status: 400 });
+  await env.DB.batch([putSetting(env, "pbx_applied", applied), putSetting(env, "pbx_applied_at", String(Date.now()))]);
+  return Response.json({ ok: true });
+}
+__name(handlePbxSynced, "handlePbxSynced");
+async function handlePbxStatus(env) {
+  const [want, applied, appliedAt, fetchedAt] = await Promise.all([
+    pbxSyncText(env).then(sha256Hex),
+    getSetting(env, "pbx_applied"),
+    getSetting(env, "pbx_applied_at"),
+    getSetting(env, "pbx_exts_at")
+  ]);
+  return Response.json({ synced: applied === want, synced_at: Number(appliedAt) || null, fetched_at: Number(fetchedAt) || null });
+}
+__name(handlePbxStatus, "handlePbxStatus");
+
+// src/users.ts
+var OWNERS_TTL_MS = 5 * 6e4;
+var ownersCache = null;
+async function syncExtensions(env) {
+  const uid = await odooAuth(env);
+  if (!uid) return null;
+  const read = /* @__PURE__ */ __name((fields) => odooCall(env, uid, "phone_bridge.extension", "search_read", [[]], { fields, context: { active_test: false } }), "read");
+  let full = true;
+  let r = await read(["number", "user_id", "name", "sip_password", "device_type", "wake_app", "active"]);
+  if (r.fault) {
+    full = false;
+    r = await read(["number", "user_id"]);
+  }
+  if (r.fault) {
+    console.error("Odoo extensions read failed:", r.fault);
+    return null;
+  }
+  const exts = r.parsed ?? [];
+  const userIds = [...new Set(exts.map((e) => Array.isArray(e.user_id) ? e.user_id[0] : 0).filter(Boolean))];
+  const emails = /* @__PURE__ */ new Map();
+  if (userIds.length) {
+    const u = await odooCall(env, uid, "res.users", "read", [userIds], { fields: ["email", "login"] });
+    for (const row of u.parsed ?? []) emails.set(row.id, String(row.email || row.login || ""));
+  }
+  const now = Date.now();
+  const str = /* @__PURE__ */ __name((v) => typeof v === "string" ? v : null, "str");
+  const stmts = [env.DB.prepare("DELETE FROM extensions")];
+  for (const e of exts) {
+    const userId = Array.isArray(e.user_id) ? e.user_id[0] : null;
+    stmts.push(env.DB.prepare(
+      "INSERT OR REPLACE INTO extensions (number, user_id, user_name, user_email, updated_at, name, sip_password, device_type, wake_app, active) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
+    ).bind(
+      String(e.number),
+      userId,
+      Array.isArray(e.user_id) ? String(e.user_id[1]) : "",
+      userId ? emails.get(userId) ?? "" : "",
+      now,
+      str(e.name),
+      full ? str(e.sip_password) : null,
+      full ? str(e.device_type) : null,
+      full ? e.wake_app ? 1 : 0 : null,
+      full ? e.active === false ? 0 : 1 : null
+    ));
+  }
+  stmts.push(env.DB.prepare(
+    "UPDATE call_log SET user_id = (SELECT x.user_id FROM extensions x WHERE x.number = call_log.extension) WHERE user_id IS NULL AND extension IS NOT NULL"
+  ));
+  stmts.push(env.DB.prepare(
+    "INSERT INTO settings (key, value, updated_at) VALUES ('pbx_exts_at', ?1, ?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at"
+  ).bind(full ? String(now) : "0", now));
+  await env.DB.batch(stmts);
+  ownersCache = null;
+  if (full) await nudgePbxIfChanged(env);
+  return exts.length;
+}
+__name(syncExtensions, "syncExtensions");
+async function extensionOwners(env) {
+  if (ownersCache && Date.now() - ownersCache.at < 6e4) return ownersCache.map;
+  let rows = (await env.DB.prepare("SELECT number, user_id, user_name, user_email, updated_at FROM extensions").all()).results ?? [];
+  const oldest = rows.reduce((m, r) => Math.min(m, Number(r.updated_at) || 0), rows.length ? Infinity : 0);
+  if (Date.now() - oldest > OWNERS_TTL_MS && await syncExtensions(env) !== null) {
+    rows = (await env.DB.prepare("SELECT number, user_id, user_name, user_email FROM extensions").all()).results ?? [];
+  }
+  const map = /* @__PURE__ */ new Map();
+  for (const r of rows) map.set(String(r.number), { user_id: r.user_id ?? null, user_name: String(r.user_name || ""), user_email: String(r.user_email || "") });
+  ownersCache = { at: Date.now(), map };
+  return map;
+}
+__name(extensionOwners, "extensionOwners");
+async function extensionUser(env, ext) {
+  if (!ext) return null;
+  return (await extensionOwners(env)).get(ext)?.user_id ?? null;
+}
+__name(extensionUser, "extensionUser");
+async function userEmail(env, userId) {
+  for (const o of (await extensionOwners(env)).values()) if (o.user_id === userId && o.user_email) return o.user_email;
+  return "";
+}
+__name(userEmail, "userEmail");
+var SESSION_DAYS = 30;
+function sessionKey(env) {
+  return env.SESSION_SECRET || (env.API_TOKEN ? "vb-session:" + env.API_TOKEN : "");
+}
+__name(sessionKey, "sessionKey");
+async function hmacHex(env, data) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(sessionKey(env)), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(data));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+__name(hmacHex, "hmacHex");
+async function sha256Hex2(s2) {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s2));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+__name(sha256Hex2, "sha256Hex");
+async function same(a, b) {
+  const [x, y] = await Promise.all([sha256Hex2(a), sha256Hex2(b)]);
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x.charCodeAt(i) ^ y.charCodeAt(i);
+  return diff === 0;
+}
+__name(same, "same");
+async function signed(env, payload) {
+  return `${payload}.${await hmacHex(env, payload)}`;
+}
+__name(signed, "signed");
+async function unsign(env, value) {
+  const at = value.lastIndexOf(".");
+  if (at < 0 || !sessionKey(env)) return null;
+  const payload = value.slice(0, at);
+  return await same(value.slice(at + 1), await hmacHex(env, payload)) ? payload : null;
+}
+__name(unsign, "unsign");
+var userNames = /* @__PURE__ */ new Map();
+async function sessionUser(request, env) {
+  const bearer = /^Bearer (.+)$/.exec(request.headers.get("Authorization") || "")?.[1] || (request.method === "GET" ? new URL(request.url).searchParams.get("session") : null);
+  if (!bearer) return null;
+  if (env.API_TOKEN && await same(bearer, env.API_TOKEN)) {
+    const id2 = parseInt(request.headers.get("X-Odoo-User") || "0");
+    return { id: id2, name: "", ext: "", service: true };
+  }
+  const payload = await unsign(env, bearer);
+  if (!payload) return null;
+  const [kind, uid, ext, exp] = payload.split(".");
+  if (kind !== "s" || !uid || Number(exp) < Date.now()) return null;
+  const id = parseInt(uid);
+  return { id, name: userNames.get(id) ?? "", ext };
+}
+__name(sessionUser, "sessionUser");
+function sessionToken(env, userId, ext) {
+  return signed(env, `s.${userId}.${ext}.${Date.now() + SESSION_DAYS * 864e5}`);
+}
+__name(sessionToken, "sessionToken");
+async function handleLogin(request, env) {
+  if (!sessionKey(env)) return Response.json({ error: "SESSION_SECRET is not set on the worker" }, { status: 503 });
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: "invalid JSON" }, { status: 400 });
+  }
+  const ext = String(body.ext ?? "").trim();
+  const password = String(body.password ?? "");
+  if (!ext || !password) return Response.json({ error: "extension and password required" }, { status: 400 });
+  const uid = await odooAuth(env);
+  if (!uid) return Response.json({ error: "Odoo unavailable" }, { status: 502 });
+  const r = await odooCall(
+    env,
+    uid,
+    "phone_bridge.extension",
+    "search_read",
+    [[["number", "=", ext], ["active", "=", true]]],
+    { fields: ["user_id", "sip_password"], limit: 1 }
+  );
+  if (r.fault) return Response.json({ error: "Odoo extensions unavailable" }, { status: 502 });
+  const rec = (r.parsed ?? [])[0];
+  if (!rec) return Response.json({ error: `Extension ${ext} isn't set up in Odoo (Phone \u2192 Extensions)` }, { status: 403 });
+  if (!rec.sip_password) return Response.json({ error: `Extension ${ext} has no SIP password in Odoo` }, { status: 403 });
+  if (!Array.isArray(rec.user_id)) return Response.json({ error: `Extension ${ext} has no user in Odoo` }, { status: 403 });
+  if (!await same(password, String(rec.sip_password))) return Response.json({ error: "Wrong password for this extension" }, { status: 403 });
+  const user = { id: rec.user_id[0], name: String(rec.user_id[1]), ext };
+  userNames.set(user.id, user.name);
+  return Response.json({ ok: true, user, token: await sessionToken(env, user.id, ext) });
+}
+__name(handleLogin, "handleLogin");
+async function handleMe(request, env) {
+  const user = await sessionUser(request, env);
+  if (!user) return Response.json({ user: null });
+  if (!user.name) {
+    for (const o of (await extensionOwners(env)).values()) if (o.user_id === user.id) {
+      user.name = o.user_name;
+      break;
+    }
+  }
+  return Response.json({ user });
+}
+__name(handleMe, "handleMe");
+function callOwner(legs, owners) {
+  const took = legs[0]?.direction === "outgoing" ? legs[0] : legs.find((l) => !l.did && (l.state === "terminated" || l.state === "ongoing"));
+  if (!took) return null;
+  if (took.user_id) return Number(took.user_id);
+  return took.extension ? owners.get(String(took.extension))?.user_id ?? null : null;
+}
+__name(callOwner, "callOwner");
+function canSee(legs, owners, viewer) {
+  if (viewer.service && !viewer.id) return true;
+  const owner = callOwner(legs, owners);
+  return owner === null || owner === viewer.id;
+}
+__name(canSee, "canSee");
+
 // src/gmail.ts
-var cachedToken = null;
-async function getAccessToken(env) {
-  if (cachedToken && cachedToken.expiry > Date.now() + 6e4) return cachedToken.token;
-  if (!env.GOOGLE_REFRESH_TOKEN || !env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) return null;
+var tokenCache = /* @__PURE__ */ new Map();
+var envAccountEmail = null;
+async function refreshAccessToken(env, refreshToken) {
+  const hit = tokenCache.get(refreshToken);
+  if (hit && hit.expiry > Date.now() + 6e4) return hit.token;
   try {
     const res = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
@@ -942,21 +1298,117 @@ async function getAccessToken(env) {
       body: new URLSearchParams({
         client_id: env.GOOGLE_CLIENT_ID,
         client_secret: env.GOOGLE_CLIENT_SECRET,
-        refresh_token: env.GOOGLE_REFRESH_TOKEN,
+        refresh_token: refreshToken,
         grant_type: "refresh_token"
       }).toString()
     });
     const data = await res.json();
     if (!data.access_token) return null;
     const expiresIn = (data.expires_in ?? 3600) - 60;
-    cachedToken = { token: data.access_token, expiry: Date.now() + expiresIn * 1e3 };
-    return cachedToken.token;
+    tokenCache.set(refreshToken, { token: data.access_token, expiry: Date.now() + expiresIn * 1e3 });
+    return data.access_token;
   } catch (e) {
-    console.error("Gmail token refresh failed:", e);
+    console.error("Google token refresh failed:", e);
     return null;
   }
 }
+__name(refreshAccessToken, "refreshAccessToken");
+async function accountEmail(token) {
+  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/profile", { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) return "";
+  return String((await res.json()).emailAddress || "");
+}
+__name(accountEmail, "accountEmail");
+async function getAccessToken(env, userId) {
+  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !userId) return null;
+  const own = await env.DB.prepare("SELECT refresh_token FROM user_google WHERE user_id = ?1").bind(userId).first();
+  if (own) return refreshAccessToken(env, own.refresh_token);
+  if (!env.GOOGLE_REFRESH_TOKEN) return null;
+  const token = await refreshAccessToken(env, env.GOOGLE_REFRESH_TOKEN);
+  if (!token) return null;
+  if (envAccountEmail === null) envAccountEmail = (await accountEmail(token)).toLowerCase();
+  const mine = (await userEmail(env, userId)).toLowerCase();
+  return mine && mine === envAccountEmail ? token : null;
+}
 __name(getAccessToken, "getAccessToken");
+async function googleAccount(env, userId) {
+  const own = await env.DB.prepare("SELECT email FROM user_google WHERE user_id = ?1").bind(userId).first();
+  if (own) return { email: own.email, own: true };
+  return await getAccessToken(env, userId) && envAccountEmail ? { email: envAccountEmail, own: false } : null;
+}
+__name(googleAccount, "googleAccount");
+var GOOGLE_SCOPES = [
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.send",
+  "https://www.googleapis.com/auth/contacts.readonly",
+  "email"
+];
+function googleRedirect(request) {
+  return new URL("/google/callback", request.url).toString();
+}
+__name(googleRedirect, "googleRedirect");
+async function handleGoogleConnect(request, env, userId) {
+  const params = new URL(request.url).searchParams;
+  const back = params.get("back") || "";
+  if (!env.GOOGLE_CLIENT_ID) return Response.json({ error: "Google isn't configured on the worker" }, { status: 503 });
+  const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  url.searchParams.set("client_id", env.GOOGLE_CLIENT_ID);
+  url.searchParams.set("redirect_uri", googleRedirect(request));
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", GOOGLE_SCOPES.join(" "));
+  url.searchParams.set("access_type", "offline");
+  url.searchParams.set("prompt", "consent");
+  const backB64 = back ? btoa(back).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "") : "";
+  url.searchParams.set("state", await signed(env, `google.${userId}.${Date.now() + 15 * 6e4}.${backB64}`));
+  if (params.get("json") === "1") return Response.json({ url: url.toString() });
+  return Response.redirect(url.toString(), 302);
+}
+__name(handleGoogleConnect, "handleGoogleConnect");
+async function handleGoogleCallback(request, env) {
+  const params = new URL(request.url).searchParams;
+  const state = await unsign(env, params.get("state") || "");
+  const [kind, uid, exp, backB64] = (state || "").split(".");
+  let page = new URL("/dashboard", request.url).toString();
+  if (backB64) {
+    try {
+      page = atob(backB64.replace(/-/g, "+").replace(/_/g, "/"));
+    } catch {
+    }
+  }
+  const back = /* @__PURE__ */ __name((msg) => {
+    const u = new URL(page);
+    u.searchParams.set("google", msg);
+    return Response.redirect(u.toString(), 302);
+  }, "back");
+  if (kind !== "google" || !uid || Number(exp) < Date.now()) return back("Google sign-in expired, try again");
+  if (!params.get("code")) return back(params.get("error") === "access_denied" ? "Google access was not allowed" : "Google sign-in failed");
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code: params.get("code"),
+      client_id: env.GOOGLE_CLIENT_ID,
+      client_secret: env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: googleRedirect(request),
+      grant_type: "authorization_code"
+    }).toString()
+  });
+  const data = await res.json();
+  if (!data.refresh_token || !data.access_token) return back("Google gave no refresh token");
+  const email = await accountEmail(data.access_token);
+  await env.DB.prepare(
+    "INSERT INTO user_google (user_id, email, refresh_token, updated_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(user_id) DO UPDATE SET email=excluded.email, refresh_token=excluded.refresh_token, updated_at=excluded.updated_at"
+  ).bind(parseInt(uid), email, data.refresh_token, Date.now()).run();
+  googleContactsCache.delete(parseInt(uid));
+  return back("connected");
+}
+__name(handleGoogleCallback, "handleGoogleCallback");
+async function handleGoogleDisconnect(env, userId) {
+  await env.DB.prepare("DELETE FROM user_google WHERE user_id = ?1").bind(userId).run();
+  googleContactsCache.delete(userId);
+  return Response.json({ ok: true });
+}
+__name(handleGoogleDisconnect, "handleGoogleDisconnect");
 async function getMessage(env, token, id) {
   const url = new URL(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}`);
   url.searchParams.set("format", "metadata");
@@ -981,10 +1433,10 @@ async function getMessage(env, token, id) {
   };
 }
 __name(getMessage, "getMessage");
-async function searchGmailMessages(env, email, limit = 30) {
+async function searchGmailMessages(env, userId, email, limit = 30) {
   const clean = (email || "").trim();
   if (!clean) return [];
-  const token = await getAccessToken(env);
+  const token = await getAccessToken(env, userId);
   if (!token) return [];
   const listUrl = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
   listUrl.searchParams.set("q", `from:${clean} OR to:${clean}`);
@@ -1000,8 +1452,8 @@ async function searchGmailMessages(env, email, limit = 30) {
   return results.filter((m) => m !== null);
 }
 __name(searchGmailMessages, "searchGmailMessages");
-async function searchRecentGmailMessages(env, days = 7, limit = 30) {
-  const token = await getAccessToken(env);
+async function searchRecentGmailMessages(env, userId, days = 7, limit = 30) {
+  const token = await getAccessToken(env, userId);
   if (!token) return [];
   const listUrl = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
   listUrl.searchParams.set("q", `newer_than:${days}d`);
@@ -1045,8 +1497,8 @@ function looksLikeHtml(s2) {
   return /<(p|div|br|b|strong|i|em|u|a|ul|ol|li|span|table|h[1-6]|blockquote|img)(\s[^>]*)?\/?>/i.test(s2);
 }
 __name(looksLikeHtml, "looksLikeHtml");
-async function getGmailBody(env, gmailId) {
-  const token = await getAccessToken(env);
+async function getGmailBody(env, userId, gmailId) {
+  const token = await getAccessToken(env, userId);
   if (!token) return { text: "", html: "" };
   const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${gmailId}?format=full`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
@@ -1095,8 +1547,8 @@ function encodeHeader(s2) {
   return "=?UTF-8?B?" + b64std(s2) + "?=";
 }
 __name(encodeHeader, "encodeHeader");
-async function sendGmailMessage(env, opts) {
-  const token = await getAccessToken(env);
+async function sendGmailMessage(env, userId, opts) {
+  const token = await getAccessToken(env, userId);
   if (!token) return { ok: false, error: "no gmail token" };
   if (!config(env).mailFrom) return { ok: false, error: "MAIL_FROM is not set" };
   let inReplyTo = "", references = "", threadId;
@@ -1152,6 +1604,43 @@ async function sendGmailMessage(env, opts) {
   return { ok: true, id: d.id, threadId: d.threadId };
 }
 __name(sendGmailMessage, "sendGmailMessage");
+var googleContactsCache = /* @__PURE__ */ new Map();
+var GOOGLE_CONTACTS_TTL = 10 * 6e4;
+async function listGoogleContacts(env, userId) {
+  const hit = googleContactsCache.get(userId);
+  if (hit && Date.now() - hit.at < GOOGLE_CONTACTS_TTL) return hit.list;
+  const token = await getAccessToken(env, userId);
+  if (!token) throw new Error("Connect your Google account in Settings to see Gmail contacts");
+  const list2 = [];
+  let pageToken = "";
+  for (let page = 0; page < 10; page++) {
+    const url = new URL("https://people.googleapis.com/v1/people/me/connections");
+    url.searchParams.set("personFields", "names,phoneNumbers,emailAddresses");
+    url.searchParams.set("pageSize", "1000");
+    url.searchParams.set("sortOrder", "FIRST_NAME_ASCENDING");
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 403) throw new Error("Google contacts not allowed: reconnect Google with the contacts.readonly scope");
+    if (!res.ok) throw new Error(`Google contacts failed: ${res.status}`);
+    const d = await res.json();
+    for (const p of d.connections ?? []) {
+      const email = p.emailAddresses?.[0]?.value ?? "";
+      const name = p.names?.[0]?.displayName || email;
+      if (!name) continue;
+      list2.push({
+        id: p.resourceName.replace("people/", ""),
+        name,
+        numbers: (p.phoneNumbers ?? []).map((n) => (n.value ?? "").trim()).filter(Boolean),
+        email
+      });
+    }
+    if (!d.nextPageToken) break;
+    pageToken = d.nextPageToken;
+  }
+  googleContactsCache.set(userId, { at: Date.now(), list: list2 });
+  return list2;
+}
+__name(listGoogleContacts, "listGoogleContacts");
 
 // src/auth.ts
 var PUBLIC = [
@@ -1162,6 +1651,12 @@ var PUBLIC = [
   ["GET", /^\/health$/],
   ["GET", /^\/\.well-known\/assetlinks\.json$/],
   ["GET", /^\/web-callback\/(config|status)$/],
+  // Signing in per user (users.ts); the dashboard page itself holds no data
+  // and signs in with its SIP extension once loaded.
+  ["POST", /^\/auth\/login$/],
+  ["GET", /^\/auth\/me$/],
+  ["GET", /^\/google\/callback$/],
+  ["GET", /^\/dashboard$/],
   ["POST", /^\/web-callback$/]
 ];
 var PBX = [
@@ -1173,28 +1668,33 @@ var PBX = [
   ["POST", /^\/voicemail\/synced$/],
   ["GET", /^\/voicemail\/boxes\/[^/]+\/greeting$/]
 ];
+var SECRET = [
+  ["GET", /^\/pbx\/sync$/],
+  ["POST", /^\/pbx\/synced$/]
+];
 function accessFor(method, path) {
   const m = method === "HEAD" ? "GET" : method;
+  if (SECRET.some(([pm, re]) => pm === m && re.test(path))) return "secret";
   if (PUBLIC.some(([pm, re]) => pm === m && re.test(path))) return "public";
   if (PBX.some(([pm, re]) => pm === m && re.test(path))) return "pbx";
   return "api";
 }
 __name(accessFor, "accessFor");
 var SESSION_COOKIE = "pb_session";
-async function sha256Hex(s2) {
+async function sha256Hex3(s2) {
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s2));
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
-__name(sha256Hex, "sha256Hex");
-async function same(a, b) {
-  const [x, y] = await Promise.all([sha256Hex(a), sha256Hex(b)]);
+__name(sha256Hex3, "sha256Hex");
+async function same2(a, b) {
+  const [x, y] = await Promise.all([sha256Hex3(a), sha256Hex3(b)]);
   let diff = 0;
   for (let i = 0; i < x.length; i++) diff |= x.charCodeAt(i) ^ y.charCodeAt(i);
   return diff === 0;
 }
-__name(same, "same");
+__name(same2, "same");
 function sessionValue(env) {
-  return sha256Hex("session:" + env.API_TOKEN);
+  return sha256Hex3("session:" + env.API_TOKEN);
 }
 __name(sessionValue, "sessionValue");
 function cookie(request, name) {
@@ -1208,9 +1708,9 @@ __name(cookie, "cookie");
 async function hasApiCredential(request, env) {
   if (!env.API_TOKEN) return false;
   const bearer = /^Bearer (.+)$/.exec(request.headers.get("Authorization") || "")?.[1];
-  if (bearer) return same(bearer, env.API_TOKEN);
+  if (bearer) return same2(bearer, env.API_TOKEN);
   const session = cookie(request, SESSION_COOKIE);
-  return !!session && same(session, await sessionValue(env));
+  return !!session && same2(session, await sessionValue(env));
 }
 __name(hasApiCredential, "hasApiCredential");
 async function hasPbxCredential(request, env) {
@@ -1219,7 +1719,7 @@ async function hasPbxCredential(request, env) {
   if (!secret && (request.headers.get("Content-Type") || "").includes("application/x-www-form-urlencoded")) {
     secret = new URLSearchParams(await request.clone().text()).get("secret");
   }
-  return !!secret && same(secret, env.PBX_SECRET);
+  return !!secret && same2(secret, env.PBX_SECRET);
 }
 __name(hasPbxCredential, "hasPbxCredential");
 async function authorize(request, env) {
@@ -1227,6 +1727,11 @@ async function authorize(request, env) {
   const access = accessFor(request.method, path);
   if (access === "public") return null;
   if (await hasApiCredential(request, env)) return null;
+  if (access === "secret") {
+    if (await hasPbxCredential(request, env)) return null;
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (await sessionUser(request, env)) return null;
   if (access === "pbx" && await hasPbxCredential(request, env)) return null;
   if (!env.API_TOKEN) return Response.json({ error: "API_TOKEN is not set" }, { status: 503 });
   if (request.method === "GET" && (request.headers.get("Accept") || "").includes("text/html")) {
@@ -1252,12 +1757,12 @@ function safeNext(next) {
   return next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
 }
 __name(safeNext, "safeNext");
-async function handleLogin(request, env) {
+async function handleLogin2(request, env) {
   if (request.method === "GET") return loginPage("", safeNext(new URL(request.url).searchParams.get("next")));
   const form = new URLSearchParams(await request.text());
   const next = safeNext(form.get("next"));
   if (!env.API_TOKEN) return loginPage("This installation has no access token set yet.", next);
-  if (!await same(form.get("token") || "", env.API_TOKEN)) return loginPage("That token isn't right.", next);
+  if (!await same2(form.get("token") || "", env.API_TOKEN)) return loginPage("That token isn't right.", next);
   return new Response(null, {
     status: 303,
     headers: {
@@ -1266,7 +1771,7 @@ async function handleLogin(request, env) {
     }
   });
 }
-__name(handleLogin, "handleLogin");
+__name(handleLogin2, "handleLogin");
 function handleLogout() {
   return new Response(null, {
     status: 303,
@@ -1521,6 +2026,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .hist-transcript .tl.hit{background:#3a3210;border-radius:6px}
 #cd-pane-transcript .hist-transcript{max-height:none}
 .hist-transcript button{background:#2c2c2c;border:none;color:#ececec;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer}
+.set-note{font-size:12px;color:#9ca3af;margin:6px 0 2px}
+.set-note.err{color:#f87171}
+.set-google{display:flex;align-items:center;gap:8px;margin:4px 0}
+.set-google .set-note{flex:1;margin:0}
+.set-google .acc-mini{width:auto;height:30px;padding:0 10px;font-size:13px}
 .contact-row .mini-call{width:38px;height:38px;border-radius:50%;border:none;background:#10b981;color:#fff;font-size:16px;cursor:pointer;flex-shrink:0}
 .empty{color:#666;text-align:center;padding:28px 0;font-size:14px}
 .day-head{font-size:11px;font-weight:700;letter-spacing:.5px;color:#888;text-transform:uppercase;padding:14px 4px 6px;position:sticky;top:0;background:transparent}
@@ -1968,6 +2478,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 <div class="modal hidden" id="settings-modal">
   <div class="modal-card compact">
     <div class="modal-head"><span>\u2699\uFE0F Settings</span><button onclick="cancelSettings()" aria-label="Cancel">\u2715</button></div>
+    <div id="session-state" class="set-note">Not signed in</div>
+    <div class="set-google"><span id="google-state" class="set-note">Google: \u2026</span><button class="acc-mini" id="google-connect" onclick="connectGoogle()">Connect</button><button class="acc-mini del hidden" id="google-disconnect" onclick="disconnectGoogle()" title="Disconnect Google">\u2715</button></div>
 
     <div class="acc-row">
       <select id="set-account" class="acc-select" onchange="onAccountSelect()"></select>
@@ -2038,6 +2550,112 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 // \u2500\u2500 config \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 var SERVER = __SERVER_CONFIG__;
 var API = location.origin;
+
+// \u2500\u2500 Signing in \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// The worker is multi-user: each extension belongs to an Odoo user, and
+// calls, activities, settings and Google are that user's. The page signs in
+// with the active SIP account's extension and password and sends the token
+// it gets on every API call (a browser signed in with the installation's
+// access token instead sees everything); a 401 (expired, or the account changed) signs
+// in again once and retries.
+var sessionToken = localStorage.getItem("vb_session") || "";
+var sessionInfo = null, sessionError = "", signingIn = null;
+var rawFetch = window.fetch.bind(window);
+function signIn() {
+  if (signingIn) return signingIn;
+  var a = activeAccount();
+  if (!a || !a.username || !a.password) {
+    sessionError = "Add your extension and password to sign in";
+    renderSessionState();
+    return Promise.resolve(null);
+  }
+  signingIn = rawFetch(API + "/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ext: String(a.username), password: a.password })
+  }).then(function(r) {
+    return r.json().then(function(d) {
+      sessionToken = r.ok && d.token ? d.token : "";
+      sessionInfo = r.ok ? d.user : null;
+      sessionError = r.ok ? "" : (d.error || "Sign-in failed");
+      try { localStorage.setItem("vb_session", sessionToken); } catch (e) {}
+      renderSessionState();
+      return sessionInfo;
+    });
+  }).catch(function() {
+    sessionError = "Can't reach the server to sign in";
+    renderSessionState();
+    return null;
+  }).then(function(u) { signingIn = null; return u; });
+  return signingIn;
+}
+function renderSessionState() {
+  var el = document.getElementById("session-state");
+  if (!el) return;
+  el.textContent = sessionInfo ? "Signed in as " + sessionInfo.name + " (ext " + sessionInfo.ext + ")" : (sessionError || "Not signed in");
+  el.classList.toggle("err", !sessionInfo && !!sessionError);
+}
+function withSession(init) {
+  init = init || {};
+  var h = new Headers(init.headers || {});
+  if (sessionToken) h.set("Authorization", "Bearer " + sessionToken);
+  var out = {};
+  for (var k in init) out[k] = init[k];
+  out.headers = h;
+  return out;
+}
+window.fetch = function(input, init) {
+  var url = typeof input === "string" ? input : input.url;
+  if (url.indexOf(API) !== 0 || url.indexOf(API + "/auth/") === 0) return rawFetch(input, init);
+  var ready = sessionToken ? Promise.resolve() : signIn();
+  return ready.then(function() { return rawFetch(input, withSession(init)); }).then(function(r) {
+    if (r.status !== 401) return r;
+    sessionToken = "";
+    return signIn().then(function(u) { return u ? rawFetch(input, withSession(init)) : r; });
+  });
+};
+function apiMe() {
+  if (!sessionToken) return;
+  fetch(API + "/auth/me").then(function(r) { return r.json(); }).then(function(d) {
+    if (d.user) { sessionInfo = d.user; sessionError = ""; renderSessionState(); }
+  }).catch(function() {});
+}
+
+// \u2500\u2500 Google account (each user connects their own) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+var googleAcct = null;
+function loadGoogleState() {
+  var el = document.getElementById("google-state");
+  if (!el) return;
+  fetch(API + "/google/status").then(function(r) { return r.json(); }).then(function(d) {
+    googleAcct = d.account || null;
+    renderGoogleState();
+  }).catch(function() { el.textContent = "Google: unavailable"; });
+}
+function renderGoogleState() {
+  var el = document.getElementById("google-state");
+  el.textContent = googleAcct ? "Google: " + googleAcct.email : "Google: not connected (Gmail emails and contacts)";
+  document.getElementById("google-connect").textContent = googleAcct ? "Reconnect" : "Connect";
+  document.getElementById("google-disconnect").classList.toggle("hidden", !(googleAcct && googleAcct.own));
+}
+function connectGoogle() {
+  if (!sessionToken) { signIn().then(function(u) { if (u) connectGoogle(); }); return; }
+  // Google refuses to sign in inside the app's WebView, so in the app this
+  // opens the system browser; either way Google's answer comes back here.
+  location.href = API + "/google/connect?session=" + encodeURIComponent(sessionToken) + "&back=" + encodeURIComponent(location.origin + location.pathname);
+}
+function disconnectGoogle() {
+  fetch(API + "/google/disconnect", { method: "POST" }).then(loadGoogleState).catch(function() {});
+}
+// Back from Google's consent screen: say how it went and tidy the URL.
+(function() {
+  var g = new URLSearchParams(location.search).get("google");
+  if (!g) return;
+  history.replaceState(null, "", location.pathname);
+  document.addEventListener("DOMContentLoaded", function() {
+    setStatus(g === "connected" ? "\u2705 Google account connected" : "\u26A0\uFE0F " + g, g !== "connected");
+  });
+})();
+
 // Every API route needs a session (src/auth.ts); when it's missing or the
 // token was changed, send the user to sign in again.
 (function() {
@@ -2359,6 +2977,9 @@ function persistAccounts() {
     localStorage.setItem("vb_accounts", JSON.stringify(accounts));
     localStorage.setItem("vb_activeAccount", activeAccountId);
   } catch (e) {}
+  // The account decides who we are to the server, so sign in as it again.
+  sessionToken = "";
+  signIn();
 }
 
 function loadSettings() {
@@ -5395,6 +6016,8 @@ function openSettings() {
   document.getElementById("set-dev").checked = settings.devMode;
   document.getElementById("set-quicktext").value = settings.quickText || "";
   renderAccountSelect();
+  renderSessionState();
+  loadGoogleState();
   document.getElementById("settings-modal").classList.remove("hidden");
 }
 
@@ -5770,6 +6393,7 @@ function boot() {
   }).catch(function() {});
 }
 document.addEventListener("DOMContentLoaded", boot);
+document.addEventListener("DOMContentLoaded", apiMe);
 document.addEventListener("DOMContentLoaded", checkAppUpdate);
 <\/script>
 </body>
@@ -5780,7 +6404,7 @@ document.addEventListener("DOMContentLoaded", checkAppUpdate);
 __name(serveDashboard, "serveDashboard");
 
 // src/push.ts
-var cachedToken2 = null;
+var cachedToken = null;
 function b64url2(input) {
   const bytes = typeof input === "string" ? new TextEncoder().encode(input) : new Uint8Array(input);
   let s2 = "";
@@ -5789,7 +6413,7 @@ function b64url2(input) {
 }
 __name(b64url2, "b64url");
 async function accessToken(sa) {
-  if (cachedToken2 && cachedToken2.expires > Date.now() + 6e4) return cachedToken2.value;
+  if (cachedToken && cachedToken.expires > Date.now() + 6e4) return cachedToken.value;
   const now = Math.floor(Date.now() / 1e3);
   const header = b64url2(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const claims = b64url2(JSON.stringify({
@@ -5819,8 +6443,8 @@ async function accessToken(sa) {
   });
   const data = await res.json();
   if (!data.access_token) throw new Error("FCM auth failed: " + (data.error_description || res.status));
-  cachedToken2 = { value: data.access_token, expires: Date.now() + (data.expires_in || 3600) * 1e3 };
-  return cachedToken2.value;
+  cachedToken = { value: data.access_token, expires: Date.now() + (data.expires_in || 3600) * 1e3 };
+  return cachedToken.value;
 }
 __name(accessToken, "accessToken");
 async function sendData(env, token, data) {
@@ -5886,16 +6510,16 @@ function isBox(box) {
   return BOX.test(box);
 }
 __name(isBox, "isBox");
-function putSetting(env, key, value) {
+function putSetting2(env, key, value) {
   return env.DB.prepare(
     "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at"
   ).bind(key, value, Date.now());
 }
-__name(putSetting, "putSetting");
-async function getSetting(env, key) {
+__name(putSetting2, "putSetting");
+async function getSetting2(env, key) {
   return (await env.DB.prepare("SELECT value FROM settings WHERE key = ?1").bind(key).first())?.value ?? "";
 }
-__name(getSetting, "getSetting");
+__name(getSetting2, "getSetting");
 async function nudgePbx(env) {
   try {
     await pbx(env).syncGreetings();
@@ -5907,7 +6531,7 @@ __name(nudgePbx, "nudgePbx");
 async function syncText(env) {
   const [rows, direct] = await Promise.all([
     env.DB.prepare("SELECT box, enabled, greeting_version FROM voicemail_boxes ORDER BY box").all(),
-    getSetting(env, "vm_direct")
+    getSetting2(env, "vm_direct")
   ]);
   const lines = [`direct ${direct === "1" ? 1 : 0}`];
   const boxes = rows.results || [];
@@ -5920,8 +6544,8 @@ async function handleListBoxes(env) {
   const [rows, want, applied, appliedAt] = await Promise.all([
     env.DB.prepare("SELECT box, enabled, greeting_version, duration_ms FROM voicemail_boxes ORDER BY box").all(),
     syncText(env),
-    getSetting(env, "vm_applied"),
-    getSetting(env, "vm_applied_at")
+    getSetting2(env, "vm_applied"),
+    getSetting2(env, "vm_applied_at")
   ]);
   return Response.json({
     boxes: (rows.results || []).map((r) => ({ box: r.box, enabled: !!r.enabled, greeting: r.greeting_version != null, duration_ms: r.duration_ms })),
@@ -5964,7 +6588,7 @@ async function handlePutBox(request, env, box) {
        ON CONFLICT(box) DO UPDATE SET enabled=excluded.enabled, updated_at=excluded.updated_at`
     ).bind(box, enabled, now));
   }
-  if (box === "main" && typeof body.direct === "boolean") writes.push(putSetting(env, "vm_direct", body.direct ? "1" : "0"));
+  if (box === "main" && typeof body.direct === "boolean") writes.push(putSetting2(env, "vm_direct", body.direct ? "1" : "0"));
   await env.DB.batch(writes);
   await nudgePbx(env);
   return handleListBoxes(env);
@@ -5990,7 +6614,7 @@ async function handleVoicemailSync(env) {
 __name(handleVoicemailSync, "handleVoicemailSync");
 async function handleVoicemailSynced(request, env) {
   const applied = new URLSearchParams(await request.text()).get("applied") ?? "";
-  await env.DB.batch([putSetting(env, "vm_applied", applied), putSetting(env, "vm_applied_at", String(Date.now()))]);
+  await env.DB.batch([putSetting2(env, "vm_applied", applied), putSetting2(env, "vm_applied_at", String(Date.now()))]);
   return Response.json({ ok: true });
 }
 __name(handleVoicemailSynced, "handleVoicemailSynced");
@@ -6318,7 +6942,9 @@ async function handleCallEvent(request, env, ctx) {
   const caller = params.get("caller") ?? "unknown";
   const did = params.get("did") ?? "";
   const direction = params.get("direction") === "outgoing" ? "outgoing" : "incoming";
-  const ext = /^\d{2,6}$/.test(params.get("ext") ?? "") ? params.get("ext") : null;
+  const session = await sessionUser(request, env);
+  const ext = session?.ext || (/^\d{2,6}$/.test(params.get("ext") ?? "") ? params.get("ext") : null);
+  const userId = session?.id || await extensionUser(env, ext);
   const doId = env.CALL_STATE.idFromName("global");
   const stub = env.CALL_STATE.get(doId);
   if (event === "ring") {
@@ -6328,11 +6954,11 @@ async function handleCallEvent(request, env, ctx) {
       body: JSON.stringify({ callId, caller, did, partnerId: partner?.id, partnerName: partner?.name })
     }));
     await env.DB.prepare(
-      `INSERT INTO call_log (call_id, phone_number, did, direction, state, start_date, partner_id, extension)
-       VALUES (?1, ?2, ?3, ?4, 'calling', ?5, ?6, ?7)
+      `INSERT INTO call_log (call_id, phone_number, did, direction, state, start_date, partner_id, extension, user_id)
+       VALUES (?1, ?2, ?3, ?4, 'calling', ?5, ?6, ?7, ?8)
        ON CONFLICT(call_id) DO UPDATE SET phone_number=excluded.phone_number, did=excluded.did, direction=excluded.direction,
-         partner_id=excluded.partner_id, extension=COALESCE(excluded.extension, call_log.extension)`
-    ).bind(callId, caller, did, direction, Date.now(), partner?.id ?? null, ext).run();
+         partner_id=excluded.partner_id, extension=COALESCE(excluded.extension, call_log.extension), user_id=COALESCE(excluded.user_id, call_log.user_id)`
+    ).bind(callId, caller, did, direction, Date.now(), partner?.id ?? null, ext, userId).run();
     return Response.json({ action: "ring", caller, partner: partner?.name ?? null });
   }
   if (event === "answer") {
@@ -6340,7 +6966,7 @@ async function handleCallEvent(request, env, ctx) {
       method: "POST",
       body: JSON.stringify({ callId, status: "answered", answerTime: Date.now() })
     }));
-    await env.DB.prepare("UPDATE call_log SET state='ongoing', extension=COALESCE(?2, extension) WHERE call_id=?1").bind(callId, ext).run();
+    await env.DB.prepare("UPDATE call_log SET state='ongoing', extension=COALESCE(?2, extension), user_id=COALESCE(?3, user_id) WHERE call_id=?1").bind(callId, ext, userId).run();
     return Response.json({ action: "answered" });
   }
   if (event === "voicemail") {
@@ -6444,11 +7070,12 @@ var CALL_HISTORY_SELECT = `SELECT c.id, c.call_id, c.phone_number, c.did, c.dire
      CASE WHEN COALESCE(c.notes_html, '') != '' THEN 1 ELSE 0 END AS has_notes,
      CASE WHEN COALESCE(c.recording, '') != '' THEN 1 ELSE 0 END AS has_recording,
      CASE WHEN c.transcript IS NOT NULL THEN 1 ELSE 0 END AS has_transcript,
-     c.voicemail
+     c.voicemail, c.extension, c.user_id
    FROM call_log c
    LEFT JOIN contacts p ON p.id = c.partner_id`;
-function mergeCallLegs(rows) {
-  return groupCallLegs(rows).map((legs) => {
+async function mergeCallLegs(env, rows, viewer) {
+  const owners = await extensionOwners(env);
+  return groupCallLegs(rows).filter((legs) => canSee(legs, owners, viewer)).map((legs) => {
     if (legs.length === 1) return legs[0];
     const trunkLeg = legs.find((l) => l.did);
     const answered = legs.find((l) => !l.did && (l.state === "terminated" || l.state === "ongoing"));
@@ -6473,9 +7100,10 @@ function mergeCallLegs(rows) {
   });
 }
 __name(mergeCallLegs, "mergeCallLegs");
-async function handleCallHistory(request, env) {
+async function handleCallHistory(request, env, user) {
   const url = new URL(request.url);
-  const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50") || 50, 200);
+  const want = Math.min(parseInt(url.searchParams.get("limit") ?? "50") || 50, 200);
+  const limit = want * 3;
   const q = (url.searchParams.get("q") ?? "").trim();
   const select = CALL_HISTORY_SELECT;
   let rows;
@@ -6503,7 +7131,7 @@ async function handleCallHistory(request, env) {
       `${select} ORDER BY COALESCE(c.start_date, c.create_date) DESC LIMIT ?1`
     ).bind(limit).all();
   }
-  return Response.json({ calls: mergeCallLegs(rows.results || []) });
+  return Response.json({ calls: (await mergeCallLegs(env, rows.results || [], user)).slice(0, want) });
 }
 __name(handleCallHistory, "handleCallHistory");
 function sqlPhoneKey(col) {
@@ -6629,10 +7257,18 @@ async function handleRenameContact(request, env, id) {
   return ok ? Response.json({ ok: true, id, name }) : Response.json({ error: "Odoo update failed" }, { status: 502 });
 }
 __name(handleRenameContact, "handleRenameContact");
-async function handleGetCallNotes(request, env) {
+async function mayOpenCall(env, user, callId) {
+  if (!callId) return false;
+  const legs = await callLegs(env, callId);
+  return !legs.length || canSee(legs, await extensionOwners(env), user);
+}
+__name(mayOpenCall, "mayOpenCall");
+var notYours = /* @__PURE__ */ __name(() => Response.json({ error: "not your call" }, { status: 403 }), "notYours");
+async function handleGetCallNotes(request, env, user) {
   const url = new URL(request.url);
   const callId = url.searchParams.get("call_id") ?? "";
   if (!callId) return Response.json({ error: "missing call_id" }, { status: 400 });
+  if (!await mayOpenCall(env, user, callId)) return notYours();
   const row = await env.DB.prepare(
     "SELECT call_id, notes_html, jot_svg, jot_json FROM call_log WHERE call_id = ?1"
   ).bind(callId).first();
@@ -6640,7 +7276,7 @@ async function handleGetCallNotes(request, env) {
   return Response.json({ notes: row });
 }
 __name(handleGetCallNotes, "handleGetCallNotes");
-async function handleSaveCallNotes(request, env, ctx) {
+async function handleSaveCallNotes(request, env, ctx, user) {
   let body;
   try {
     body = await request.json();
@@ -6649,6 +7285,7 @@ async function handleSaveCallNotes(request, env, ctx) {
   }
   const callId = (body.call_id ?? "").trim();
   if (!callId) return Response.json({ error: "missing call_id" }, { status: 400 });
+  if (!await mayOpenCall(env, user, callId)) return notYours();
   const result = await env.DB.prepare(
     `UPDATE call_log SET notes_html=?1, jot_svg=?2, jot_json=?3, write_date=?4 WHERE call_id=?5`
   ).bind(body.notes_html ?? "", body.jot_svg ?? "", body.jot_json ?? "", Date.now(), callId).run();
@@ -6657,8 +7294,9 @@ async function handleSaveCallNotes(request, env, ctx) {
   return Response.json({ ok: true });
 }
 __name(handleSaveCallNotes, "handleSaveCallNotes");
-async function handleGetRecording(request, env) {
+async function handleGetRecording(request, env, user) {
   const callId = new URL(request.url).searchParams.get("call_id") ?? "";
+  if (!await mayOpenCall(env, user, callId)) return notYours();
   const row = await env.DB.prepare("SELECT recording FROM call_log WHERE call_id = ?1").bind(callId).first();
   if (!row?.recording) return Response.json({ error: "no recording" }, { status: 404 });
   return playbackResponse(env, row.recording);
@@ -6672,15 +7310,17 @@ async function handleParked(env) {
   }
 }
 __name(handleParked, "handleParked");
-async function handleGetTranscript(request, env) {
+async function handleGetTranscript(request, env, user) {
   const callId = new URL(request.url).searchParams.get("call_id") ?? "";
+  if (!await mayOpenCall(env, user, callId)) return notYours();
   const row = await env.DB.prepare("SELECT transcript FROM call_log WHERE call_id = ?1").bind(callId).first();
   if (!row) return Response.json({ error: "call not found" }, { status: 404 });
   return Response.json({ transcript: row.transcript });
 }
 __name(handleGetTranscript, "handleGetTranscript");
-async function handleTranscribe(request, env, ctx) {
+async function handleTranscribe(request, env, ctx, user) {
   const callId = new URL(request.url).searchParams.get("call_id") ?? "";
+  if (!await mayOpenCall(env, user, callId)) return notYours();
   try {
     const transcript = await transcribeCall(env, callId);
     ctx.waitUntil(pushCallToOdoo(env, callId).catch((e) => console.error("pushCallToOdoo failed:", e)));
@@ -6690,7 +7330,7 @@ async function handleTranscribe(request, env, ctx) {
   }
 }
 __name(handleTranscribe, "handleTranscribe");
-async function handleMessages(request, env) {
+async function handleMessages(request, env, user) {
   const url = new URL(request.url);
   const contactId = parseInt(url.searchParams.get("contact") ?? "0");
   if (!contactId) return Response.json({ error: "missing contact id" }, { status: 400 });
@@ -6708,8 +7348,8 @@ async function handleMessages(request, env) {
   const email = (contact.email || "").trim();
   if (email) {
     try {
-      const g = await searchGmailMessages(env, email, limit);
-      await upsertMessages(env, g.map((m) => ({ ...m, contact_id: contactId })));
+      const g = await searchGmailMessages(env, user.id, email, limit);
+      await upsertMessages(env, g.map((m) => ({ ...m, contact_id: contactId, user_id: user.id })));
       gmailOk = true;
     } catch (e) {
       console.error("Gmail message sync failed:", e);
@@ -6717,8 +7357,9 @@ async function handleMessages(request, env) {
   }
   const rows = await env.DB.prepare(
     `SELECT id, odoo_id, gmail_id, contact_id, subject, body, email_from, author_id, message_type, direction, source, date
-     FROM messages WHERE contact_id = ?1 ORDER BY COALESCE(date, 0) DESC LIMIT ?2`
-  ).bind(contactId, limit * 2).all();
+     FROM messages WHERE contact_id = ?1 AND (source != 'gmail' OR user_id = ?3)
+     ORDER BY COALESCE(date, 0) DESC LIMIT ?2`
+  ).bind(contactId, limit * 2, user.id).all();
   return Response.json({
     contact: { id: contact.id, name: contact.name, email: contact.email },
     odooOk,
@@ -6727,14 +7368,14 @@ async function handleMessages(request, env) {
   });
 }
 __name(handleMessages, "handleMessages");
-async function handleRecentMessages(request, env) {
+async function handleRecentMessages(request, env, user) {
   const url = new URL(request.url);
   const days = Math.max(1, Math.min(parseInt(url.searchParams.get("days") ?? "7") || 7, 30));
   const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50") || 50, 100);
   let gmailOk = false;
   let messages = [];
   try {
-    messages = await searchRecentGmailMessages(env, days, limit);
+    messages = await searchRecentGmailMessages(env, user.id, days, limit);
     gmailOk = true;
   } catch (e) {
     console.error("Recent Gmail sync failed:", e);
@@ -6751,27 +7392,41 @@ async function handleQuotations(request, env) {
   return Response.json({ quotations });
 }
 __name(handleQuotations, "handleQuotations");
-async function handleMessageDetail(request, env) {
+async function handleActivities(env, user) {
+  try {
+    return Response.json({ activities: await callActivities(env, user.id) });
+  } catch (e) {
+    return Response.json({ error: String(e.message || e) }, { status: 502 });
+  }
+}
+__name(handleActivities, "handleActivities");
+async function handleActivityDone(request, env, user, id) {
+  const body = await request.json().catch(() => ({}));
+  const ok = await activityDone(env, user.id, id, body.feedback || "");
+  return Response.json({ ok }, { status: ok ? 200 : 502 });
+}
+__name(handleActivityDone, "handleActivityDone");
+async function handleMessageDetail(request, env, user) {
   const url = new URL(request.url);
   const id = parseInt(url.searchParams.get("id") ?? "0");
   const gmailId = url.searchParams.get("gmail_id") ?? "";
   if (!id && gmailId) {
-    const { text, html } = await getGmailBody(env, gmailId);
+    const { text, html } = await getGmailBody(env, user.id, gmailId);
     if (!text && !html) return Response.json({ error: "body unavailable" }, { status: 404 });
     return Response.json({ message: { gmail_id: gmailId, source: "gmail", body: text, body_html: html } });
   }
   if (!id) return Response.json({ error: "missing id" }, { status: 400 });
   const row = await env.DB.prepare("SELECT * FROM messages WHERE id = ?1").bind(id).first();
-  if (!row) return Response.json({ error: "not found" }, { status: 404 });
+  if (!row || row.source === "gmail" && row.user_id !== user.id) return Response.json({ error: "not found" }, { status: 404 });
   if (row.source === "gmail" && row.gmail_id) {
-    const { text, html } = await getGmailBody(env, String(row.gmail_id));
+    const { text, html } = await getGmailBody(env, user.id, String(row.gmail_id));
     if (text) row.body = text;
     row.body_html = html;
   }
   return Response.json({ message: row });
 }
 __name(handleMessageDetail, "handleMessageDetail");
-async function handleSendMessage(request, env) {
+async function handleSendMessage(request, env, user) {
   let body;
   try {
     body = await request.json();
@@ -6779,7 +7434,7 @@ async function handleSendMessage(request, env) {
     return Response.json({ error: "invalid JSON" }, { status: 400 });
   }
   if (!body.to || !String(body.to).trim()) return Response.json({ error: "missing recipient" }, { status: 400 });
-  const res = await sendGmailMessage(env, {
+  const res = await sendGmailMessage(env, user.id, {
     to: String(body.to).trim(),
     subject: body.subject ?? "",
     body: body.body ?? "",
@@ -6816,6 +7471,14 @@ async function handleContactsCache(request, env) {
   return Response.json({ contacts: rows.results || [] });
 }
 __name(handleContactsCache, "handleContactsCache");
+async function handleGoogleContacts(env, user) {
+  try {
+    return Response.json({ contacts: await listGoogleContacts(env, user.id) });
+  } catch (e) {
+    return Response.json({ error: String(e.message || e) }, { status: 502 });
+  }
+}
+__name(handleGoogleContacts, "handleGoogleContacts");
 async function handleContactsT9(env) {
   const rows = await env.DB.prepare(
     "SELECT name, phone, mobile FROM contacts WHERE active = 1 AND (COALESCE(phone, '') != '' OR COALESCE(mobile, '') != '') ORDER BY name"
@@ -6847,14 +7510,18 @@ async function handlePushCalls(request, env) {
   return Response.json(await pushCallHistory(env, limit));
 }
 __name(handlePushCalls, "handlePushCalls");
-async function handleGetSettings(env) {
-  const rows = await env.DB.prepare("SELECT key, value FROM settings").all();
+async function handleGetSettings(env, user) {
+  const [shared, own] = await Promise.all([
+    env.DB.prepare("SELECT key, value FROM settings").all(),
+    env.DB.prepare("SELECT key, value FROM user_settings WHERE user_id = ?1").bind(user.id).all()
+  ]);
   const settings = {};
-  for (const r of rows.results || []) settings[r.key] = r.value;
+  for (const r of shared.results || []) settings[r.key] = r.value;
+  for (const r of own.results || []) settings[r.key] = r.value;
   return Response.json({ settings });
 }
 __name(handleGetSettings, "handleGetSettings");
-async function handleSetSettings(request, env) {
+async function handleSetSettings(request, env, user) {
   let body;
   try {
     body = await request.json();
@@ -6865,8 +7532,8 @@ async function handleSetSettings(request, env) {
   for (const [k, v] of Object.entries(body)) {
     if (typeof v !== "string" && typeof v !== "number" && typeof v !== "boolean") continue;
     statements.push(env.DB.prepare(
-      "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at"
-    ).bind(k, String(v), Date.now()));
+      "INSERT INTO user_settings (user_id, key, value, updated_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(user_id, key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at"
+    ).bind(user.id, k, String(v), Date.now()));
   }
   if (statements.length) await env.DB.batch(statements);
   return Response.json({ ok: true, count: statements.length });
@@ -6903,7 +7570,7 @@ async function fetchOdooContact(env, id) {
   return contact;
 }
 __name(fetchOdooContact, "fetchOdooContact");
-async function handleContactDetail(env, id, cachedOnly) {
+async function handleContactDetail(env, id, cachedOnly, user) {
   const [odooContact, totals] = cachedOnly ? [null, null] : await Promise.all([fetchOdooContact(env, id), contactTotals(env, id)]);
   const contact = odooContact ?? await env.DB.prepare(
     "SELECT id, name, company_type, is_company, phone, mobile, email, website, vat, function, city, active FROM contacts WHERE id = ?1"
@@ -6914,7 +7581,7 @@ async function handleContactDetail(env, id, cachedOnly) {
   const calls = await env.DB.prepare(
     `${CALL_HISTORY_SELECT} WHERE ${where} ORDER BY COALESCE(c.start_date, c.create_date) DESC LIMIT 100`
   ).bind(id, ...keys.map((k) => `%${k}%`)).all();
-  return Response.json({ contact, totals, calls: mergeCallLegs(calls.results || []) });
+  return Response.json({ contact, totals, calls: await mergeCallLegs(env, calls.results || [], user) });
 }
 __name(handleContactDetail, "handleContactDetail");
 async function handleJotToText(request, env) {
@@ -6964,8 +7631,19 @@ var index_default = {
       return new Response(null, { status: 204, headers: corsHeaders() });
     }
     let response = await authorize(request, env);
+    const user = await sessionUser(request, env) ?? { id: 0, name: "", ext: "", service: true };
     if (response) {
-    } else if ((request.method === "GET" || request.method === "POST") && url.pathname === "/login") response = await handleLogin(request, env);
+    } else if (request.method === "POST" && url.pathname === "/auth/login") response = await handleLogin(request, env);
+    else if (request.method === "GET" && url.pathname === "/auth/me") response = await handleMe(request, env);
+    else if (request.method === "GET" && url.pathname === "/google/callback") response = await handleGoogleCallback(request, env);
+    else if (request.method === "GET" && url.pathname === "/google/connect") response = await handleGoogleConnect(request, env, user.id);
+    else if (request.method === "POST" && url.pathname === "/google/disconnect") response = await handleGoogleDisconnect(env, user.id);
+    else if (request.method === "GET" && url.pathname === "/google/status") response = Response.json({ account: await googleAccount(env, user.id) });
+    else if (request.method === "POST" && url.pathname === "/extensions/sync") response = Response.json({ extensions: await syncExtensions(env) });
+    else if (request.method === "GET" && url.pathname === "/activities") response = await handleActivities(env, user);
+    else if (request.method === "POST" && /^\/activities\/\d+\/done$/.test(url.pathname)) response = await handleActivityDone(request, env, user, parseInt(url.pathname.split("/")[2]));
+    else if (request.method === "GET" && url.pathname === "/contacts/google") response = await handleGoogleContacts(env, user);
+    else if ((request.method === "GET" || request.method === "POST") && url.pathname === "/login") response = await handleLogin2(request, env);
     else if (request.method === "POST" && url.pathname === "/logout") response = handleLogout();
     else if (request.method === "GET" && url.pathname === "/health") response = Response.json({ ok: true, version: VERSION, provider: env.PBX_PROVIDER || "asterisk" });
     else if (request.method === "POST" && url.pathname === "/call-event") response = await handleCallEvent(request, env, ctx);
@@ -6980,35 +7658,38 @@ var index_default = {
     else if (request.method === "POST" && url.pathname === "/web-callback/event") response = await handleWebCallbackEvent(request, env, ctx);
     else if (request.method === "POST" && url.pathname === "/push/register") response = await handlePushRegister(request, env);
     else if ((request.method === "POST" || request.method === "GET") && url.pathname === "/push/wake") response = await handlePushWake(request, env);
-    else if (request.method === "GET" && url.pathname === "/settings") response = await handleGetSettings(env);
-    else if (request.method === "POST" && url.pathname === "/settings") response = await handleSetSettings(request, env);
+    else if (request.method === "GET" && url.pathname === "/settings") response = await handleGetSettings(env, user);
+    else if (request.method === "POST" && url.pathname === "/settings") response = await handleSetSettings(request, env, user);
     else if (request.method === "GET" && url.pathname === "/caller-lookup") response = await handleCallerLookup(request, env);
     else if (request.method === "GET" && url.pathname === "/active-calls") response = await handleActiveCalls(request, env);
-    else if (request.method === "GET" && url.pathname === "/call-history") response = await handleCallHistory(request, env);
+    else if (request.method === "GET" && url.pathname === "/call-history") response = await handleCallHistory(request, env, user);
     else if (request.method === "POST" && url.pathname === "/call-history/resolve-names") response = await handleResolveHistoryNames(env);
     else if (request.method === "POST" && url.pathname === "/call-history/create-missing-contacts") response = await handleCreateMissingContacts(env);
-    else if (request.method === "GET" && url.pathname === "/call-notes") response = await handleGetCallNotes(request, env);
-    else if (request.method === "POST" && url.pathname === "/call-notes") response = await handleSaveCallNotes(request, env, ctx);
-    else if (request.method === "GET" && url.pathname === "/recording") response = await handleGetRecording(request, env);
+    else if (request.method === "GET" && url.pathname === "/call-notes") response = await handleGetCallNotes(request, env, user);
+    else if (request.method === "POST" && url.pathname === "/call-notes") response = await handleSaveCallNotes(request, env, ctx, user);
+    else if (request.method === "GET" && url.pathname === "/recording") response = await handleGetRecording(request, env, user);
     else if (request.method === "POST" && url.pathname === "/jot-to-text") response = await handleJotToText(request, env);
     else if (request.method === "GET" && url.pathname === "/parked") response = await handleParked(env);
-    else if (request.method === "GET" && url.pathname === "/transcript") response = await handleGetTranscript(request, env);
-    else if (request.method === "POST" && url.pathname === "/transcribe") response = await handleTranscribe(request, env, ctx);
+    else if (request.method === "GET" && url.pathname === "/transcript") response = await handleGetTranscript(request, env, user);
+    else if (request.method === "POST" && url.pathname === "/transcribe") response = await handleTranscribe(request, env, ctx, user);
     else if (request.method === "GET" && url.pathname === "/voicemail/boxes") response = await handleListBoxes(env);
     else if (request.method === "PUT" && /^\/voicemail\/boxes\/[^/]+$/.test(url.pathname)) response = await handlePutBox(request, env, url.pathname.split("/")[3]);
     else if (request.method === "DELETE" && /^\/voicemail\/boxes\/[^/]+$/.test(url.pathname)) response = await handleDeleteBox(env, url.pathname.split("/")[3]);
     else if (request.method === "GET" && /^\/voicemail\/boxes\/[^/]+\/greeting$/.test(url.pathname)) response = await handleBoxGreeting(env, url.pathname.split("/")[3]);
+    else if (request.method === "GET" && url.pathname === "/pbx/sync") response = await handlePbxSync(env);
+    else if (request.method === "POST" && url.pathname === "/pbx/synced") response = await handlePbxSynced(request, env);
+    else if (request.method === "GET" && url.pathname === "/pbx/status") response = await handlePbxStatus(env);
     else if (request.method === "GET" && url.pathname === "/voicemail/sync") response = await handleVoicemailSync(env);
     else if (request.method === "POST" && url.pathname === "/voicemail/synced") response = await handleVoicemailSynced(request, env);
     else if (request.method === "GET" && url.pathname === "/quotations") response = await handleQuotations(request, env);
-    else if (request.method === "GET" && url.pathname === "/messages") response = await handleMessages(request, env);
-    else if (request.method === "GET" && url.pathname === "/messages/recent") response = await handleRecentMessages(request, env);
-    else if (request.method === "GET" && url.pathname === "/message") response = await handleMessageDetail(request, env);
-    else if (request.method === "POST" && url.pathname === "/send-message") response = await handleSendMessage(request, env);
+    else if (request.method === "GET" && url.pathname === "/messages") response = await handleMessages(request, env, user);
+    else if (request.method === "GET" && url.pathname === "/messages/recent") response = await handleRecentMessages(request, env, user);
+    else if (request.method === "GET" && url.pathname === "/message") response = await handleMessageDetail(request, env, user);
+    else if (request.method === "POST" && url.pathname === "/send-message") response = await handleSendMessage(request, env, user);
     else if (request.method === "GET" && url.pathname === "/contacts") response = await handleContacts(request, env);
     else if (request.method === "GET" && url.pathname === "/contacts/t9") response = await handleContactsT9(env);
     else if (request.method === "GET" && url.pathname === "/contacts/cache") response = await handleContactsCache(request, env);
-    else if (request.method === "GET" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleContactDetail(env, parseInt(url.pathname.split("/")[2]), url.searchParams.get("cached") === "1");
+    else if (request.method === "GET" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleContactDetail(env, parseInt(url.pathname.split("/")[2]), url.searchParams.get("cached") === "1", user);
     else if (request.method === "POST" && /^\/contacts\/\d+$/.test(url.pathname)) response = await handleRenameContact(request, env, parseInt(url.pathname.split("/")[2]));
     else if (url.pathname === "/") response = Response.redirect(new URL("/dashboard", url).toString(), 302);
     else if (url.pathname === "/.well-known/assetlinks.json") response = androidAssetLinks(env);

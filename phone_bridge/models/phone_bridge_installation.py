@@ -173,6 +173,8 @@ class PhoneBridgeInstallation(models.Model):
             "ODOO_USER": (self.odoo_user_id or self.env.user).login,
             "ODOO_PASS": self.odoo_api_key,
             "PBX_PROVIDER": self.pbx_provider,
+            # Left unset: the worker derives it from API_TOKEN.
+            "SESSION_SECRET": None,
         }
         out = {}
         for setting in manifest["settings"]:

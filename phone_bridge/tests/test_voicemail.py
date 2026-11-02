@@ -25,27 +25,31 @@ class TestVoicemail(TransactionCase):
         self.ext = self.env["phone_bridge.extension"].create({"number": "9201", "name": "Desk", "user_id": self.user.id})
         self.Call = self.env["phone_bridge.call"]
 
+    def _vm_sent(self):
+        """The voicemail calls only (test_extension.py covers the PBX sync)."""
+        return [s for s in self.sent if s[1].startswith("/voicemail/")]
+
     def test_extension_defaults_and_sync(self):
         self.assertEqual(self.ext.voicemail_email, "owner@example.com")
         self.assertIn(("PUT", "/voicemail/boxes/9201", {"enabled": True, "greeting": None}), self.sent)
         self.sent.clear()
         self.ext.write({"voicemail_enabled": False})
-        self.assertEqual(self.sent, [("PUT", "/voicemail/boxes/9201", {"enabled": False})])
+        self.assertEqual(self._vm_sent(), [("PUT", "/voicemail/boxes/9201", {"enabled": False})])
         self.sent.clear()
         self.ext.write({"number": "9205"})
         self.assertIn(("DELETE", "/voicemail/boxes/9201", None), self.sent)
         self.assertIn(("PUT", "/voicemail/boxes/9205", {"enabled": False, "greeting": None}), self.sent)
         self.sent.clear()
         self.ext.unlink()
-        self.assertEqual(self.sent, [("DELETE", "/voicemail/boxes/9205", None)])
+        self.assertEqual(self._vm_sent(), [("DELETE", "/voicemail/boxes/9205", None)])
 
     def test_greeting_is_sent_only_when_it_changes(self):
         self.sent.clear()
         self.ext.write({"greeting": WAV, "greeting_filename": "hello.wav"})
-        self.assertEqual(self.sent[-1][2]["greeting"], WAV.decode())
+        self.assertEqual(self._vm_sent()[-1][2]["greeting"], WAV.decode())
         self.sent.clear()
         self.ext.write({"name": "Desk phone"})
-        self.assertEqual(self.sent, [])
+        self.assertEqual(self._vm_sent(), [])
 
     def test_main_box_settings_sync(self):
         inst = self.env["phone_bridge.installation"]._get_installation()
@@ -84,7 +88,6 @@ class TestVoicemail(TransactionCase):
     def test_portal_owner_gets_email_without_activity(self):
         portal = self.env["res.users"].create({"name": "Portal Owner", "login": "ext_portal", "email": "portal@example.com",
                                                "groups_id": [(6, 0, [self.env.ref("base.group_portal").id])]})
-        self.env["hr.employee"].create({"name": "Portal Owner", "user_id": portal.id})
         self.ext.write({"user_id": portal.id, "voicemail_email": "portal@example.com"})
         self.assertTrue(self.ext.user_share)
         call = self._voicemail("9201", "vm.3")
