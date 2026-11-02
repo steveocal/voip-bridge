@@ -17,7 +17,16 @@ import { same, syncExtensions } from "./users";
 
 const FRESH_MS = 60_000;
 
-interface ExtRow { number: string; name: string | null; user_name: string | null; sip_password: string | null; device_type: string | null; wake_app: number | null; active: number | null }
+interface ExtRow {
+  number: string; name: string | null; user_id: number | null; user_name: string | null; sip_password: string | null;
+  device_type: string | null; wake_app: number | null; active: number | null;
+  forward_mode: string | null; forward_number: string | null; forward_seconds: number | null;
+  user_mobile: string | null; user_mobile_delay: number | null;
+}
+interface NumberRow {
+  number: string; extensions: string | null; ring_mobiles: number | null; ring_seconds: number | null;
+  no_answer: string | null; no_answer_number: string | null; record: number | null; active: number | null;
+}
 
 function putSetting(env: Env, key: string, value: string) {
   return env.DB.prepare(
@@ -37,21 +46,81 @@ export function callerName(s: string): string {
 
 const PASSWORD = /^[A-Za-z0-9._~-]{6,64}$/;
 const NUMBER = /^\d{2,6}$/;
+const PHONE = /^[1-9]\d{6,14}$/;           // international, digits only
+const FWD_MODES: Record<string, string> = { always: "always", busy: "busy", noanswer: "noanswer", busy_noanswer: "busynoanswer" };
+const clamp = (v: number | null, lo: number, hi: number, dflt: number) => (v == null || !Number.isFinite(v) ? dflt : Math.min(hi, Math.max(lo, Math.round(v))));
 
-/** pbx-sync.sh's plain-text format, one extension per line, sorted:
- *    ext <number> <webrtc|sip> <wake 0|1> <password> <caller name>
- *  Only active extensions with a usable password are listed; an extension
- *  not listed is removed from the PBX. The caller name may be empty. */
-export async function pbxSyncText(env: Env): Promise<string> {
+/** Each user's dashboard switches (user_settings): 📼 vm_direct takes their
+ *  extensions out of the ring lists and sends calls to them to voicemail;
+ *  📱 ring_mobile_first rings their mobile with no head start. */
+async function userSwitches(env: Env): Promise<{ vm: Set<number>; mobileFirst: Set<number> }> {
   const rows = (await env.DB.prepare(
-    "SELECT number, name, user_name, sip_password, device_type, wake_app, active FROM extensions ORDER BY number"
-  ).all<ExtRow>()).results ?? [];
+    "SELECT user_id, key FROM user_settings WHERE key IN ('vm_direct', 'ring_mobile_first') AND value = '1'"
+  ).all<{ user_id: number; key: string }>()).results ?? [];
+  const vm = new Set<number>(), mobileFirst = new Set<number>();
+  for (const r of rows) (r.key === "vm_direct" ? vm : mobileFirst).add(r.user_id);
+  return { vm, mobileFirst };
+}
+
+/** pbx-sync.sh's plain-text format, sorted, one item per line:
+ *    ext <number> <webrtc|sip> <wake 0|1> <password> <caller name>
+ *    fwd <extension> <always|busy|noanswer|busynoanswer|vm> <ring seconds> <number|->
+ *    route <our number> <ring seconds> <record 0|1> <vm|hangup|fwd<number>> <legs|->
+ *  Only active extensions with a usable password are listed; an extension
+ *  not listed is removed from the PBX. The caller name may be empty.
+ *  fwd: an extension's calls forwarded (Odoo) or sent to voicemail (its
+ *  user's 📼). route: one of our numbers set up in Odoo; legs, comma-separated,
+ *  ring at once: e<ext> an extension, a<ext> one woken on the Android app
+ *  first, m<delay>x<number> a mobile or forward after <delay> seconds; "-"
+ *  is none, straight to the no-answer action. Numbers are digits only. A
+ *  number with no route line keeps the PBX's own routing. */
+export async function pbxSyncText(env: Env): Promise<string> {
+  const [rows, nums, sw] = await Promise.all([
+    env.DB.prepare(
+      "SELECT number, name, user_id, user_name, sip_password, device_type, wake_app, active, forward_mode, forward_number, forward_seconds, user_mobile, user_mobile_delay FROM extensions ORDER BY number"
+    ).all<ExtRow>().then(r => r.results ?? []),
+    env.DB.prepare(
+      "SELECT number, extensions, ring_mobiles, ring_seconds, no_answer, no_answer_number, record, active FROM pbx_numbers ORDER BY number"
+    ).all<NumberRow>().then(r => r.results ?? []),
+    userSwitches(env),
+  ]);
   const lines = ["version 1"];
+  const inPbx = new Map<string, ExtRow>();
   for (const r of rows) {
     if (r.active === 0 || !NUMBER.test(r.number) || !PASSWORD.test(r.sip_password ?? "")) continue;
+    inPbx.set(r.number, r);
     const type = r.device_type === "sip" ? "sip" : "webrtc";
     const wake = type === "webrtc" && r.wake_app ? 1 : 0;
     lines.push(`ext ${r.number} ${type} ${wake} ${r.sip_password} ${callerName(r.user_name || r.name || "")}`.trimEnd());
+  }
+  const vmUser = (r: ExtRow) => r.user_id != null && sw.vm.has(r.user_id);
+  const forwardTo = (r: ExtRow) => (r.forward_mode && FWD_MODES[r.forward_mode] && PHONE.test(r.forward_number ?? "") ? r.forward_number! : null);
+  for (const r of inPbx.values()) {
+    if (vmUser(r)) lines.push(`fwd ${r.number} vm 0 -`);
+    else if (forwardTo(r)) lines.push(`fwd ${r.number} ${FWD_MODES[r.forward_mode!]} ${clamp(r.forward_seconds, 5, 120, 20)} ${r.forward_number}`);
+  }
+  for (const n of nums) {
+    if (n.active === 0 || !PHONE.test(n.number)) continue;
+    const legs: string[] = [];
+    const add = (leg: string) => { if (!legs.includes(leg)) legs.push(leg); };
+    const owners = new Map<number, ExtRow>();
+    for (const x of (n.extensions ?? "").split(",")) {
+      const r = inPbx.get(x);
+      if (!r || vmUser(r)) continue;
+      const fwd = forwardTo(r);
+      if (fwd && r.forward_mode === "always") add(`m0x${fwd}`);
+      else add(r.wake_app && r.device_type !== "sip" ? `a${r.number}` : `e${r.number}`);
+      if (r.user_id != null && !owners.has(r.user_id)) owners.set(r.user_id, r);
+    }
+    if (n.ring_mobiles) {
+      for (const [userId, r] of owners) {
+        if (!PHONE.test(r.user_mobile ?? "")) continue;
+        add(`m${sw.mobileFirst.has(userId) ? 0 : clamp(r.user_mobile_delay, 0, 120, 20)}x${r.user_mobile}`);
+      }
+    }
+    const noAnswer = n.no_answer === "hangup" ? "hangup"
+      : n.no_answer === "forward" && PHONE.test(n.no_answer_number ?? "") ? `fwd${n.no_answer_number}` : "vm";
+    lines.push(`route ${n.number} ${clamp(n.ring_seconds, 5, 300, 45)} ${n.record ? 1 : 0} ${noAnswer} ${legs.join(",") || "-"}`);
   }
   return lines.join("\n") + "\n";
 }
@@ -99,6 +168,12 @@ export async function handlePbxSynced(request: Request, env: Env): Promise<Respo
   if (!/^[0-9a-f]{64}$/.test(applied)) return Response.json({ error: "bad hash" }, { status: 400 });
   await env.DB.batch([putSetting(env, "pbx_applied", applied), putSetting(env, "pbx_applied_at", String(Date.now()))]);
   return Response.json({ ok: true });
+}
+
+/** Whether the PBX has applied what it should have now. */
+export async function pbxInStep(env: Env): Promise<boolean> {
+  const [want, applied] = await Promise.all([pbxSyncText(env).then(sha256Hex), getSetting(env, "pbx_applied")]);
+  return applied === want;
 }
 
 /** GET /pbx/status — whether the PBX has the current extensions. */

@@ -1,7 +1,13 @@
 import type { Env } from "./types";
 import { ariSyncGreetings } from "./asterisk";
+import { nudgePbxIfChanged, pbxInStep } from "./pbxsync";
 
 // ── Voicemail greetings ───────────────────────────────────────
+// The 📼 (straight to voicemail) and 📱 (mobile first) switches are each
+// user's own (user_settings vm_direct, ring_mobile_first): they reach the PBX
+// as part of the routing from Odoo (pbxsync.ts), for the numbers set up in
+// Odoo. The old shared settings rows below still drive the PBX's hand-written
+// routes for any number not set up there.
 // Greetings are stored in D1. The active one and the straight-to-voicemail
 // switch are settings rows (vm_greeting, vm_direct), as is "mobile first"
 // (ring_mobile_first: [ring-mobile] skips its 20s head start for the app and
@@ -46,48 +52,68 @@ async function syncAsterisk(env: Env) {
   } catch (e) { console.error("greetings sync failed:", e); }
 }
 
-/** Everything the dashboard's Voicemail page shows. */
-async function state(env: Env): Promise<Response> {
-  const [greetings, s, want] = await Promise.all([
+async function userSwitches(env: Env, userId: number): Promise<{ direct: boolean; mobileFirst: boolean }> {
+  const rows = (await env.DB.prepare(
+    "SELECT key, value FROM user_settings WHERE user_id = ?1 AND key IN ('vm_direct', 'ring_mobile_first')"
+  ).bind(userId).all<{ key: string; value: string }>()).results ?? [];
+  const on = (k: string) => rows.some(r => r.key === k && r.value === "1");
+  return { direct: on("vm_direct"), mobileFirst: on("ring_mobile_first") };
+}
+
+function putUserSetting(env: Env, userId: number, key: string, value: string) {
+  return env.DB.prepare(
+    "INSERT INTO user_settings (user_id, key, value, updated_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(user_id, key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at"
+  ).bind(userId, key, value, Date.now());
+}
+
+/** Everything the dashboard's Voicemail page shows; direct and mobileFirst
+ *  are the signed-in user's own switches. */
+async function state(env: Env, userId: number): Promise<Response> {
+  const [greetings, s, want, mine, pbxOk] = await Promise.all([
     env.DB.prepare("SELECT id, name, duration_ms, updated_at FROM greetings ORDER BY id").all<GreetingRow>(),
     getSettings(env, ["vm_greeting", "vm_applied", "vm_applied_at"]),
     wanted(env),
+    userSwitches(env, userId),
+    pbxInStep(env),
   ]);
-  let applied: { greeting?: string; direct?: string; mobileFirst?: string } = {};
+  let applied: { greeting?: string } = {};
   try { applied = JSON.parse(s.vm_applied || "{}"); } catch { /* never synced */ }
   return Response.json({
-    direct: want.direct === "1",
-    mobileFirst: want.mobileFirst === "1",
+    direct: mine.direct,
+    mobileFirst: mine.mobileFirst,
     greeting: want.greeting === "none" ? null : Number(s.vm_greeting),
     greetings: greetings.results || [],
-    synced: applied.greeting === want.greeting && applied.direct === want.direct && (applied.mobileFirst ?? "0") === want.mobileFirst,
+    synced: applied.greeting === want.greeting && pbxOk,
     syncedAt: Number(s.vm_applied_at) || null,
   });
 }
 
-export async function handleGetVoicemail(env: Env): Promise<Response> {
-  return state(env);
+export async function handleGetVoicemail(env: Env, userId: number): Promise<Response> {
+  return state(env, userId);
 }
 
-/** {direct?: boolean, mobileFirst?: boolean, greeting?: id | null} */
-export async function handleSetVoicemail(request: Request, env: Env): Promise<Response> {
+/** {direct?: boolean, mobileFirst?: boolean, greeting?: id | null}; the
+ *  switches are the signed-in user's (not the addon's service login, id 0). */
+export async function handleSetVoicemail(request: Request, env: Env, userId: number): Promise<Response> {
   let body: { direct?: unknown; mobileFirst?: unknown; greeting?: unknown };
   try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
-  const writes = [];
-  if (typeof body.direct === "boolean") writes.push(putSetting(env, "vm_direct", body.direct ? "1" : "0"));
-  if (typeof body.mobileFirst === "boolean") writes.push(putSetting(env, "ring_mobile_first", body.mobileFirst ? "1" : "0"));
+  const writes = [], mine = [];
+  if (userId && typeof body.direct === "boolean") mine.push(putUserSetting(env, userId, "vm_direct", body.direct ? "1" : "0"));
+  if (userId && typeof body.mobileFirst === "boolean") mine.push(putUserSetting(env, userId, "ring_mobile_first", body.mobileFirst ? "1" : "0"));
   if (body.greeting === null) writes.push(putSetting(env, "vm_greeting", ""));
   else if (typeof body.greeting === "number") {
     const g = await env.DB.prepare("SELECT id FROM greetings WHERE id = ?1").bind(body.greeting).first();
     if (!g) return Response.json({ error: "no such greeting" }, { status: 404 });
     writes.push(putSetting(env, "vm_greeting", String(body.greeting)));
   }
-  if (writes.length) { await env.DB.batch(writes); await syncAsterisk(env); }
-  return state(env);
+  if (writes.length || mine.length) await env.DB.batch([...writes, ...mine]);
+  if (writes.length) await syncAsterisk(env);
+  if (mine.length) await nudgePbxIfChanged(env);
+  return state(env, userId);
 }
 
 /** Body: an 8 kHz mono 16-bit WAV. ?name= labels it. The first greeting becomes the active one. */
-export async function handleCreateGreeting(request: Request, env: Env): Promise<Response> {
+export async function handleCreateGreeting(request: Request, env: Env, userId: number): Promise<Response> {
   const name = (new URL(request.url).searchParams.get("name") ?? "").trim().slice(0, 80) || "Greeting";
   const audio = new Uint8Array(await request.arrayBuffer());
   if (audio.length > MAX_BYTES) return Response.json({ error: "greeting too long (2 minutes max)" }, { status: 413 });
@@ -97,21 +123,21 @@ export async function handleCreateGreeting(request: Request, env: Env): Promise<
     .bind(name, audio, fmt.durationMs, Date.now()).first<{ id: number }>();
   const s = await getSettings(env, ["vm_greeting"]);
   if (!s.vm_greeting && row) { await putSetting(env, "vm_greeting", String(row.id)).run(); await syncAsterisk(env); }
-  return state(env);
+  return state(env, userId);
 }
 
 /** {name} */
-export async function handleRenameGreeting(request: Request, env: Env, id: number): Promise<Response> {
+export async function handleRenameGreeting(request: Request, env: Env, id: number, userId: number): Promise<Response> {
   let body: { name?: unknown };
   try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
   const name = typeof body.name === "string" ? body.name.trim().slice(0, 80) : "";
   if (!name) return Response.json({ error: "name required" }, { status: 400 });
   // Not updated_at: that is the audio's version, and renaming shouldn't re-copy it.
   await env.DB.prepare("UPDATE greetings SET name = ?1 WHERE id = ?2").bind(name, id).run();
-  return state(env);
+  return state(env, userId);
 }
 
-export async function handleDeleteGreeting(env: Env, id: number): Promise<Response> {
+export async function handleDeleteGreeting(env: Env, id: number, userId: number): Promise<Response> {
   const s = await getSettings(env, ["vm_greeting"]);
   const active = s.vm_greeting === String(id);
   await env.DB.batch([
@@ -119,7 +145,7 @@ export async function handleDeleteGreeting(env: Env, id: number): Promise<Respon
     ...(active ? [putSetting(env, "vm_greeting", "")] : []),
   ]);
   if (active) await syncAsterisk(env);
-  return state(env);
+  return state(env, userId);
 }
 
 export async function handleGreetingAudio(env: Env, id: number): Promise<Response> {

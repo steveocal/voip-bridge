@@ -60,3 +60,52 @@ desk-phone template carries its `ALERT_INFO = Ring Answer`), 201, 202, 203,
 211, 300. 204 and 212 were deleted. `pjsip.conf` keeps only the trunks.
 Inbound ring lists (`[default]`, `[voipms-inbound]`) still name extensions;
 that's the routing step.
+
+# Inbound routing and forwarding from Odoo
+
+Who answers each of our numbers is also set in Odoo, not in the dialplan:
+
+- **Phone → Configuration → Phone Numbers** (`phone_bridge.number`): the
+  number (international format), the extensions that ring (all at once),
+  whether their users' mobiles ring too, how long, and what happens when
+  nobody answers (voicemail, forward to a number, hang up); recording on/off.
+- **Extension → Forwarding**: always, when busy or offline, when not
+  answered (after N seconds), or busy/offline/not answered, to a number.
+  "Always" also applies when a phone number rings that extension.
+- **User → Mobile to Ring / Ring Mobile After**: each user's mobile joins the
+  ring list of any number that rings their extensions (if that number rings
+  users' mobiles), after their own head start. Users can set this in their
+  Preferences.
+- **Dashboard 📼 / 📱** are each user's own: 📼 takes their extensions and
+  mobile out of every ring list and sends calls to their extensions to
+  voicemail; 📱 rings their mobile with no head start.
+
+```
+Odoo ──▶ worker (D1 pbx_numbers, extensions.forward_*, user_settings)
+worker GET /pbx/sync: route / fwd lines ──▶ pbx-sync.sh
+pbx-sync.sh ──▶ astdb pbroute/<number digits>, pbfwd/<extension>
+[voipms-inbound], [default] ──Gosub──▶ [pb-route] ──▶ Dial / voicemail / forward
+[from-internal] ──▶ [ext-dial] (pbfwd: forward or 📼)
+```
+
+`asterisk/extensions-phone-bridge-routing.conf` holds `[pb-route]`,
+`[pb-route-hangup]` (a hangup inside a Gosub doesn't run the caller's `h`, so
+the hangup event comes from there), `[pb-ring-app]` (an app leg, woken
+first), `[pb-ring-mobile]` (a mobile or forward leg, after its delay, from
+our voip.ms number) and `[ext-dial]` with forwarding. A number with no
+`pbroute` key keeps the hand-written ring list, so numbers move one at a
+time: set one up in Odoo and its calls follow Odoo within seconds; delete it
+there and the old routing is back.
+
+Setting it up (once):
+
+1. `npx wrangler d1 execute voip-bridge-d1 --remote --yes --file=./migrations/0016_pbx_routing.sql`
+2. Deploy the worker; upgrade the Odoo addon to phone_bridge 18.0.0.8.0.
+3. `bash scripts/vps-setup-pbx-routing.sh` (backs up extensions.conf; the
+   edit is `scripts/pbx-routing-dialplan-edit.py`).
+
+Our numbers as voip.ms and Twilio send them: 447520658657 (voip.ms
+mobile; the catch-all ring list), 441283246490 / 491 / 492, and Twilio's
++447898117226. Still hard-coded: the website callback's agent ring list
+(`[web-callback]`) and the outbound caller ID per extension
+(`[outbound-dial]`).

@@ -891,11 +891,11 @@ export default {
       else if (request.method === "POST" && url.pathname === "/transcribe") response = await handleTranscribe(request, env, ctx, user);
       else if (request.method === "GET" && url.pathname === "/parked") response = await handleParked(env);
       else if (request.method === "POST" && url.pathname === "/summarize") response = await handleSummarize(request, env, ctx, user);
-      else if (request.method === "GET" && url.pathname === "/voicemail") response = await handleGetVoicemail(env);
-      else if (request.method === "POST" && url.pathname === "/voicemail") response = await handleSetVoicemail(request, env);
-      else if (request.method === "POST" && url.pathname === "/greetings") response = await handleCreateGreeting(request, env);
-      else if (request.method === "POST" && /^\/greetings\/\d+$/.test(url.pathname)) response = await handleRenameGreeting(request, env, parseInt(url.pathname.split("/")[2], 10));
-      else if (request.method === "DELETE" && /^\/greetings\/\d+$/.test(url.pathname)) response = await handleDeleteGreeting(env, parseInt(url.pathname.split("/")[2], 10));
+      else if (request.method === "GET" && url.pathname === "/voicemail") response = await handleGetVoicemail(env, user.id);
+      else if (request.method === "POST" && url.pathname === "/voicemail") response = await handleSetVoicemail(request, env, user.id);
+      else if (request.method === "POST" && url.pathname === "/greetings") response = await handleCreateGreeting(request, env, user.id);
+      else if (request.method === "POST" && /^\/greetings\/\d+$/.test(url.pathname)) response = await handleRenameGreeting(request, env, parseInt(url.pathname.split("/")[2], 10), user.id);
+      else if (request.method === "DELETE" && /^\/greetings\/\d+$/.test(url.pathname)) response = await handleDeleteGreeting(env, parseInt(url.pathname.split("/")[2], 10), user.id);
       else if (request.method === "GET" && url.pathname === "/activities") response = await handleActivities(env, user);
       else if (request.method === "POST" && /^\/activities\/\d+\/done$/.test(url.pathname)) response = await handleActivityDone(request, env, user, parseInt(url.pathname.split("/")[2], 10));
       else if (request.method === "GET" && url.pathname === "/quotations") response = await handleQuotations(request, env);

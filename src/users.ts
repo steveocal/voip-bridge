@@ -32,37 +32,74 @@ let ownersCache: { at: number; map: Map<string, ExtensionOwner> } | null = null;
 /** Pull phone_bridge.extension from Odoo into D1, and give logged legs with
  *  an extension but no user their owner. Returns the extension count, or
  *  null when Odoo can't be reached. Also keeps what the PBX builds its
- *  extensions from (pbxsync.ts), and nudges it when that changed. An addon
- *  too old to have the PBX fields still gives the owners. */
+ *  extensions and inbound routing from (pbxsync.ts: forwarding, the owners'
+ *  mobiles, phone_bridge.number), and nudges it when that changed. An older
+ *  addon gives what it has: without phone_bridge 0.8 there is no routing
+ *  (the PBX keeps its own), before 0.7 only the owners. */
 export async function syncExtensions(env: Env): Promise<number | null> {
   const uid = await odooAuth(env);
   if (!uid) return null;
   const read = (fields: string[]) => odooCall(env, uid, "phone_bridge.extension", "search_read", [[]], { fields, context: { active_test: false } });
-  let full = true;
-  let r = await read(["number", "user_id", "name", "sip_password", "device_type", "wake_app", "active"]);
+  const PBX = ["number", "user_id", "name", "sip_password", "device_type", "wake_app", "active"];
+  const FWD = ["forward_mode", "forward_number", "forward_seconds"];
+  // 2 = extensions and routing, 1 = extensions, 0 = owners only.
+  let level = 2;
+  let r = await read([...PBX, ...FWD]);
+  if (r.fault) { level = 1; r = await read(PBX); }
   if (r.fault) {
     // Odoo's own reason (addon not upgraded, or the login can't read
     // sip_password), else the PBX just stays at "not available yet".
     console.warn("Odoo extensions: PBX fields refused, owners only:", String(r.fault).slice(-400));
-    full = false; r = await read(["number", "user_id"]);
+    level = 0; r = await read(["number", "user_id"]);
   }
   if (r.fault) { console.error("Odoo extensions read failed:", r.fault); return null; }
+  const full = level >= 1;
   const exts = (r.parsed ?? []) as Array<Record<string, unknown>>;
   const userIds = [...new Set(exts.map(e => Array.isArray(e.user_id) ? e.user_id[0] as number : 0).filter(Boolean))];
-  const emails = new Map<number, string>();
+  const users = new Map<number, Record<string, unknown>>();
   if (userIds.length) {
-    const u = await odooCall(env, uid, "res.users", "read", [userIds], { fields: ["email", "login"] });
-    for (const row of (u.parsed ?? []) as Array<Record<string, unknown>>) emails.set(row.id as number, String(row.email || row.login || ""));
+    let u = level >= 2 ? await odooCall(env, uid, "res.users", "read", [userIds], { fields: ["email", "login", "phone_bridge_mobile", "phone_bridge_mobile_delay"] }) : null;
+    if (!u || u.fault) u = await odooCall(env, uid, "res.users", "read", [userIds], { fields: ["email", "login"] });
+    for (const row of (u.parsed ?? []) as Array<Record<string, unknown>>) users.set(row.id as number, row);
+  }
+  let numbers: Array<Record<string, unknown>> | null = null;
+  if (level >= 2) {
+    const n = await odooCall(env, uid, "phone_bridge.number", "search_read", [[]], {
+      fields: ["number", "name", "extension_ids", "ring_mobiles", "ring_seconds", "no_answer", "no_answer_number", "record", "active"],
+      context: { active_test: false },
+    });
+    if (n.fault) console.warn("Odoo phone numbers read failed; PBX routing left as it was:", String(n.fault).slice(-400));
+    else numbers = (n.parsed ?? []) as Array<Record<string, unknown>>;
   }
   const now = Date.now();
   const str = (v: unknown) => (typeof v === "string" ? v : null); // Odoo sends false for empty
+  const digits = (v: unknown) => { const d = str(v)?.replace(/\D/g, "") ?? ""; return d || null; };
+  const int = (v: unknown) => (typeof v === "number" ? v : null);
   const stmts = [env.DB.prepare("DELETE FROM extensions")];
+  const numberOfExt = new Map<number, string>();
   for (const e of exts) {
+    numberOfExt.set(e.id as number, String(e.number));
     const userId = Array.isArray(e.user_id) ? e.user_id[0] as number : null;
+    const user = userId ? users.get(userId) : undefined;
+    const fwd = level >= 2;
     stmts.push(env.DB.prepare(
-      "INSERT OR REPLACE INTO extensions (number, user_id, user_name, user_email, updated_at, name, sip_password, device_type, wake_app, active) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
-    ).bind(String(e.number), userId, Array.isArray(e.user_id) ? String(e.user_id[1]) : "", userId ? emails.get(userId) ?? "" : "", now,
-      str(e.name), full ? str(e.sip_password) : null, full ? str(e.device_type) : null, full ? (e.wake_app ? 1 : 0) : null, full ? (e.active === false ? 0 : 1) : null));
+      "INSERT OR REPLACE INTO extensions (number, user_id, user_name, user_email, updated_at, name, sip_password, device_type, wake_app, active, forward_mode, forward_number, forward_seconds, user_mobile, user_mobile_delay) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)"
+    ).bind(String(e.number), userId, Array.isArray(e.user_id) ? String(e.user_id[1]) : "", user ? String(user.email || user.login || "") : "", now,
+      str(e.name), full ? str(e.sip_password) : null, full ? str(e.device_type) : null, full ? (e.wake_app ? 1 : 0) : null, full ? (e.active === false ? 0 : 1) : null,
+      fwd ? str(e.forward_mode) : null, fwd ? digits(e.forward_number) : null, fwd ? int(e.forward_seconds) : null,
+      user ? digits(user.phone_bridge_mobile) : null, user ? int(user.phone_bridge_mobile_delay) : null));
+  }
+  if (numbers) {
+    stmts.push(env.DB.prepare("DELETE FROM pbx_numbers"));
+    for (const n of numbers) {
+      const num = digits(n.number);
+      if (!num) continue;
+      const rings = (Array.isArray(n.extension_ids) ? n.extension_ids as number[] : []).map(id => numberOfExt.get(id)).filter(Boolean).sort();
+      stmts.push(env.DB.prepare(
+        "INSERT OR REPLACE INTO pbx_numbers (number, name, extensions, ring_mobiles, ring_seconds, no_answer, no_answer_number, record, active, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
+      ).bind(num, str(n.name), rings.join(","), n.ring_mobiles ? 1 : 0, int(n.ring_seconds), str(n.no_answer), digits(n.no_answer_number),
+        n.record ? 1 : 0, n.active === false ? 0 : 1, now));
+    }
   }
   stmts.push(env.DB.prepare(
     "UPDATE call_log SET user_id = (SELECT x.user_id FROM extensions x WHERE x.number = call_log.extension) WHERE user_id IS NULL AND extension IS NOT NULL"

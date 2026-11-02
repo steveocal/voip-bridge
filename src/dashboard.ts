@@ -442,7 +442,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     </div>
     <div class="reg-status" id="phone-status">Loading…</div>
     <button class="install-btn hidden" id="install-btn" onclick="installApp()">⬇ Install</button>
-    <button class="quick-btn" id="qb-vm" onclick="quickToggle('direct')" title="Straight to voicemail" aria-label="Straight to voicemail">📼</button>
+    <button class="quick-btn" id="qb-vm" onclick="quickToggle('direct')" title="My calls straight to voicemail" aria-label="My calls straight to voicemail">📼</button>
     <button class="quick-btn" id="qb-mob" onclick="quickToggle('mobileFirst')" title="Ring my mobile straight away" aria-label="Ring my mobile straight away">📱</button>
     <button class="menu-icon" onclick="toggleMenu()" aria-label="Menu">☰</button>
   </header>
@@ -581,11 +581,11 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       </div>
       <div class="vm-sync" id="vm-sync"></div>
       <div class="switch-row">
-        <span>Straight to voicemail<div class="p-note">Phones don't ring; every caller hears the greeting.</div></span>
+        <span>My calls straight to voicemail<div class="p-note">Your extensions and mobile don't ring; callers for you hear the greeting. Others' phones still ring.</div></span>
         <label class="switch"><input type="checkbox" id="vm-direct" onchange="setVmDirect(this.checked)"><span class="track"></span></label>
       </div>
       <div class="switch-row">
-        <span>Ring my mobile straight away<div class="p-note">Off: the mobile joins after 20 s, so the app and desk phones get first go. On: it rings with them.</div></span>
+        <span>Ring my mobile straight away<div class="p-note">Off: your mobile joins after the delay set on your user in Odoo, so the app and desk phones get first go. On: it rings with them.</div></span>
         <label class="switch"><input type="checkbox" id="vm-mobile-first" onchange="setMobileFirst(this.checked)"><span class="track"></span></label>
       </div>
       <div class="vm-head">Greeting</div>
@@ -5029,7 +5029,7 @@ function renderRouteQuick() {
   strip.classList.toggle("hidden", !d.direct && !d.mobileFirst);
   if (d.direct) {
     strip.className = "route-strip vm";
-    document.getElementById("route-text").textContent = "📼 All calls go straight to voicemail" + wait;
+    document.getElementById("route-text").textContent = "📼 Your calls go straight to voicemail" + wait;
     off.onclick = function() { quickToggle("direct"); };
   } else if (d.mobileFirst) {
     strip.className = "route-strip mob";
@@ -5058,7 +5058,7 @@ function quickToggle(key) {
 function setMobileFirst(on) {
   vmRequest("POST", "/voicemail", { mobileFirst: on }).then(function(d) {
     setVmState(d);
-    vmStatus(on ? "Mobile rings straight away ✓" : "Mobile waits 20 s again ✓", false);
+    vmStatus(on ? "Mobile rings straight away ✓" : "Mobile waits its delay again ✓", false);
   }).catch(function(err) {
     document.getElementById("vm-mobile-first").checked = !on;
     vmStatus("Not saved: " + err.message, true);
@@ -5067,7 +5067,7 @@ function setMobileFirst(on) {
 function setVmDirect(on) {
   vmRequest("POST", "/voicemail", { direct: on }).then(function(d) {
     setVmState(d);
-    vmStatus(on ? "Calls go straight to voicemail ✓" : "Phones ring again ✓", false);
+    vmStatus(on ? "Your calls go straight to voicemail ✓" : "Your phones ring again ✓", false);
   }).catch(function(err) {
     document.getElementById("vm-direct").checked = !on;
     vmStatus("Not saved: " + err.message, true);

@@ -143,7 +143,26 @@ CREATE TABLE IF NOT EXISTS extensions (
   sip_password TEXT,
   device_type TEXT,
   wake_app INTEGER,
-  active INTEGER
+  active INTEGER,
+  -- Forwarding and the owner's mobile (0016).
+  forward_mode TEXT,
+  forward_number TEXT,
+  forward_seconds INTEGER,
+  user_mobile TEXT,
+  user_mobile_delay INTEGER
+);
+-- Odoo's phone_bridge.number: who rings for each of our numbers (0016, src/pbxsync.ts).
+CREATE TABLE IF NOT EXISTS pbx_numbers (
+  number TEXT PRIMARY KEY,
+  name TEXT,
+  extensions TEXT,
+  ring_mobiles INTEGER,
+  ring_seconds INTEGER,
+  no_answer TEXT,
+  no_answer_number TEXT,
+  record INTEGER,
+  active INTEGER,
+  updated_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS user_settings (
   user_id INTEGER NOT NULL,
