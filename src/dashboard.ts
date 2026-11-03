@@ -3368,6 +3368,19 @@ document.addEventListener("DOMContentLoaded", function() { setTimeout(syncSimDur
 // (src/meetings.ts). Meetings show in History with 🎙.
 var MEET_RATE = 16000, MEET_BLOCK = MEET_RATE * 30;
 var meet = null, meetUploading = false, meetRetry = 0, meetRetryTimer = null, meetWaiting = 0, meetSaving = "";
+// Meeting messages share the status line with the SIP registration, so each
+// one shows for a few seconds and the registration state comes back after it
+// (left there, the dot stayed amber/red and the phone looked unregistered).
+var meetNoticeTimer = null;
+function meetNotice(msg, isErr) {
+  setStatus(msg, isErr);
+  clearTimeout(meetNoticeTimer);
+  meetNoticeTimer = setTimeout(function() {
+    if (document.getElementById("phone-status").textContent !== msg) return;
+    if (sipRegistered && sipUA && sipUA.isConnected()) setStatus("✅ Registered", false);
+    else { setStatus("❌ Not registered", true); ensureRegistered(); }
+  }, isErr ? 10000 : 6000);
+}
 function meetingCode(num) {
   var n = String(num || "").split(" ").join("");
   return n === "*91" ? "new" : n === "*92" ? "append" : "";
@@ -3397,13 +3410,13 @@ function meetLabel(d) {
   return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }) + ", " + pad2(d.getHours()) + ":" + pad2(d.getMinutes());
 }
 function startMeeting(append) {
-  if (meet) { setStatus("🎙 A meeting is already recording", true); return; }
-  if (currentCall) { setStatus("❌ End the call before recording a meeting", true); return; }
+  if (meet) { meetNotice("🎙 A meeting is already recording", true); return; }
+  if (currentCall) { meetNotice("❌ End the call before recording a meeting", true); return; }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.AudioContext || !window.AudioWorkletNode || !window.indexedDB) {
-    setStatus("❌ This browser can't record meetings", true); return;
+    meetNotice("❌ This browser can't record meetings", true); return;
   }
   var st = { seq: 0, buf: new Int16Array(MEET_BLOCK), fill: 0, samples: 0, paused: false, acc: 0, n: 0, pos: 0 };
-  setStatus(append ? "🎙 Adding to your last meeting…" : "🎙 Starting a meeting…", false);
+  meetNotice(append ? "🎙 Adding to your last meeting…" : "🎙 Starting a meeting…", false);
   navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: false, noiseSuppression: true, autoGainControl: true } }).then(function(stream) {
     st.stream = stream;
     return fetch(API + "/meeting/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ append: !!append, label: meetLabel(new Date()) }) });
@@ -3416,10 +3429,10 @@ function startMeeting(append) {
     st.timer = setInterval(meetShowState, 1000);
     meetWake();
     meetShowState();
-    setStatus(st.appended ? "🎙 Recording part " + st.part + " of " + st.title : (append ? "🎙 No earlier meeting, so this is a new one" : "🎙 Recording the meeting"), false);
+    meetNotice(st.appended ? "🎙 Recording part " + st.part + " of " + st.title : (append ? "🎙 No earlier meeting, so this is a new one" : "🎙 Recording the meeting"), false);
   }).catch(function(e) {
     meetRelease(st);
-    setStatus("❌ Meeting recording: " + (e && e.message ? e.message : e), true);
+    meetNotice("❌ Meeting recording: " + (e && e.message ? e.message : e), true);
   });
 }
 // Microphone → AudioWorklet → 16 kHz Int16. The context runs at 16 kHz where
@@ -3462,7 +3475,7 @@ function meetSaveBlock(st) {
   var data = st.buf.slice(0, st.fill).buffer, key = meetKey(st.id, st.part, st.seq);
   st.seq++; st.fill = 0;
   return meetIdb("blocks", "readwrite", function(s) { return s.put(data, key); }).then(function() { meetUpload(); })
-    .catch(function(e) { setStatus("❌ Couldn't save meeting audio: " + e.message, true); });
+    .catch(function(e) { meetNotice("❌ Couldn't save meeting audio: " + e.message, true); });
 }
 function meetPause() {
   if (!meet) return;
@@ -3483,8 +3496,7 @@ function meetStop() {
     meetShowState();
     meetUpload();
   });
-  setStatus("🎙 Meeting stopped: " + fmtDur(st.samples / MEET_RATE) + " recorded", false);
-  setTimeout(function() { if (sipRegistered && !meet) setStatus("✅ Registered", false); }, 5000);
+  meetNotice("🎙 Meeting stopped: " + fmtDur(st.samples / MEET_RATE) + " recorded", false);
 }
 function meetRelease(st) {
   if (st.timer) clearInterval(st.timer);
@@ -3535,7 +3547,7 @@ function meetFinishPending() {
           .then(function(x) {
             if (!x.r.ok && x.r.status !== 404) throw new Error(x.d.error || "HTTP " + x.r.status);
             var d = x.d;
-            setStatus(d.empty ? "🎙 Meeting saved (no speech heard)" : d.emailed ? "📧 Meeting notes emailed: " + d.title
+            meetNotice(d.empty ? "🎙 Meeting saved (no speech heard)" : d.emailed ? "📧 Meeting notes emailed: " + d.title
               : "🎙 Meeting notes ready" + (d.email_error ? " (not emailed: " + d.email_error + ")" : ""), !!d.email_error);
             return meetIdb("finish", "readwrite", function(s) { return s.delete(f.id + "|" + f.part); });
           });
