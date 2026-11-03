@@ -73,6 +73,8 @@
     <!-- Calls over the SIM (SimCallPlugin): placing them, and listing the SIMs -->
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- Durations of the SIM calls the app placed (SimCallPlugin.outgoing) -->
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <!-- Staff location tracking (StaffLocationPlugin / LocationWorker) -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />

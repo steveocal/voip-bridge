@@ -104,6 +104,18 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
     return Response.json({ action: "sim", partner: partner?.name ?? null });
   }
 
+  // The app found that SIM call in the phone's call log: its real start time
+  // and talk time (0 = nobody answered).
+  if (event === "sim_done") {
+    const start = Number(params.get("start") ?? "");
+    const duration = Math.max(0, Math.round(Number(params.get("duration") ?? "0")) || 0);
+    if (!Number.isFinite(start) || start <= 0) return Response.json({ error: "bad start" }, { status: 400 });
+    const res = await env.DB.prepare(
+      `UPDATE call_log SET start_date=?1, end_date=?2, state=?3 WHERE call_id=?4 AND did='SIM'`
+    ).bind(start, start + duration * 1000, duration > 0 ? "terminated" : "aborted", callId).run();
+    return Response.json({ action: "sim_done", updated: res.meta.changes ?? 0 });
+  }
+
   if (event === "hangup") {
     const duration = parseInt(params.get("duration") ?? "0", 10);
     const state = duration > 0 ? "terminated" : (direction === "outgoing" ? "aborted" : "missed");

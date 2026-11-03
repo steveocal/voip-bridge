@@ -4,7 +4,9 @@ import android.Manifest;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
+import android.database.Cursor;
 import android.net.Uri;
+import android.provider.CallLog;
 import android.os.Bundle;
 import android.telecom.PhoneAccount;
 import android.telecom.PhoneAccountHandle;
@@ -30,12 +32,17 @@ import java.util.List;
  * (CALL_PHONE) on that SIM, or the phone's default when sim is empty.
  * Without CALL_PHONE it opens the dialer with the number filled in.
  * The phone's own dialer has the call from then on.
+ * outgoing({since}) reads the phone's call log (READ_CALL_LOG): outgoing
+ * calls that started at or after `since` (ms), [{number, date, duration}],
+ * oldest first. The dashboard matches those to the SIM calls it placed
+ * itself, and only those, for their durations.
  */
 @CapacitorPlugin(
         name = "SimCall",
         permissions = {
                 @Permission(alias = "call", strings = {Manifest.permission.CALL_PHONE}),
                 @Permission(alias = "phoneState", strings = {Manifest.permission.READ_PHONE_STATE}),
+                @Permission(alias = "callLog", strings = {Manifest.permission.READ_CALL_LOG}),
         }
 )
 public class SimCallPlugin extends Plugin {
@@ -90,6 +97,50 @@ public class SimCallPlugin extends Plugin {
         JSObject r = new JSObject();
         r.put("sims", list);
         r.put("permission", getPermissionState("phoneState") == PermissionState.GRANTED);
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void outgoing(PluginCall call) {
+        if (getPermissionState("callLog") != PermissionState.GRANTED) {
+            requestPermissionForAlias("callLog", call, "onCallLog");
+            return;
+        }
+        readOutgoing(call);
+    }
+
+    @PermissionCallback
+    private void onCallLog(PluginCall call) {
+        if (getPermissionState("callLog") != PermissionState.GRANTED) {
+            call.reject("Call log permission not granted", "DENIED");
+            return;
+        }
+        readOutgoing(call);
+    }
+
+    private void readOutgoing(PluginCall call) {
+        long since = call.getLong("since", 0L);
+        String[] cols = {CallLog.Calls.NUMBER, CallLog.Calls.DATE, CallLog.Calls.DURATION};
+        String where = CallLog.Calls.TYPE + " = ? AND " + CallLog.Calls.DATE + " >= ?";
+        String[] args = {String.valueOf(CallLog.Calls.OUTGOING_TYPE), String.valueOf(since)};
+        JSArray list = new JSArray();
+        try (Cursor c = getContext().getContentResolver().query(CallLog.Calls.CONTENT_URI, cols, where, args,
+                CallLog.Calls.DATE + " ASC")) {
+            if (c != null) {
+                while (c.moveToNext() && list.length() < 200) {
+                    JSObject o = new JSObject();
+                    o.put("number", c.getString(0) == null ? "" : c.getString(0));
+                    o.put("date", c.getLong(1));
+                    o.put("duration", c.getLong(2));
+                    list.put(o);
+                }
+            }
+        } catch (SecurityException e) {
+            call.reject("Call log permission not granted", "DENIED");
+            return;
+        }
+        JSObject r = new JSObject();
+        r.put("calls", list);
         call.resolve(r);
     }
 

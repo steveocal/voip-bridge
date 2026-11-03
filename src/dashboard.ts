@@ -3229,8 +3229,8 @@ function normalizeDial(num) {
 // extension) over VoIP. Long-press any 📞 to choose: VoIP, or the SIM (each
 // SIM on a dual-SIM phone). Settings → "Phone contacts call from the SIM"
 // turns the automatic part off. The phone's dialer has a SIM call from then
-// on, so it's logged in History (did "SIM") without a duration, recording
-// or notes.
+// on, so it's logged in History (did "SIM") without a recording or notes;
+// its duration comes from the phone's call log afterwards (syncSimDurations).
 var routeOverride = null, simList = null;
 function simPlugin() {
   var Cap = window.Capacitor;
@@ -3269,9 +3269,11 @@ function simCallOut(num, simId) {
   SC.call({ number: raw, sim: simId || "" }).then(function(r) {
     setStatus(r && r.method === "dialer" ? "📱 Press call in the phone's dialer" : "📱 Calling from the SIM", false);
     setTimeout(function() { if (sipRegistered) setStatus("✅ Registered", false); }, 5000);
+    var id = "sim-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+    addSimPending({ id: id, num: raw, at: Date.now() });
     var body = new URLSearchParams();
     body.set("event", "sim");
-    body.set("callId", "sim-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8));
+    body.set("callId", id);
     body.set("caller", raw);
     body.set("direction", "outgoing");
     body.set("ext", myExtension());
@@ -3279,6 +3281,57 @@ function simCallOut(num, simId) {
       .then(refreshCallLists).catch(function() {});
   }).catch(function(e) { setStatus("❌ SIM call failed" + (e && e.message ? ": " + e.message : ""), true); });
 }
+// SIM call durations: each SIM call the app places waits in vb_simPending
+// until the phone's call log has it (Android writes the entry when the call
+// ends). Whenever the app comes back to the front, the outgoing calls since
+// the oldest pending one are read (SimCall.outgoing, READ_CALL_LOG) and each
+// pending call is matched to one entry by number, starting within 2 minutes
+// of when we placed it. Only those entries are used; the worker gets their
+// start and talk time (event=sim_done). Unmatched calls are dropped after a day.
+var SIM_PENDING_KEY = "vb_simPending", simSyncBusy = false;
+function simPending() { try { return JSON.parse(localStorage.getItem(SIM_PENDING_KEY) || "[]") || []; } catch (e) { return []; } }
+function setSimPending(list) { localStorage.setItem(SIM_PENDING_KEY, JSON.stringify(list)); }
+function addSimPending(p) { var l = simPending(); l.push(p); setSimPending(l); }
+function simNumMatch(a, b) {
+  var ka = numKey(a), kb = numKey(b);
+  if (ka || kb) return ka === kb;
+  return String(a).replace(/[^0-9]/g, "") === String(b).replace(/[^0-9]/g, "");
+}
+function syncSimDurations() {
+  var SC = simPlugin();
+  if (!SC || simSyncBusy) return;
+  var now = Date.now();
+  var pend = simPending().filter(function(p) { return p && p.id && now - p.at < 86400000; });
+  setSimPending(pend);
+  if (!pend.length) return;
+  simSyncBusy = true;
+  var since = Math.min.apply(null, pend.map(function(p) { return p.at; })) - 10000;
+  SC.outgoing({ since: since }).then(function(r) {
+    var log = (r && r.calls) || [], used = {}, done = {}, posts = [];
+    pend.forEach(function(p) {
+      for (var i = 0; i < log.length; i++) {
+        var e = log[i];
+        if (used[i] || e.date < p.at - 10000 || e.date > p.at + 120000 || !simNumMatch(e.number, p.num)) continue;
+        used[i] = true;
+        var body = new URLSearchParams();
+        body.set("event", "sim_done");
+        body.set("callId", p.id);
+        body.set("start", String(e.date));
+        body.set("duration", String(e.duration || 0));
+        posts.push(fetch(API + "/call-event", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() })
+          .then(function(res) { if (res.ok) done[p.id] = true; }).catch(function() {}));
+        return;
+      }
+    });
+    return Promise.all(posts).then(function() {
+      // Re-read: a call placed meanwhile must stay pending.
+      setSimPending(simPending().filter(function(p) { return !done[p.id]; }));
+      if (Object.keys(done).length) refreshCallLists();
+    });
+  }).catch(function() {}).then(function() { simSyncBusy = false; });
+}
+document.addEventListener("visibilitychange", function() { if (!document.hidden) setTimeout(syncSimDurations, 1500); });
+document.addEventListener("DOMContentLoaded", function() { setTimeout(syncSimDurations, 3000); });
 function loadSims() {
   var SC = simPlugin();
   if (!SC || simList) return Promise.resolve(simList || []);
@@ -3395,6 +3448,9 @@ function resetCall() {
   if (consultSession) { endSession(consultSession); consultSession = null; }
   sipSession = null; currentCall = null; onHold = false; muted = false;
   closeTransfer();
+  // The number just called shouldn't sit in the box after the call.
+  var dialInp = document.getElementById("dial-input");
+  if (dialInp.value) { dialInp.value = ""; onDialInput(); }
   renderCallUI();
   if (onDialView()) loadHistory();
 }
