@@ -62,6 +62,17 @@ export interface D1Result<T = Record<string, unknown>> {
   meta: Record<string, unknown>;
 }
 
+// R2, just the parts the meeting recorder uses (src/meetings.ts).
+export interface R2Object { key: string; size: number }
+export interface R2ObjectBody extends R2Object { body: ReadableStream<Uint8Array>; arrayBuffer(): Promise<ArrayBuffer> }
+export interface R2Bucket {
+  put(key: string, value: ArrayBuffer | Uint8Array | ReadableStream | string): Promise<R2Object | null>;
+  get(key: string): Promise<R2ObjectBody | null>;
+  head(key: string): Promise<R2Object | null>;
+  list(options?: { prefix?: string; cursor?: string; limit?: number }): Promise<{ objects: R2Object[]; truncated: boolean; cursor?: string }>;
+  delete(keys: string | string[]): Promise<void>;
+}
+
 export interface ExecutionContext {
   waitUntil(promise: Promise<unknown>): void;
   passThroughOnException(): void;
@@ -85,5 +96,6 @@ export interface Env {
   STAFF_TOKEN_SECRET: string; // signs staff location-tracking tokens (secret, src/staff.ts)
   SESSION_SECRET?: string; // signs dashboard sessions (secret, src/users.ts); falls back to one derived from STAFF_TOKEN_SECRET
   API_TOKEN?: string; // the Odoo addon's bearer token (secret, src/users.ts); unset = no service access
+  MEETINGS: R2Bucket; // meeting recordings, 16 kHz PCM blocks (src/meetings.ts)
   AI: { run(model: string, inputs: Record<string, unknown>): Promise<unknown> }; // Workers AI binding
 }

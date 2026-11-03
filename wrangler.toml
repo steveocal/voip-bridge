@@ -38,3 +38,8 @@ binding = "AI"
 directory = "./public"
 
 
+
+# Meeting recordings from the dashboard (*91 / *92): 30 s blocks of 16 kHz PCM.
+[[r2_buckets]]
+binding = "MEETINGS"
+bucket_name = "voip-bridge-meetings"

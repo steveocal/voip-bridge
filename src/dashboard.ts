@@ -39,6 +39,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .route-strip.mob{background:rgba(52,211,153,.12);border:1px solid #34d399;color:#bbf7d0}
 .route-strip button{margin-left:auto;border:none;border-radius:8px;background:#2c2c2c;color:#ececec;font-size:12px;padding:5px 10px;cursor:pointer;flex-shrink:0}
 .route-strip.hidden{display:none}
+.meet-bar{margin:0 16px 8px;padding:8px 12px;border-radius:10px;font-size:13px;display:flex;align-items:center;gap:8px;background:rgba(220,38,38,.15);border:1px solid #dc2626;color:#fecaca}
+.meet-bar #meet-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meet-bar button{border:none;border-radius:8px;background:#2c2c2c;color:#ececec;font-size:12px;padding:5px 10px;cursor:pointer;flex-shrink:0}
+.meet-bar button.stop{background:#dc2626;color:#fff}
+.meet-bar .dot{width:10px;height:10px;border-radius:50%;background:#ef4444;flex-shrink:0;animation:meetblink 1.2s infinite}
+.meet-bar.paused .dot{animation:none;background:#888}
+.meet-bar.saving{background:#2c2c2c;border-color:#444;color:#ddd}
+.meet-bar.saving .dot{animation:none;background:#60a5fa}
+.meet-bar.hidden,.meet-bar button.hidden{display:none}
+@keyframes meetblink{50%{opacity:.25}}
+.dir-ic.meet{font-size:12px}
+.h-meet-len{color:#888;font-size:12px;margin-left:4px}
+.h-meet-state{color:#f87171;font-size:11px;margin-left:6px}
+.meet-notes{color:#ddd;font-size:13px;margin-bottom:6px}
+.meet-notes ul{margin:2px 0 6px 18px;padding:0}
+.meet-notes p{margin:4px 0}
+.meet-err{color:#f87171}
 .install-tip{margin:0 16px 8px;padding:10px 12px;border-radius:10px;background:#1a1a1a;border:1px solid #333;font-size:12px;color:#ccc;display:flex;align-items:center;gap:8px}
 .install-tip button{margin-left:auto;background:none;border:none;color:#999;font-size:14px;cursor:pointer;flex-shrink:0}
 /* entry box */
@@ -457,6 +474,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <button onclick="dismissAppUpdate()" aria-label="Dismiss">✕</button>
   </div>
 
+  <div class="meet-bar hidden" id="meet-bar"><span class="dot"></span><span id="meet-text"></span><button id="meet-pause" onclick="meetPause()">⏸ Pause</button><button class="stop" onclick="meetStop()">⏹ Stop</button></div>
   <div class="route-strip hidden" id="route-strip"><span id="route-text"></span><button id="route-off">Turn off</button></div>
 
   <div class="call-banner hidden" id="call-banner">
@@ -3181,6 +3199,14 @@ function dialAction() {
 }
 function dialOut(num) {
   if (!num) return;
+  var mc = meetingCode(num);
+  if (mc) {
+    routeOverride = null;
+    var di = document.getElementById("dial-input");
+    if (di.value) { di.value = ""; onDialInput(); }
+    startMeeting(mc === "append");
+    return;
+  }
   var pick = routeOverride;
   routeOverride = null;
   if ((pick ? pick.route : autoRoute(num)) === "sim") { simCallOut(num, pick && pick.sim); return; }
@@ -3332,6 +3358,256 @@ function syncSimDurations() {
 }
 document.addEventListener("visibilitychange", function() { if (!document.hidden) setTimeout(syncSimDurations, 1500); });
 document.addEventListener("DOMContentLoaded", function() { setTimeout(syncSimDurations, 3000); });
+// ── Meeting recorder (*91 new meeting, *92 add to the last one) ─
+// Dialling *91 records the room through this device's microphone instead of
+// making a call; *92 records another part of your last meeting. Audio is
+// kept as 16 kHz 16-bit mono in 30 s blocks in IndexedDB (vb_meetings) and
+// uploaded as it goes, so a closed tab loses at most the block in progress;
+// what's left uploads the next time the dashboard opens. When you stop, the
+// worker transcribes and summarises the meeting and emails you the notes
+// (src/meetings.ts). Meetings show in History with 🎙.
+var MEET_RATE = 16000, MEET_BLOCK = MEET_RATE * 30;
+var meet = null, meetUploading = false, meetRetry = 0, meetRetryTimer = null, meetWaiting = 0, meetSaving = "";
+function meetingCode(num) {
+  var n = String(num || "").split(" ").join("");
+  return n === "*91" ? "new" : n === "*92" ? "append" : "";
+}
+var meetDbP = null;
+function meetDb() {
+  if (!meetDbP) meetDbP = new Promise(function(res, rej) {
+    var r = indexedDB.open("vb_meetings", 1);
+    r.onupgradeneeded = function() { r.result.createObjectStore("blocks"); r.result.createObjectStore("finish"); };
+    r.onsuccess = function() { res(r.result); };
+    r.onerror = function() { meetDbP = null; rej(r.error); };
+  });
+  return meetDbP;
+}
+// One IndexedDB request; resolves with its result once the transaction commits.
+function meetIdb(store, mode, fn) {
+  return meetDb().then(function(db) {
+    return new Promise(function(res, rej) {
+      var tx = db.transaction(store, mode), req = fn(tx.objectStore(store));
+      tx.oncomplete = function() { res(req ? req.result : undefined); };
+      tx.onerror = tx.onabort = function() { rej(tx.error || new Error("IndexedDB failed")); };
+    });
+  });
+}
+function pad2(n) { return ("0" + n).slice(-2); }
+function meetLabel(d) {
+  return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }) + ", " + pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+}
+function startMeeting(append) {
+  if (meet) { setStatus("🎙 A meeting is already recording", true); return; }
+  if (currentCall) { setStatus("❌ End the call before recording a meeting", true); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.AudioContext || !window.AudioWorkletNode || !window.indexedDB) {
+    setStatus("❌ This browser can't record meetings", true); return;
+  }
+  var st = { seq: 0, buf: new Int16Array(MEET_BLOCK), fill: 0, samples: 0, paused: false, acc: 0, n: 0, pos: 0 };
+  setStatus(append ? "🎙 Adding to your last meeting…" : "🎙 Starting a meeting…", false);
+  navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: false, noiseSuppression: true, autoGainControl: true } }).then(function(stream) {
+    st.stream = stream;
+    return fetch(API + "/meeting/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ append: !!append, label: meetLabel(new Date()) }) });
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (!d || !d.id) throw new Error((d && d.error) || "the server didn't start it");
+    st.id = d.id; st.part = d.part; st.title = d.title || "Meeting"; st.appended = d.appended;
+    return meetAudio(st);
+  }).then(function() {
+    meet = st;
+    st.timer = setInterval(meetShowState, 1000);
+    meetWake();
+    meetShowState();
+    setStatus(st.appended ? "🎙 Recording part " + st.part + " of " + st.title : (append ? "🎙 No earlier meeting, so this is a new one" : "🎙 Recording the meeting"), false);
+  }).catch(function(e) {
+    meetRelease(st);
+    setStatus("❌ Meeting recording: " + (e && e.message ? e.message : e), true);
+  });
+}
+// Microphone → AudioWorklet → 16 kHz Int16. The context runs at 16 kHz where
+// the browser allows it (it resamples the mic properly); otherwise samples
+// are averaged down here.
+function meetAudio(st) {
+  var ctx, src;
+  try { ctx = new AudioContext({ sampleRate: MEET_RATE }); src = ctx.createMediaStreamSource(st.stream); }
+  catch (e) { if (ctx) ctx.close(); ctx = new AudioContext(); src = ctx.createMediaStreamSource(st.stream); }
+  st.ctx = ctx; st.ratio = ctx.sampleRate / MEET_RATE;
+  var code = "class P extends AudioWorkletProcessor{constructor(){super();this.b=new Float32Array(4096);this.n=0}" +
+    "process(i){var c=i[0]&&i[0][0];if(!c)return true;for(var k=0;k<c.length;k++){this.b[this.n++]=c[k];" +
+    "if(this.n===4096){this.port.postMessage(this.b.slice(0));this.n=0}}return true}}registerProcessor('vb-meet',P)";
+  var url = URL.createObjectURL(new Blob([code], { type: "application/javascript" }));
+  return ctx.audioWorklet.addModule(url).then(function() {
+    var node = new AudioWorkletNode(ctx, "vb-meet");
+    node.port.onmessage = function(e) { meetSamples(st, e.data); };
+    var mute = ctx.createGain();
+    mute.gain.value = 0;
+    src.connect(node); node.connect(mute); mute.connect(ctx.destination);
+    st.node = node;
+    if (ctx.state === "suspended") return ctx.resume();
+  });
+}
+function meetSamples(st, f) {
+  if (st.paused || st.stopped) return;
+  for (var i = 0; i < f.length; i++) {
+    st.acc += f[i]; st.n++; st.pos += 1;
+    if (st.pos < st.ratio) continue;
+    st.pos -= st.ratio;
+    var v = st.acc / st.n;
+    st.acc = 0; st.n = 0;
+    st.buf[st.fill++] = Math.max(-32768, Math.min(32767, Math.round(v * 32767)));
+    st.samples++;
+    if (st.fill === MEET_BLOCK) meetSaveBlock(st);
+  }
+}
+function meetKey(id, part, seq) { return id + "|" + ("00" + part).slice(-3) + "|" + ("0000" + seq).slice(-5); }
+function meetSaveBlock(st) {
+  var data = st.buf.slice(0, st.fill).buffer, key = meetKey(st.id, st.part, st.seq);
+  st.seq++; st.fill = 0;
+  return meetIdb("blocks", "readwrite", function(s) { return s.put(data, key); }).then(function() { meetUpload(); })
+    .catch(function(e) { setStatus("❌ Couldn't save meeting audio: " + e.message, true); });
+}
+function meetPause() {
+  if (!meet) return;
+  meet.paused = !meet.paused;
+  meetShowState();
+}
+function meetStop() {
+  var st = meet;
+  if (!st) return;
+  st.stopped = true;
+  meet = null;
+  var last = st.fill ? meetSaveBlock(st) : Promise.resolve();
+  meetRelease(st);
+  last.then(function() {
+    return meetIdb("finish", "readwrite", function(s) { return s.put({ id: st.id, part: st.part, blocks: st.seq }, st.id + "|" + st.part); });
+  }).then(function() {
+    meetSaving = "Uploading the meeting…";
+    meetShowState();
+    meetUpload();
+  });
+  setStatus("🎙 Meeting stopped: " + fmtDur(st.samples / MEET_RATE) + " recorded", false);
+  setTimeout(function() { if (sipRegistered && !meet) setStatus("✅ Registered", false); }, 5000);
+}
+function meetRelease(st) {
+  if (st.timer) clearInterval(st.timer);
+  if (st.stream) st.stream.getTracks().forEach(function(t) { t.stop(); });
+  if (st.ctx) st.ctx.close().catch(function() {});
+  if (st.wake) { st.wake.release().catch(function() {}); st.wake = null; }
+}
+// Keeps the screen (and so the recording) awake.
+function meetWake() {
+  if (!meet || meet.wake || !navigator.wakeLock) return;
+  navigator.wakeLock.request("screen").then(function(l) { if (meet) { meet.wake = l; l.addEventListener("release", function() { if (meet) meet.wake = null; }); } else l.release(); }).catch(function() {});
+}
+// Uploads the stored blocks oldest first, one at a time; once none are
+// left, sends the pending finishes. Failures retry with a growing delay.
+function meetUpload() {
+  if (meetUploading || !window.indexedDB) return;
+  meetUploading = true;
+  if (meetRetryTimer) { clearTimeout(meetRetryTimer); meetRetryTimer = null; }
+  meetIdb("blocks", "readonly", function(s) { return s.getAllKeys(); }).then(function(keys) {
+    keys.sort();
+    meetWaiting = keys.length;
+    meetShowState();
+    if (!keys.length) return meetFinishPending().then(function() { meetUploading = false; meetRetry = 0; meetShowState(); });
+    var k = keys[0], p = k.split("|");
+    return meetIdb("blocks", "readonly", function(s) { return s.get(k); }).then(function(data) {
+      return fetch(API + "/meeting/block?id=" + encodeURIComponent(p[0]) + "&part=" + parseInt(p[1], 10) + "&seq=" + parseInt(p[2], 10),
+        { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: data });
+    }).then(function(r) {
+      // 404/400: the meeting is gone or the block is unusable, so drop it.
+      if (!r.ok && r.status !== 404 && r.status !== 400) throw new Error("HTTP " + r.status);
+      return meetIdb("blocks", "readwrite", function(s) { return s.delete(k); });
+    }).then(function() { meetUploading = false; meetRetry = 0; meetUpload(); });
+  }).catch(function() {
+    meetUploading = false;
+    meetRetryTimer = setTimeout(meetUpload, Math.min(60000, 3000 * Math.pow(2, meetRetry++)));
+    meetShowState();
+  });
+}
+function meetFinishPending() {
+  return meetIdb("finish", "readonly", function(s) { return s.getAll(); }).then(function(list) {
+    var chain = Promise.resolve();
+    (list || []).forEach(function(f) {
+      chain = chain.then(function() {
+        meetSaving = "Transcribing and summarising the meeting…";
+        meetShowState();
+        return fetch(API + "/meeting/finish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) })
+          .then(function(r) { return r.json().then(function(d) { return { r: r, d: d }; }); })
+          .then(function(x) {
+            if (!x.r.ok && x.r.status !== 404) throw new Error(x.d.error || "HTTP " + x.r.status);
+            var d = x.d;
+            setStatus(d.empty ? "🎙 Meeting saved (no speech heard)" : d.emailed ? "📧 Meeting notes emailed: " + d.title
+              : "🎙 Meeting notes ready" + (d.email_error ? " (not emailed: " + d.email_error + ")" : ""), !!d.email_error);
+            return meetIdb("finish", "readwrite", function(s) { return s.delete(f.id + "|" + f.part); });
+          });
+      });
+    });
+    return chain.then(function() { meetSaving = ""; if (onDialView()) loadHistory(); });
+  });
+}
+function meetShowState() {
+  var bar = document.getElementById("meet-bar");
+  if (!bar) return;
+  var txt = document.getElementById("meet-text"), btns = bar.querySelectorAll("button");
+  if (meet) {
+    var t = fmtDur(meet.samples / MEET_RATE);
+    txt.textContent = (meet.paused ? "Paused · " : "Recording · ") + t + " · " + meet.title + (meet.part > 1 ? " (part " + meet.part + ")" : "") +
+      (meetWaiting > 2 ? " · " + meetWaiting + " blocks waiting to upload" : "");
+    document.getElementById("meet-pause").textContent = meet.paused ? "▶ Resume" : "⏸ Pause";
+  } else if (meetSaving || meetWaiting) {
+    txt.textContent = meetWaiting ? "Uploading the meeting · " + Math.ceil(meetWaiting / 2) + " min left" + (meetRetryTimer ? " (retrying)" : "") : meetSaving;
+  }
+  bar.className = "meet-bar" + (meet ? (meet.paused ? " paused" : "") : (meetSaving || meetWaiting) ? " saving" : " hidden");
+  for (var i = 0; i < btns.length; i++) btns[i].classList.toggle("hidden", !meet);
+}
+window.addEventListener("beforeunload", function(e) { if (meet) { e.preventDefault(); e.returnValue = ""; } });
+document.addEventListener("visibilitychange", function() { if (!document.hidden) { meetWake(); meetUpload(); } });
+document.addEventListener("DOMContentLoaded", function() { setTimeout(meetUpload, 4000); });
+// History rows for meetings: tap to open the notes, recording and transcript.
+function renderMeetingRow(c) {
+  var m = c.meeting, d = new Date(m.started_at);
+  var key = "m-" + m.id;
+  callsCache[key] = c;
+  var state = m.status === "recording" ? '<span class="h-meet-state">recording</span>' : m.error && !m.has_transcript ? '<span class="h-meet-state err" title="' + esc(m.error) + '">failed</span>' : "";
+  return '<div class="hist-row meet-row" data-key="' + esc(key) + '">'
+    + '<div class="hist-main"><span class="dir-ic meet">🎙</span><span class="h-time">' + pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + '</span>'
+    + '<span class="who">' + esc(m.title || "Meeting") + ' <span class="h-meet-len">' + fmtDur(m.seconds) + '</span>' + state + '</span>'
+    + (m.has_summary ? '<button class="h-ic" title="Notes">📝</button>' : '<span class="h-ic"></span>')
+    + (m.has_transcript ? '<button class="h-ic" title="Transcript">💬</button>' : '<span class="h-ic"></span>')
+    + '<button class="h-ic hist-play" title="Play recording">▶</button></div></div>';
+}
+function toggleMeeting(row, c) {
+  var open = row.querySelector(".hist-player");
+  if (open) { closeRecording(open); return; }
+  var prev = document.querySelectorAll(".hist-player");
+  for (var i = 0; i < prev.length; i++) closeRecording(prev[i]);
+  var box = document.createElement("div");
+  box.className = "hist-player";
+  row.appendChild(box);
+  row.querySelector(".hist-play").textContent = "■";
+  box.innerHTML = '<div class="meet-notes">Loading notes…</div><div class="hist-audio">Loading recording…</div><div class="hist-transcript"></div>';
+  var notes = box.querySelector(".meet-notes"), audioBox = box.querySelector(".hist-audio"), tBox = box.querySelector(".hist-transcript");
+  fetch(API + "/meeting?id=" + encodeURIComponent(c.meeting.id)).then(function(r) { return r.json(); }).then(function(d) {
+    var m = d.meeting;
+    if (!m) throw new Error(d.error || "not found");
+    // summary_html is built by the worker from escaped text.
+    notes.innerHTML = (m.summary_html || (m.status === "recording" ? "<p>Notes come when the recording stops and has uploaded.</p>" : "<p>No notes.</p>"))
+      + (m.email_error ? '<p class="meet-err">Not emailed: ' + esc(m.email_error) + '</p>' : "")
+      + (m.error && !m.transcript ? '<p class="meet-err">' + esc(m.error) + '</p>' : "");
+    if (m.transcript) renderTranscript(tBox, {}, m.transcript);
+    else tBox.textContent = m.status === "recording" ? "" : "(no speech detected)";
+  }).catch(function(e) { notes.textContent = "Couldn't load the meeting (" + e.message + ")"; });
+  fetch(API + "/meeting/audio?id=" + encodeURIComponent(c.meeting.id)).then(function(r) {
+    if (!r.ok) throw new Error(r.status === 404 ? "no audio uploaded yet" : "HTTP " + r.status);
+    return r.blob();
+  }).then(function(blob) {
+    if (!box.parentNode) return;
+    var a = document.createElement("audio");
+    a.controls = true;
+    a.src = URL.createObjectURL(blob);
+    audioBox.textContent = "";
+    audioBox.appendChild(a);
+  }).catch(function(e) { audioBox.textContent = "Recording: " + e.message; });
+}
 function loadSims() {
   var SC = simPlugin();
   if (!SC || simList) return Promise.resolve(simList || []);
@@ -3802,7 +4078,11 @@ function loadHistory() {
   var el = document.getElementById("history-list");
   if (historyTxSearch && !q) { el.innerHTML = '<div class="empty">Type words to find in call transcripts</div>'; return; }
   if (!el.querySelector(".hist-row")) el.innerHTML = '<div class="empty">Loading…</div>';
+  // Meetings (🎙) go in among the calls, but not into searches.
+  var meetsP = q ? Promise.resolve([]) : fetch(API + "/meetings?limit=50").then(function(r) { return r.json(); }).then(function(d) { return d.meetings || []; }).catch(function() { return []; });
   fetch(API + "/call-history?limit=" + PV.historyLimit + "&q=" + encodeURIComponent(q) + (historyTxSearch ? "&in=transcript" : "") + "&ext=" + encodeURIComponent(myExtension())).then(function(r){return r.json();}).then(function(d){
+    return meetsP.then(function(meets) { return { calls: mergeMeetings(d.calls || [], meets) }; });
+  }).then(function(d){
     if (q !== historyQuery()) return;
     var calls = d.calls || [];
     if (!calls.length) { el.innerHTML = '<div class="empty">' + (historyTxSearch ? "No transcripts mention that" : q ? "No matching calls" : "No calls yet") + '</div>'; return; }
@@ -3813,6 +4093,17 @@ function loadHistory() {
     var row = keep && el.querySelector('[data-key="' + keep + '"]');
     if (row) row.classList.add("selected");
   }).catch(function(){ el.innerHTML = '<div class="empty">Error loading history</div>'; });
+}
+// Meetings slotted into the call list by start time. With a full page of
+// calls, meetings older than the last call are left out (they'd be out of order).
+function mergeMeetings(calls, meets) {
+  if (!meets.length) return calls;
+  var t = function(c) { return c.start_date || c.create_date || 0; };
+  var oldest = calls.length >= PV.historyLimit && calls.length ? t(calls[calls.length - 1]) : 0;
+  var all = calls.slice();
+  meets.forEach(function(m) { if (m.started_at >= oldest) all.push({ id: "m" + m.id, meeting: m, start_date: m.started_at }); });
+  all.sort(function(a, b) { return t(b) - t(a); });
+  return all;
 }
 function renderHistory(calls) {
   callsCache = {};
@@ -3829,6 +4120,7 @@ function renderHistory(calls) {
 // notes / transcript / recording icons so rows line up. The number only
 // stands in when there's no name.
 function renderHistoryRow(c) {
+  if (c.meeting) return renderMeetingRow(c);
   var dir = c.direction === "outgoing" ? "out" : "in";
   var missed = c.state === "missed" || c.state === "rejected" || c.state === "aborted";
   var name = (c.partner_name || "").trim();
@@ -3887,6 +4179,7 @@ document.getElementById("history-list").addEventListener("click", function(e) {
   var c = callsCache[key];
   if (!c) return;
   if (e.target.closest(".hist-player")) return;
+  if (c.meeting) { toggleMeeting(row, c); return; }
   if (histIconTap(e, row, c)) return;
   // A transcript search hit opens straight into the call's details.
   if (c.match) { selectItem("call", c, key); openCallDetailView(c, { tab: "transcript", highlight: historyQuery() }); return; }

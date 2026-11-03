@@ -21,7 +21,7 @@ const FALLBACK_TRANSLATE_MODEL = "@cf/meta/m2m100-1.2b";
 const TRANSLATE_BATCH = 40; // lines per translation request
 
 interface WhisperSegment { start: number; end: number; text: string }
-interface Line { t: number; label: string; text: string; lang: string; en?: string }
+export interface Line { t: number; label: string; text: string; lang: string; en?: string }
 
 /** Transcribe a call's recording and store it on call_log.transcript, one
  *  "[m:ss] Us: text" line per segment ("[m:ss] text" for old mono
@@ -50,29 +50,43 @@ export async function transcribeCall(env: Env, callId: string): Promise<string> 
     for (let from = 0; from < audio.samples.length; from += step) {
       const samples = audio.samples.subarray(from, from + step);
       if (meanLevel(samples, 0, samples.length) < SILENCE_LEVEL / 10) continue; // a side that said nothing at all
-      const out = await env.AI.run(MODEL, { audio: toBase64(monoWav(samples, audio.rate)) }) as
-        { text?: string; segments?: WhisperSegment[]; transcription_info?: { language?: string } };
-      const lang = out.transcription_info?.language ?? "";
-      const segments = out.segments?.length ? out.segments : (out.text ? [{ start: 0, end: 0, text: out.text }] : []);
-      for (const s of segments) {
-        const text = s.text.trim();
-        if (!text) continue;
-        if (s.end > s.start && meanLevel(samples, Math.floor(s.start * audio.rate), Math.ceil(s.end * audio.rate)) < SILENCE_LEVEL) continue;
-        lines.push({ t: from / audio.rate + s.start, label, text, lang });
-      }
+      lines.push(...await whisperPiece(env, samples, audio.rate, from / audio.rate, label));
     }
   }
   lines.sort((a, b) => a.t - b.t);
-  await translateLines(env, lines.filter(needsTranslation));
-  const transcript = lines.map((l) => `[${fmtTime(l.t)}] ${l.label ? l.label + ": " : ""}${l.text}` +
-    (l.en ? `\n   → ${l.en}` : "")).join("\n");
+  const transcript = await finishLines(env, lines);
   await env.DB.prepare("UPDATE call_log SET transcript = ?1 WHERE call_id = ?2").bind(transcript, callId).run();
   return transcript;
 }
 
+/** Whisper on one piece of audio (at most a few minutes): its non-silent
+ *  segments as lines, timed from `offset` seconds. */
+export async function whisperPiece(env: Env, samples: Int16Array, rate: number, offset: number, label = ""): Promise<Line[]> {
+  const out = await env.AI.run(MODEL, { audio: toBase64(monoWav(samples, rate)) }) as
+    { text?: string; segments?: WhisperSegment[]; transcription_info?: { language?: string } };
+  const lang = out.transcription_info?.language ?? "";
+  const segments = out.segments?.length ? out.segments : (out.text ? [{ start: 0, end: 0, text: out.text }] : []);
+  const lines: Line[] = [];
+  for (const s of segments) {
+    const text = s.text.trim();
+    if (!text) continue;
+    if (s.end > s.start && meanLevel(samples, Math.floor(s.start * rate), Math.ceil(s.end * rate)) < SILENCE_LEVEL) continue;
+    lines.push({ t: offset + s.start, label, text, lang });
+  }
+  return lines;
+}
+
+/** Translate the non-English lines and write them out, one
+ *  "[m:ss] Label: text" line each (plus "   → English" under a translated one). */
+export async function finishLines(env: Env, lines: Line[]): Promise<string> {
+  await translateLines(env, lines.filter(needsTranslation));
+  return lines.map((l) => `[${fmtTime(l.t)}] ${l.label ? l.label + ": " : ""}${l.text}` +
+    (l.en ? `\n   → ${l.en}` : "")).join("\n");
+}
+
 // Whisper's language tag, or failing that any non-Latin script (it sometimes
 // tags a mixed piece "en" while writing a line in Thai).
-function needsTranslation(l: Line): boolean {
+export function needsTranslation(l: Line): boolean {
   // biome-ignore lint/suspicious/noControlCharactersInRegex: \u0000 is just the start of the Latin range
   return (!!l.lang && l.lang !== "en") || /[^\u0000-\u024F\u2000-\u206F\u20AC]/.test(l.text);
 }
@@ -82,7 +96,7 @@ function needsTranslation(l: Line): boolean {
  *  batch it returns misshapen is translated line by line by m2m100 instead.
  *  A "translation" that just repeats the line (English misdetected as
  *  another language) is dropped. */
-async function translateLines(env: Env, lines: Line[]): Promise<void> {
+export async function translateLines(env: Env, lines: Line[]): Promise<void> {
   for (let i = 0; i < lines.length; i += TRANSLATE_BATCH) {
     const batch = lines.slice(i, i + TRANSLATE_BATCH);
     let en: string[] | null = null;
@@ -115,7 +129,7 @@ async function translateLines(env: Env, lines: Line[]): Promise<void> {
   }
 }
 
-function meanLevel(samples: Int16Array, from: number, to: number): number {
+export function meanLevel(samples: Int16Array, from: number, to: number): number {
   from = Math.max(0, from);
   to = Math.min(samples.length, to);
   if (to <= from) return Infinity;
@@ -124,7 +138,7 @@ function meanLevel(samples: Int16Array, from: number, to: number): number {
   return sum / (to - from);
 }
 
-function fmtTime(sec: number): string {
+export function fmtTime(sec: number): string {
   const s = Math.max(0, Math.floor(sec));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }

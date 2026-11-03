@@ -4,6 +4,7 @@ import { searchGmailMessages, searchRecentGmailMessages, getGmailBody, sendGmail
 import { ariRequest, ariParkedCalls } from "./asterisk";
 import { playbackResponse } from "./recording";
 import { transcribeCall } from "./transcribe";
+import { handleMeetingStart, handleMeetingBlock, handleMeetingFinish, handleMeetings, handleMeeting, handleMeetingAudio } from "./meetings";
 import { summarizeCall, keepSummary } from "./summarize";
 import { serveDashboard } from "./dashboard";
 import { handlePushRegister, handlePushStatus, handlePushWake } from "./push";
@@ -885,6 +886,12 @@ export default {
       else if (m === "GET" && p === "/google/status") response = Response.json({ account: await googleAccount(env, user.id) });
       else if (m === "POST" && p === "/extensions/sync") response = Response.json({ extensions: await syncExtensions(env) });
       else if (m === "GET" && p === "/pbx/status") response = await handlePbxStatus(env);
+      else if (m === "POST" && p === "/meeting/start") response = await handleMeetingStart(request, env, user);
+      else if (m === "POST" && p === "/meeting/block") response = await handleMeetingBlock(request, env, user);
+      else if (m === "POST" && p === "/meeting/finish") response = await handleMeetingFinish(request, env, user);
+      else if (m === "GET" && p === "/meetings") response = await handleMeetings(request, env, user);
+      else if (m === "GET" && p === "/meeting") response = await handleMeeting(request, env, user);
+      else if (m === "GET" && p === "/meeting/audio") response = await handleMeetingAudio(request, env, user, ctx);
       else if (request.method === "POST" && url.pathname === "/click2call") response = await handleClick2Call(request, env);
       else if (request.method === "POST" && url.pathname === "/answer") response = await handleAnswer(request, env);
       else if (request.method === "POST" && url.pathname === "/hangup-call") response = await handleHangupCall(request, env);
