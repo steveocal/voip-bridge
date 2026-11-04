@@ -19,6 +19,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(StaffLocationPlugin.class);
         registerPlugin(DeviceContactsPlugin.class);
         registerPlugin(SimCallPlugin.class);
+        registerPlugin(RingerPlugin.class);
         super.onCreate(savedInstanceState);
         markAnswerRequested(getIntent());
         // The WebView can't download files itself. Hand downloads (the app

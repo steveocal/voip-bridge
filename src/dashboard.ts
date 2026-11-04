@@ -1448,9 +1448,20 @@ function closeCallNotification() {
 // do to audio autoplay, so on a completely untouched tab neither may fire.
 // Each ring hangs off ringGain, so stopping cuts off a tone mid-beep without
 // closing the shared context.
-var ringGain = null, ringTimer = null;
+// In the Android app (1.6+) the native Ringer plugin rings instead: the phone's
+// own ringtone on the ringer volume, following silent/vibrate mode. The Web
+// Audio tone is on the media volume and can be silent in the WebView.
+var ringGain = null, ringTimer = null, nativeRinging = false;
+function ringerPlugin() {
+  var Cap = window.Capacitor;
+  if (!Cap || !Cap.isNativePlatform || !Cap.isNativePlatform()) return null;
+  if (Cap.isPluginAvailable && !Cap.isPluginAvailable("Ringer")) return null;
+  return (Cap.Plugins && Cap.Plugins.Ringer) || null;
+}
 function startRingtone() {
   stopRingtone();
+  var R = ringerPlugin();
+  if (R) { nativeRinging = true; R.start().catch(function() {}); return; }
   var ctx = sharedAudio();
   if (ctx) {
     if (ctx.state !== "running") ctx.resume().catch(function() {});
@@ -1479,6 +1490,7 @@ function ringCycle() {
   ringTimer = setTimeout(ringCycle, PV.ringIntervalMs);
 }
 function stopRingtone() {
+  if (nativeRinging) { nativeRinging = false; var R = ringerPlugin(); if (R) R.stop().catch(function() {}); }
   if (ringTimer) { clearTimeout(ringTimer); ringTimer = null; }
   if (ringGain) { try { ringGain.disconnect(); } catch (e) {} ringGain = null; }
   closeCallNotification();
