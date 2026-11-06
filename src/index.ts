@@ -16,6 +16,7 @@ import { type User, sessionUser, handleLogin, handleMe, extensionOwners, extensi
 import { handlePbxStatus, handlePbxSync, handlePbxSynced, pbxAllowed } from "./pbxsync";
 import { handlePbxPrompt } from "./ivr";
 import { handleStaffEmployees, handleStaffLogin, handleStaffLocation } from "./staff";
+import { handleMobileCall, handleMobileCallEvent } from "./mobilecall";
 import { handleWebCallback, handleWebCallbackConfig, handleWebCallbackStatus, handleWebCallbackEvent } from "./webcallback";
 
 // Durable Object class must be exported from the entrypoint module.
@@ -230,7 +231,7 @@ type CallRow = Record<string, unknown>;
 async function mergeCallLegs(env: Env, rows: CallRow[], viewer: User): Promise<CallRow[]> {
   const owners = await extensionOwners(env);
   return groupCallLegs(rows).filter((legs) => canSee(legs, owners, viewer)).map((legs) => {
-    if (legs.length === 1) return legs[0];
+    if (legs.length === 1) return { ...legs[0], leg_ids: [legs[0].id] };
     const trunkLeg = legs.find(l => l.did);
     const answered = legs.find(l => !l.did && (l.state === "terminated" || l.state === "ongoing"));
     const primary = legs.find(l => l.has_notes) ?? answered ?? trunkLeg ?? legs[0];
@@ -243,8 +244,40 @@ async function mergeCallLegs(env: Env, rows: CallRow[], viewer: User): Promise<C
     for (const f of ["has_notes", "has_recording", "has_transcript", "voicemail"]) out[f] = legs.some(l => Number(l[f])) ? 1 : 0;
     for (const f of ["partner_id", "partner_name", "partner_email", "match"]) out[f] = legs.find(l => l[f])?.[f] ?? primary[f];
     out.rec_call_id = rec.call_id;
+    out.leg_ids = legs.map(l => l.id);
     return out;
   });
+}
+
+// Calls the viewer swiped away (migrations/0019_call_hidden.sql): deleted
+// ones always go; archived ones only when `archivedToo` (plain History).
+async function dropHidden(env: Env, calls: CallRow[], viewer: User, archivedToo: boolean): Promise<CallRow[]> {
+  const r = await env.DB.prepare("SELECT call_log_id, kind FROM call_hidden WHERE user_id = ?1").bind(viewer.id).all<{ call_log_id: number; kind: string }>();
+  const hidden = new Map((r.results || []).map(h => [Number(h.call_log_id), h.kind]));
+  if (!hidden.size) return calls;
+  return calls.filter(c => !(c.leg_ids as unknown[] || [c.id]).some(id => {
+    const k = hidden.get(Number(id));
+    return k === "deleted" || (k === "archived" && archivedToo);
+  }));
+}
+
+/** POST /call-history/hide {id, kind: archived|deleted|restore} — id is any
+ *  leg's call_log.id. Every leg is marked so the call stays hidden whichever
+ *  leg ends up primary. */
+async function handleHideCall(request: Request, env: Env, user: User): Promise<Response> {
+  let body: { id?: unknown; ids?: unknown; kind?: unknown };
+  try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
+  const ids = (Array.isArray(body.ids) ? body.ids : [body.id]).map(Number).filter(n => Number.isInteger(n) && n > 0).slice(0, 20);
+  const kind = String(body.kind ?? "");
+  if (!ids.length || !["archived", "deleted", "restore"].includes(kind)) return Response.json({ error: "id and kind needed" }, { status: 400 });
+  const now = Date.now();
+  await env.DB.batch(ids.map(id => kind === "restore"
+    ? env.DB.prepare("DELETE FROM call_hidden WHERE user_id = ?1 AND call_log_id = ?2").bind(user.id, id)
+    : env.DB.prepare(
+        `INSERT INTO call_hidden (user_id, call_log_id, kind, at) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(user_id, call_log_id) DO UPDATE SET kind = excluded.kind, at = excluded.at`
+      ).bind(user.id, id, kind, now)));
+  return Response.json({ ok: true });
 }
 
 async function handleCallHistory(request: Request, env: Env, user: User): Promise<Response> {
@@ -280,7 +313,8 @@ async function handleCallHistory(request: Request, env: Env, user: User): Promis
       `${select} ORDER BY COALESCE(c.start_date, c.create_date) DESC LIMIT ?1`
     ).bind(limit).all<Record<string, unknown>>();
   }
-  return Response.json({ calls: (await mergeCallLegs(env, rows.results || [], user)).slice(0, want) });
+  const calls = await dropHidden(env, await mergeCallLegs(env, rows.results || [], user), user, !q);
+  return Response.json({ calls: calls.slice(0, want) });
 }
 
 // ── Naming calls: link call_log rows to contacts by phone number ──
@@ -796,7 +830,7 @@ async function handleContactDetail(env: Env, id: number, cachedOnly: boolean, us
     `${CALL_HISTORY_SELECT} WHERE ${where} ORDER BY COALESCE(c.start_date, c.create_date) DESC LIMIT 100`
   ).bind(id, ...keys.map(k => `%${k}%`)).all<Record<string, unknown>>();
 
-  return Response.json({ contact, totals, calls: await mergeCallLegs(env, calls.results || [], user) });
+  return Response.json({ contact, totals, calls: await dropHidden(env, await mergeCallLegs(env, calls.results || [], user), user, false) });
 }
 
 // Handwritten Jot page (PNG/JPEG data: URL) → plain text.
@@ -860,6 +894,7 @@ export default {
     else if (request.method === "GET" && url.pathname === "/web-callback/config") response = handleWebCallbackConfig();
     else if (request.method === "GET" && url.pathname === "/web-callback/status") response = await handleWebCallbackStatus(request, env);
     else if (request.method === "POST" && url.pathname === "/web-callback") response = await handleWebCallback(request, env, ctx);
+    else if (m === "POST" && p === "/mobile-call/event") response = await handleMobileCallEvent(request, env, ctx);
     else if (request.method === "POST" && url.pathname === "/web-callback/event") response = await handleWebCallbackEvent(request, env, ctx);
     else if (request.method === "GET" && url.pathname === "/staff/employees") response = await handleStaffEmployees(env);
     else if (request.method === "POST" && url.pathname === "/staff/login") response = await handleStaffLogin(request, env);
@@ -902,6 +937,8 @@ export default {
       else if (request.method === "POST" && url.pathname === "/settings") response = await handleSetSettings(request, env, user);
       else if (request.method === "GET" && url.pathname === "/active-calls") response = await handleActiveCalls(request, env);
       else if (request.method === "GET" && url.pathname === "/call-history") response = await handleCallHistory(request, env, user);
+      else if (m === "POST" && p === "/call-history/hide") response = await handleHideCall(request, env, user);
+      else if (m === "POST" && p === "/mobile-call") response = await handleMobileCall(request, env, user);
       else if (request.method === "POST" && url.pathname === "/call-history/resolve-names") response = await handleResolveHistoryNames(env);
       else if (request.method === "POST" && url.pathname === "/call-history/create-missing-contacts") response = await handleCreateMissingContacts(env);
       else if (request.method === "GET" && url.pathname === "/call-notes") response = await handleGetCallNotes(request, env, user);

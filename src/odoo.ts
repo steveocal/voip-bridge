@@ -345,11 +345,15 @@ export async function userActivities(env: Env, userId: number, limit = 100): Pro
     if (!byModel.has(m)) byModel.set(m, []);
     byModel.get(m)!.push(a.res_id as number);
   }
+  const unreadable = new Set<string>();
   for (const [model, ids] of byModel) {
     const fg = await odooCall(env, uid, model, "fields_get", [], { attributes: ["type"] });
     const have = (fg.parsed ?? {}) as Record<string, unknown>;
     const fields = [...ACTIVITY_PHONE_FIELDS, "partner_id"].filter(f => f in have);
     const rr = await odooCall(env, uid, model, "read", [ids], { fields: [...fields, "display_name"] });
+    // An access error on one model must not hide its activities: they
+    // are still listed, just without a number to ring.
+    if (rr.fault) { console.error(`Activities: cannot read ${model}:`, rr.fault); unreadable.add(model); continue; }
     for (const rec of (rr.parsed ?? []) as Array<Record<string, unknown>>) records.set(`${model}:${rec.id}`, rec);
   }
   // Contacts of records without a number of their own.
@@ -366,7 +370,7 @@ export async function userActivities(env: Env, userId: number, limit = 100): Pro
   const out: UserActivity[] = [];
   for (const a of acts) {
     const model = s(a.res_model), resId = a.res_id as number;
-    const rec = records.get(`${model}:${resId}`);
+    const rec = records.get(`${model}:${resId}`) ?? (unreadable.has(model) ? { display_name: a.res_name } : undefined);
     if (!rec) continue; // record deleted
     let phone = "";
     for (const f of ACTIVITY_PHONE_FIELDS) if (rec[f]) { phone = s(rec[f]); break; }

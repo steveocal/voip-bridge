@@ -303,6 +303,23 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 .hist-toolbar{display:flex;gap:6px;padding:6px 0 8px;position:sticky;top:0;z-index:5;background:#000}
 .hist-toolbar button{flex:1;padding:10px 2px;border:none;border-radius:10px;background:#2c2c2c;color:#ececec;font-size:13px;cursor:pointer;white-space:nowrap}
 .hist-toolbar button:disabled{opacity:.35;cursor:default}
+/* 📱 call via / move to my mobile: white outline handset */
+.mob-ic{width:26px;height:26px;display:block;flex-shrink:0}
+.hist-toolbar .mob-btn{flex:0 0 52px;padding:4px 0;display:flex;align-items:center;justify-content:center}
+.hist-toolbar .mob-btn.hidden{display:none}
+.hist-toolbar .mob-btn.busy{opacity:.5}
+#ctl-mobile{display:flex;align-items:center;justify-content:center;gap:5px;padding:5px 6px}
+#ctl-mobile.hidden{display:none}
+/* History swipes: ← archive, → delete; undo toast */
+#history-list{position:relative}
+.hist-row.swiping,.hist-row.swipe-back,.hist-row.swipe-go{position:relative;z-index:1;background:#000}
+.hist-row.swiping{transition:none}
+.hist-row.swipe-go{transition:transform .18s ease-out,opacity .18s ease-out;opacity:0}
+.hist-row.swipe-back{transition:transform .15s ease-out}
+.hist-swipe-bg{position:absolute;top:0;bottom:0;display:flex;align-items:center;font-size:13px;font-weight:600;padding:0 16px;pointer-events:none}
+.vb-toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:14px;max-width:92vw;padding:10px 14px;border-radius:12px;background:#2c2c2c;color:#ececec;font-size:14px;box-shadow:0 6px 24px rgba(0,0,0,.6)}
+.vb-toast.hidden{display:none}
+.vb-toast button{background:none;border:none;color:#4db8ff;font-weight:700;font-size:14px;cursor:pointer;padding:4px}
 .hist-toolbar button.green:not(:disabled){background:linear-gradient(135deg,#34d399,#10b981);color:#04210f;font-weight:600}
 /* action bar */
 .action-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:76px;background:#1a1a1a;border:1px solid #2c2c2c;border-radius:14px;padding:8px;display:flex;gap:8px;z-index:45;box-shadow:0 8px 30px rgba(0,0,0,.6);max-width:94vw}
@@ -491,7 +508,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <button id="ctl-xfer" onclick="openTransfer()">↪ Transfer</button>
     <button id="ctl-add" onclick="openAddCall()">➕ Add</button>
     <button id="ctl-park" onclick="parkCall()">🅿 Park</button>
-    <button id="ctl-mobile" onclick="moveToMobile()">📱 Mobile</button>
+    <button id="ctl-mobile" onclick="moveToMobile()" title="Move this call to my mobile"><svg class="mob-ic" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6.5" y="2" width="11" height="20" rx="2.5"/><path d="M10.5 18.6h3"/></svg>Mobile</button>
   </div>
   <div class="xfer hidden" id="xfer-panel">
     <div class="row"><input id="xfer-input" type="tel" placeholder="Extension or number" autocomplete="off"><button class="x" onclick="closeTransfer()" aria-label="Close">✕</button></div>
@@ -513,6 +530,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
         <button data-action="email" onclick="histAction('email')" disabled>✉️ Email</button>
         <button data-action="details" onclick="histAction('details')" disabled>📄 Details</button>
         <button data-action="contact" onclick="histAction('contact')" disabled>👤 Contact</button>
+        <button class="mob-btn hidden" id="hist-mobile" data-action="mobile" onclick="callViaMobile()" title="Call via my mobile: rings your mobile, then the number in the box (or the last one you called)" aria-label="Call via my mobile"><svg class="mob-ic" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6.5" y="2" width="11" height="20" rx="2.5"/><path d="M10.5 18.6h3"/></svg></button>
       </div>
       <div class="dial-scroll" id="history-list"><div class="empty">Loading…</div></div>
       <div class="dial-scroll suggestions hidden" id="dial-suggestions"></div>
@@ -797,7 +815,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     </div>
 
     <div class="set-field">
-      <label>My mobile — 📱 Mobile during a call transfers the caller here</label>
+      <label>My mobile — during a call, Mobile moves the caller here; otherwise the mobile button rings it, then calls the number</label>
       <input id="set-mobile" type="tel" placeholder="+66…" autocomplete="off">
     </div>
 
@@ -1544,6 +1562,7 @@ function navDialAction() {
   updateDialBottomVisibility();
 }
 document.addEventListener("DOMContentLoaded", updateDialBottomVisibility);
+document.addEventListener("DOMContentLoaded", function() { updateMobileBtn(); });
 
 function switchView(name) {
   if (name === "history") name = "dial"; // History and the dialpad are one screen now
@@ -3959,6 +3978,135 @@ function moveToMobile() {
   noteTransfer("Moved to mobile " + num);
   referTo(sipSession, sipTarget(num));
 }
+// Not on a call: ring my mobile, then the number in the box (typed, or
+// picked from History) — or, with the box empty, the last number I called —
+// and join us. One small request; Asterisk carries the call (see
+// src/mobilecall.ts), so it works when the internet is too poor for VoIP.
+function updateMobileBtn() {
+  var b = document.getElementById("hist-mobile");
+  if (b) b.classList.toggle("hidden", !settings.mobileNumber);
+}
+var mobileCallBusy = false;
+function callViaMobile() {
+  if (currentCall) { moveToMobile(); return; }
+  if (mobileCallBusy) return;
+  if (!settings.mobileNumber) { showToast("Set “My mobile” in Settings first"); return; }
+  var num = historyTxSearch ? "" : document.getElementById("dial-input").value.trim();
+  var btn = document.getElementById("hist-mobile");
+  mobileCallBusy = true; btn.classList.add("busy");
+  showToast("📱 Ringing your mobile…");
+  fetch(API + "/mobile-call", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ number: num }) })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!d || d.error) { showToast("❌ " + ((d && d.error) || "Couldn't start the call")); return; }
+      showToast("📱 Answer your mobile — then it calls " + d.target, null, 9000);
+      var di = document.getElementById("dial-input");
+      if (di.value) { di.value = ""; onDialInput(); }
+      setTimeout(loadHistory, 1500);
+    })
+    .catch(function() { showToast("❌ No connection — couldn't start the call"); })
+    .then(function() { mobileCallBusy = false; btn.classList.remove("busy"); });
+}
+// A message above the bottom bar, with an optional action (Undo).
+var toastTimer = null;
+function showToast(text, action, ms) {
+  var t = document.getElementById("vb-toast");
+  if (!t) { t = document.createElement("div"); t.id = "vb-toast"; t.className = "vb-toast hidden"; document.body.appendChild(t); }
+  clearTimeout(toastTimer);
+  t.innerHTML = "<span></span>";
+  t.firstChild.textContent = text;
+  if (action) {
+    var b = document.createElement("button");
+    b.textContent = action.label;
+    b.onclick = function() { t.classList.add("hidden"); action.run(); };
+    t.appendChild(b);
+  }
+  t.classList.remove("hidden");
+  toastTimer = setTimeout(function() { t.classList.add("hidden"); }, ms || 5000);
+}
+
+// History swipes: left archives the call (gone from History, still found
+// by a search), right deletes it (gone from searches too). Both are only for
+// this user, and Undo puts the row back.
+(function() {
+  var list = document.getElementById("history-list");
+  var row = null, x0 = 0, y0 = 0, dx = 0, mode = "", bg = null;
+  var THRESH = 90;
+  list.addEventListener("touchstart", function(e) {
+    if (e.touches.length !== 1) return;
+    var r = e.target.closest(".hist-row");
+    if (!r || r.classList.contains("meet-row") || r.querySelector(".hist-player")) return;
+    row = r; x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; mode = "";
+  }, { passive: true });
+  list.addEventListener("touchmove", function(e) {
+    if (!row) return;
+    var mx = e.touches[0].clientX - x0, my = e.touches[0].clientY - y0;
+    if (!mode) {
+      if (Math.abs(mx) < 12 && Math.abs(my) < 12) return;
+      mode = Math.abs(mx) > Math.abs(my) * 1.5 ? "swipe" : "scroll";
+      if (mode === "scroll") { row = null; return; }
+      row.classList.add("swiping");
+      bg = document.createElement("div");
+      bg.className = "hist-swipe-bg";
+      row.parentNode.insertBefore(bg, row);
+    }
+    e.preventDefault();
+    dx = mx;
+    row.style.transform = "translateX(" + dx + "px)";
+    var del = dx > 0;
+    bg.style.top = row.offsetTop + "px"; bg.style.height = row.offsetHeight + "px"; bg.style.bottom = "auto";
+    bg.style.left = "0"; bg.style.right = "0";
+    bg.style.justifyContent = del ? "flex-start" : "flex-end";
+    var past = Math.abs(dx) > THRESH;
+    bg.style.background = del ? (past ? "#b91c1c" : "#4c1d1d") : (past ? "#1d4ed8" : "#1e2a4a");
+    bg.style.color = "#fff";
+    bg.textContent = del ? "🗑 Delete" : "Archive 🗄";
+  }, { passive: false });
+  function end() {
+    if (!row || mode !== "swipe") { row = null; return; }
+    var r = row, b = bg, d = dx;
+    row = null; bg = null;
+    r.classList.remove("swiping");
+    if (Math.abs(d) <= THRESH) {
+      r.classList.add("swipe-back"); r.style.transform = "";
+      setTimeout(function() { r.classList.remove("swipe-back"); if (b) b.remove(); }, 160);
+      return;
+    }
+    // A tap mustn't also fire once the finger lifts.
+    r.dataset.swiped = "1";
+    setTimeout(function() { delete r.dataset.swiped; }, 400);
+    r.classList.add("swipe-go");
+    r.style.transform = "translateX(" + (d > 0 ? "110%" : "-110%") + ")";
+    setTimeout(function() { if (b) b.remove(); hideHistoryRow(r, d > 0 ? "deleted" : "archived"); }, 180);
+  }
+  list.addEventListener("touchend", end);
+  list.addEventListener("touchcancel", end);
+})();
+function hideHistoryRow(row, kind) {
+  var c = callsCache[row.getAttribute("data-key")];
+  if (!c) return;
+  var ids = c.leg_ids || [c.id];
+  if (selected && selected.type === "call" && selected.data === c) { deselect(); setPickedNumber(""); }
+  var next = row.nextElementSibling, prev = row.previousElementSibling, parent = row.parentNode;
+  row.remove();
+  // Drop a day heading left with no calls under it.
+  var orphanHead = prev && prev.classList.contains("day-head") && (!next || next.classList.contains("day-head")) ? prev : null;
+  if (orphanHead) orphanHead.remove();
+  function post(k) {
+    return fetch(API + "/call-history/hide", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: ids, kind: k }) })
+      .then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); });
+  }
+  post(kind).catch(function() { showToast("❌ Couldn't " + (kind === "deleted" ? "delete" : "archive") + " the call"); loadHistory(); });
+  showToast(kind === "deleted" ? "Call deleted" : "Call archived — search still finds it", {
+    label: "Undo",
+    run: function() {
+      row.classList.remove("swipe-go"); row.style.transform = "";
+      if (orphanHead) parent.insertBefore(orphanHead, next);
+      parent.insertBefore(row, next);
+      post("restore").catch(function() { showToast("❌ Couldn't undo"); }).then(loadHistory);
+    }
+  }, 6000);
+}
 // A line in the call notes saying where the call went.
 function noteTransfer(text) {
   var line = "<p><i>" + esc(text) + " at " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + "</i></p>";
@@ -4054,6 +4202,7 @@ function renderCallUI() {
   document.getElementById("call-ctl").classList.toggle("hidden", !active || !!consultSession);
   // A conference leg can't be transferred, parked or moved, only added to.
   document.getElementById("ctl-mobile").classList.toggle("hidden", !settings.mobileNumber || conf);
+  updateMobileBtn();
   document.getElementById("ctl-xfer").classList.toggle("hidden", conf);
   document.getElementById("ctl-park").classList.toggle("hidden", conf);
   document.getElementById("ctl-hold").classList.toggle("on", onHold);
@@ -4198,7 +4347,7 @@ function fmtDay(ts) {
 
 document.getElementById("history-list").addEventListener("click", function(e) {
   var row = e.target.closest(".hist-row");
-  if (!row) return;
+  if (!row || row.dataset.swiped) return;
   var key = row.getAttribute("data-key");
   var c = callsCache[key];
   if (!c) return;
@@ -4318,7 +4467,7 @@ function histSelectedCall() { return (selected && selected.type === "call") ? se
 function histNumber(c) { return (c.phone_number && c.phone_number !== "unknown") ? c.phone_number : (c.did || ""); }
 function updateHistToolbar() {
   var c = histSelectedCall();
-  var can = { email: !!(c && c.partner_email), details: !!c, contact: !!(c && c.partner_id) };
+  var can = { email: !!(c && c.partner_email), details: !!c, contact: !!(c && c.partner_id), mobile: true };
   var btns = document.querySelectorAll("#hist-toolbar button");
   for (var i = 0; i < btns.length; i++) btns[i].disabled = !can[btns[i].getAttribute("data-action")];
 }
@@ -5830,6 +5979,7 @@ function applyAndReconnect() {
   settings.quickText = document.getElementById("set-quicktext").value;
   settings.mobileNumber = document.getElementById("set-mobile").value.trim();
   saveSettings();
+  updateMobileBtn();
   settingsBackup = null;
   closeSettings();
   teardownSoftphone();
@@ -6121,6 +6271,7 @@ function boot() {
     if (s.devMode === "1") settings.devMode = true;
     if (s.quickText) settings.quickText = s.quickText;
     if (s.mobileNumber) settings.mobileNumber = s.mobileNumber;
+    updateMobileBtn();
     if (s.favourites) {
       try {
         var f = JSON.parse(s.favourites);
