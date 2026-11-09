@@ -187,7 +187,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .bottom-menu{display:flex;border-top:1px solid #222;background:#0a0a0a;padding:6px 0 env(safe-area-inset-bottom)}
 .menu-btn{flex:1;background:none;border:none;color:#888;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;font-size:10px}
 .menu-btn .ico{font-size:20px}
+.menu-btn svg.ico{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .menu-btn.active{color:#4db8ff}
+/* during a call the bar is Hold, Mute, hang up, Speaker, Menu */
+.bottom-menu.in-call .idle-only,.bottom-menu:not(.in-call) .call-only{display:none}
+.menu-btn.on{color:#f0a33c}
+.menu-btn:disabled{opacity:.35;cursor:default}
+.menu-btn .alt,.menu-btn.on .norm{display:none}
+.menu-btn.on .alt{display:inline}
+.dial-fab .fab svg.ph{width:30px;height:30px;fill:none;stroke:#fff;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;transition:transform .15s}
+.dial-fab.in-call .fab svg.ph{transform:rotate(135deg)}
 /* big green handset button in the bottom bar: dials a typed number, otherwise opens the keypad; red during a call = hang up */
 .dial-fab{flex:1;background:none;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
 .dial-fab .fab{width:64px;height:64px;margin:-26px 0 -4px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:30px;background:linear-gradient(135deg,#34d399,#10b981);box-shadow:0 4px 18px rgba(16,185,129,.45)}
@@ -504,7 +513,6 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <button class="end" onclick="hangup()">📴</button>
   </div>
   <div class="call-ctl hidden" id="call-ctl">
-    <button id="ctl-hold" onclick="toggleHold()">⏸ Hold</button>
     <button id="ctl-xfer" onclick="openTransfer()">↪ Transfer</button>
     <button id="ctl-add" onclick="openAddCall()">➕ Add</button>
     <button id="ctl-park" onclick="parkCall()">🅿 Park</button>
@@ -731,12 +739,16 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     </div>
   </div>
 
-  <nav class="bottom-menu">
-    <button class="menu-btn active" data-view="dial" onclick="switchView('dial')"><span class="ico">🕐</span><span>History</span></button>
-    <button class="menu-btn" data-view="activities" onclick="switchView('activities')"><span class="ico">📋</span><span>Activities</span><b class="nav-badge hidden" id="act-badge"></b></button>
-    <button class="dial-fab" id="nav-dial" onclick="navDialAction()" aria-label="Dial"><span class="fab">📞</span></button>
-    <button class="menu-btn" data-view="contacts" onclick="switchView('contacts')"><span class="ico">👥</span><span>Contacts</span></button>
-    <button class="menu-btn" data-view="messages" onclick="switchView('messages')"><span class="ico">✉️</span><span>Emails</span></button>
+  <nav class="bottom-menu" id="bottom-menu">
+    <button class="menu-btn idle-only active" data-view="dial" onclick="navHistory()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4.5v4h4"/><path d="M12 7.5V12l3 2"/></svg><span>History</span></button>
+    <button class="menu-btn idle-only" data-view="activities" onclick="switchView('activities')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V2.8h6V4"/><path d="M9 12.5l2 2 4-4"/></svg><span>Activities</span><b class="nav-badge hidden" id="act-badge"></b></button>
+    <button class="menu-btn call-only" id="nav-hold" onclick="toggleHold()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><g class="norm"><path d="M9 5.5v13"/><path d="M15 5.5v13"/></g><path class="alt" d="M8 5.5l11 6.5-11 6.5z"/></svg><span class="norm">Hold</span><span class="alt">Resume</span></button>
+    <button class="menu-btn call-only" id="nav-mute" onclick="toggleMute()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/><path class="alt" d="M4 4l16 16"/></svg><span class="norm">Mute</span><span class="alt">Muted</span></button>
+    <button class="dial-fab" id="nav-dial" onclick="navDialAction()" aria-label="Dial"><span class="fab"></span></button>
+    <button class="menu-btn idle-only" data-view="contacts" onclick="switchView('contacts')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8"/><path d="M18.2 14.4c2 .8 3.3 2.8 3.3 5.6"/></svg><span>Contacts</span></button>
+    <button class="menu-btn idle-only" data-view="messages" onclick="switchView('messages')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6.5 8.5-6.5"/></svg><span>Emails</span></button>
+    <button class="menu-btn call-only" id="nav-speaker" onclick="toggleSpeaker()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6"/><path d="M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/></svg><span>Speaker</span></button>
+    <button class="menu-btn call-only" id="nav-callmenu" onclick="toggleCallMenu()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg><span>Menu</span></button>
   </nav>
   <div class="action-bar hidden" id="action-bar"></div>
 </div>
@@ -1553,6 +1565,16 @@ var dialKeypadOpen = true;
 var DIALPAD_ICON = '<svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor" aria-hidden="true">'
   + [3, 9, 15, 21].map(function(y) { return [5, 12, 19].map(function(x) { return '<circle cx="' + x + '" cy="' + y + '" r="2.3"/>'; }).join(""); }).join("")
   + '</svg>';
+var PHONE_ICON = '<svg class="ph" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.2 3.5h3.3l1.6 4.4-2.1 1.5a11.5 11.5 0 0 0 6.6 6.6l1.5-2.1 4.4 1.6v3.3a2 2 0 0 1-2.1 2A16.9 16.9 0 0 1 3.2 5.6a2 2 0 0 1 2-2.1z"/></svg>';
+// History pressed while History is already showing clears the box.
+function navHistory() {
+  if (onDialView()) {
+    var inp = document.getElementById("dial-input");
+    if (inp.value) { inp.value = ""; onDialInput(); if (historyTxSearch) loadHistory(); }
+    return;
+  }
+  switchView("dial");
+}
 function onDialView() { return !document.getElementById("view-dial").classList.contains("hidden"); }
 function navDialAction() {
   if (currentCall) { hangup(); return; }
@@ -3765,7 +3787,8 @@ function resetCall() {
   flushCallSave();
   if (heldSession) { try { heldSession.dispose(); } catch(e) {} heldSession = null; }
   if (consultSession) { endSession(consultSession); consultSession = null; }
-  sipSession = null; currentCall = null; onHold = false; muted = false;
+  sipSession = null; currentCall = null; onHold = false; muted = false; callMenuOpen = false;
+  if (speakerOn) setSpeaker(false);
   closeTransfer();
   // The number just called shouldn't sit in the box after the call.
   var dialInp = document.getElementById("dial-input");
@@ -3817,6 +3840,60 @@ function holdLeg(hold) {
     });
   } catch (e) {}
   return Promise.resolve();
+}
+// ── in-call bottom bar: Hold, Mute, hang up, Speaker, Menu ─────
+// Mute stops sending the mic on every leg (the call, and a consult call when
+// there is one). Speaker needs the app (Ringer.speaker routes the call to
+// the loudspeaker); a browser plays through whatever output it has, so
+// there it is greyed out. Menu shows the Transfer / Add / Park / Mobile row.
+var speakerOn = false, callMenuOpen = false;
+function applyMicState() {
+  [sipSession, consultSession].forEach(function(s) {
+    if (!s) return;
+    var held = s === sipSession && onHold && !consultSession;
+    try {
+      s.sessionDescriptionHandler.peerConnection.getSenders().forEach(function(sn) {
+        if (sn.track && sn.track.kind === "audio") sn.track.enabled = !held && !muted;
+      });
+    } catch (e) {}
+  });
+}
+function toggleMute() {
+  if (!currentCall) return;
+  muted = !muted;
+  applyMicState();
+  renderCallBar();
+}
+function setSpeaker(on) {
+  speakerOn = on;
+  var R = ringerPlugin();
+  if (R && R.speaker) R.speaker({ on: on }).catch(function() { speakerOn = false; renderCallBar(); setStatus("❌ Speaker needs app 1.7", true); });
+  renderCallBar();
+}
+function toggleSpeaker() {
+  if (!currentCall || !ringerPlugin()) return;
+  setSpeaker(!speakerOn);
+}
+function toggleCallMenu() {
+  if (!currentCall) return;
+  callMenuOpen = !callMenuOpen;
+  renderCallUI();
+}
+function renderCallBar() {
+  var active = !!(currentCall && currentCall.state === "active");
+  var hold = document.getElementById("nav-hold");
+  hold.classList.toggle("on", onHold);
+  hold.disabled = !active || !!consultSession;
+  var mute = document.getElementById("nav-mute");
+  mute.classList.toggle("on", muted);
+  mute.disabled = !active;
+  var spk = document.getElementById("nav-speaker");
+  spk.classList.toggle("on", speakerOn);
+  spk.disabled = !currentCall || !ringerPlugin();
+  spk.title = ringerPlugin() ? "" : "Speaker works in the phone app";
+  var menu = document.getElementById("nav-callmenu");
+  menu.classList.toggle("active", callMenuOpen);
+  menu.disabled = !active || !!consultSession;
 }
 function toggleHold() {
   if (!sipSession || !inCall() || consultSession) return;
@@ -4163,7 +4240,9 @@ function updateDialBottomVisibility() {
   fab.classList.toggle("in-call", inAnyCall);
   fab.classList.toggle("pad", pad);
   fab.setAttribute("aria-label", inAnyCall ? "Hang up" : pad ? "Keypad" : "Dial");
-  fab.querySelector(".fab").innerHTML = pad ? DIALPAD_ICON : "📞";
+  fab.querySelector(".fab").innerHTML = pad ? DIALPAD_ICON : PHONE_ICON;
+  document.getElementById("bottom-menu").classList.toggle("in-call", inAnyCall);
+  renderCallBar();
   document.getElementById("dialpad").classList.toggle("hidden", inAnyCall || !dialKeypadOpen);
   document.getElementById("dial-entry").classList.toggle("hidden", inAnyCall || !(dialKeypadOpen || hasNum || historyTxSearch));
   document.getElementById("dial-callbar").classList.toggle("hidden", inAnyCall);
@@ -4199,14 +4278,13 @@ function renderCallUI() {
   var active = currentCall.state === "active";
   if (conf) document.getElementById("banner-state").textContent = !sipSession ? "👥 Merging…" : onHold ? "👥 Conference · you're muted" : "👥 Conference";
   else if (onHold && !consultSession) document.getElementById("banner-state").textContent = "⏸ On hold";
-  document.getElementById("call-ctl").classList.toggle("hidden", !active || !!consultSession);
+  document.getElementById("call-ctl").classList.toggle("hidden", !active || !!consultSession || !callMenuOpen);
   // A conference leg can't be transferred, parked or moved, only added to.
   document.getElementById("ctl-mobile").classList.toggle("hidden", !settings.mobileNumber || conf);
   updateMobileBtn();
   document.getElementById("ctl-xfer").classList.toggle("hidden", conf);
   document.getElementById("ctl-park").classList.toggle("hidden", conf);
-  document.getElementById("ctl-hold").classList.toggle("on", onHold);
-  document.getElementById("ctl-hold").textContent = onHold ? "▶ Resume" : "⏸ Hold";
+  renderCallBar();
   document.getElementById("consult-bar").classList.toggle("hidden", !consultSession);
   if (consultSession) {
     var up = consultSession.state === SIP.SessionState.Established;

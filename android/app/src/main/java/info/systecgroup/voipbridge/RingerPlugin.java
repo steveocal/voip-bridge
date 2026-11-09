@@ -2,6 +2,7 @@ package info.systecgroup.voipbridge;
 
 import android.content.Context;
 import android.media.AudioAttributes;
+import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.media.Ringtone;
 import android.media.RingtoneManager;
@@ -25,6 +26,8 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  * mode, the same as a SIM call.
  * start() starts the ringtone and vibration (looped). stop() ends both.
  * The ring stops by itself after MAX_RING_MS in case stop() never arrives.
+ * speaker({on}) (app 1.7) puts the call's audio on the loudspeaker or back on
+ * the earpiece; the dashboard turns it off when the call ends.
  */
 @CapacitorPlugin(name = "Ringer")
 public class RingerPlugin extends Plugin {
@@ -48,6 +51,30 @@ public class RingerPlugin extends Plugin {
     public void stop(PluginCall call) {
         main.post(() -> {
             stopRinging();
+            call.resolve();
+        });
+    }
+
+    @PluginMethod
+    public void speaker(PluginCall call) {
+        boolean on = Boolean.TRUE.equals(call.getBoolean("on", false));
+        main.post(() -> {
+            AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+            if (am == null) { call.reject("no audio manager"); return; }
+            if (on) am.setMode(AudioManager.MODE_IN_COMMUNICATION);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (on) {
+                    AudioDeviceInfo spk = null;
+                    for (AudioDeviceInfo d : am.getAvailableCommunicationDevices()) {
+                        if (d.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) { spk = d; break; }
+                    }
+                    if (spk == null || !am.setCommunicationDevice(spk)) { call.reject("no loudspeaker"); return; }
+                } else {
+                    am.clearCommunicationDevice();
+                }
+            } else {
+                am.setSpeakerphoneOn(on);
+            }
             call.resolve();
         });
     }
