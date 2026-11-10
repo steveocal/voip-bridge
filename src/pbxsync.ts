@@ -63,6 +63,30 @@ async function userSwitches(env: Env): Promise<{ vm: Set<number>; mobileFirst: S
   return { vm, mobileFirst };
 }
 
+const EXT_COLUMNS = "number, name, user_id, user_name, sip_password, device_type, wake_app, active, forward_mode, forward_number, forward_seconds, user_mobile, user_mobile_delay";
+type Switches = Awaited<ReturnType<typeof userSwitches>>;
+const usable = (r: ExtRow) => r.active !== 0 && NUMBER.test(r.number) && PASSWORD.test(r.sip_password ?? "");
+const vmUser = (r: ExtRow, sw: Switches) => r.user_id != null && sw.vm.has(r.user_id);
+const forwardTo = (r: ExtRow) => (r.forward_mode && FWD_MODES[r.forward_mode] && PHONE.test(r.forward_number ?? "") ? r.forward_number! : null);
+/** An extension as a ring-list leg: its "always" forwarding, the app woken
+ *  first, or the phone itself; none when its user's 📼 is on. */
+function legFor(r: ExtRow, sw: Switches): string | null {
+  if (vmUser(r, sw)) return null;
+  const fwd = forwardTo(r);
+  if (fwd && r.forward_mode === "always") return `m0x${fwd}`;
+  return r.wake_app && r.device_type !== "sip" ? `a${r.number}` : `e${r.number}`;
+}
+
+/** The legs that ring a user's extensions, as on route lines (for the
+ *  "Customer's salesperson" menu key, GET /pbx/owner). */
+export async function userLegs(env: Env, userId: number): Promise<string[]> {
+  const [rows, sw] = await Promise.all([
+    env.DB.prepare(`SELECT ${EXT_COLUMNS} FROM extensions WHERE user_id = ?1 ORDER BY number`).bind(userId).all<ExtRow>().then(r => r.results ?? []),
+    userSwitches(env),
+  ]);
+  return [...new Set(rows.filter(usable).map((r) => legFor(r, sw)).filter((l): l is string => !!l))];
+}
+
 /** pbx-sync.sh's plain-text format, sorted, one item per line:
  *    ext <number> <webrtc|sip> <wake 0|1> <password> <caller name>
  *    fwd <extension> <always|busy|noanswer|busynoanswer|vm> <ring seconds> <number|->
@@ -78,9 +102,7 @@ async function userSwitches(env: Env): Promise<{ vm: Set<number>; mobileFirst: S
  *  opening hours (ivr.ts: when / hours / menu / key / prompt lines). */
 export async function pbxSyncText(env: Env): Promise<string> {
   const [rows, nums, sw] = await Promise.all([
-    env.DB.prepare(
-      "SELECT number, name, user_id, user_name, sip_password, device_type, wake_app, active, forward_mode, forward_number, forward_seconds, user_mobile, user_mobile_delay FROM extensions ORDER BY number"
-    ).all<ExtRow>().then(r => r.results ?? []),
+    env.DB.prepare(`SELECT ${EXT_COLUMNS} FROM extensions ORDER BY number`).all<ExtRow>().then(r => r.results ?? []),
     env.DB.prepare(
       "SELECT number, extensions, ring_mobiles, ring_seconds, no_answer, no_answer_number, record, active FROM pbx_numbers ORDER BY number"
     ).all<NumberRow>().then(r => r.results ?? []),
@@ -89,25 +111,18 @@ export async function pbxSyncText(env: Env): Promise<string> {
   const lines = ["version 1"];
   const inPbx = new Map<string, ExtRow>();
   for (const r of rows) {
-    if (r.active === 0 || !NUMBER.test(r.number) || !PASSWORD.test(r.sip_password ?? "")) continue;
+    if (!usable(r)) continue;
     inPbx.set(r.number, r);
     const type = r.device_type === "sip" ? "sip" : "webrtc";
     const wake = type === "webrtc" && r.wake_app ? 1 : 0;
     lines.push(`ext ${r.number} ${type} ${wake} ${r.sip_password} ${callerName(r.user_name || r.name || "")}`.trimEnd());
   }
-  const vmUser = (r: ExtRow) => r.user_id != null && sw.vm.has(r.user_id);
-  const forwardTo = (r: ExtRow) => (r.forward_mode && FWD_MODES[r.forward_mode] && PHONE.test(r.forward_number ?? "") ? r.forward_number! : null);
-  // An extension as a ring-list leg: its "always" forwarding, the app woken
-  // first, or the phone itself; none when its user's 📼 is on.
   const legOf = (x: string) => {
     const r = inPbx.get(x);
-    if (!r || vmUser(r)) return null;
-    const fwd = forwardTo(r);
-    if (fwd && r.forward_mode === "always") return `m0x${fwd}`;
-    return r.wake_app && r.device_type !== "sip" ? `a${r.number}` : `e${r.number}`;
+    return r ? legFor(r, sw) : null;
   };
   for (const r of inPbx.values()) {
-    if (vmUser(r)) lines.push(`fwd ${r.number} vm 0 -`);
+    if (vmUser(r, sw)) lines.push(`fwd ${r.number} vm 0 -`);
     else if (forwardTo(r)) lines.push(`fwd ${r.number} ${FWD_MODES[r.forward_mode!]} ${clamp(r.forward_seconds, 5, 120, 20)} ${r.forward_number}`);
   }
   const routed = new Set<string>();

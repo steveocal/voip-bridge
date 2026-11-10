@@ -18,7 +18,7 @@ const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "
 const LEAVE_DAYS = 330;   // Asterisk time specs have no year: stay inside one
 
 type Rec = Record<string, unknown>;
-interface Action { kind: string; number?: string | null; menu?: number | null; exts?: string[]; secs?: number }
+interface Action { kind: string; number?: string | null; menu?: number | null; exts?: string[]; secs?: number; team?: "all" | "each" }
 interface Choice { name: string; about: string }
 export interface Menu {
   id: number; prompt: string; voice: string; timeout: number; retries: number; direct: boolean; ringSecs: number;
@@ -49,7 +49,7 @@ export function sorryText(m: Menu): string {
 }
 /** Said when a spoken answer picked an option, so the caller knows where they're going. */
 export function confirmText(name: string, a: Action): string {
-  return a.kind === "ring" || a.kind === "forward" ? `Putting you through to ${name}.` : `${name}.`;
+  return a.kind === "ring" || a.kind === "forward" || a.kind === "salesperson" ? `Putting you through to ${name}.` : `${name}.`;
 }
 /** Every extra prompt a spoken menu needs. */
 function spokenTexts(m: Menu): string[] {
@@ -121,8 +121,9 @@ export function hoursSpecs(tz: string, attendances: Rec[], leaves: Rec[]): Hours
   return { tz, open: [...open].sort(), shut: [...shut].sort() };
 }
 
-function action(kind: unknown, number: unknown, menu: unknown, exts: string[], secs: number): Action {
+function action(kind: unknown, number: unknown, menu: unknown, exts: string[], secs: number, team?: unknown): Action {
   const k = str(kind) ?? "voicemail";
+  if (k === "salesperson") return { kind: "salesperson", exts, secs, team: team === "each" ? "each" : "all" };
   if (k === "forward") return { kind: "forward", number: digits(number) };
   if (k === "menu") return { kind: "menu", menu: id(menu) };
   if (k === "ring") return { kind: "ring", exts, secs };
@@ -137,14 +138,17 @@ export async function syncIvr(env: Env, uid: number, numberOfExt: Map<number, st
   const sr = (model: string, domain: unknown[], fields: string[]) => odooCall(env, uid, model, "search_read", [domain], { fields });
   const menuFields = ["prompt", "voice", "timeout", "retries", "direct_dial", "ring_seconds", "noinput_action", "noinput_extension_ids", "noinput_number", "noinput_menu_id"];
   const optFields = ["menu_id", "key", "action", "extension_ids", "number", "submenu_id"];
-  let [nr, mr, or] = await Promise.all([
-    sr("phone_bridge.number", [], ["number", "answer", "menu_id", "calendar_id", "closed_action", "closed_number", "closed_menu_id", "closed_message", "voice"]),
-    sr("phone_bridge.menu", [], [...menuFields, "spoken"]),
-    sr("phone_bridge.menu.option", [], [...optFields, "name", "description"]),
-  ]);
-  if (mr.fault || or.fault) {
-    // An addon before 0.11 has no spoken menus: read the menus without them.
-    [mr, or] = await Promise.all([sr("phone_bridge.menu", [], menuFields), sr("phone_bridge.menu.option", [], optFields)]);
+  const nr = await sr("phone_bridge.number", [], ["number", "answer", "menu_id", "calendar_id", "closed_action", "closed_number", "closed_menu_id", "closed_message", "voice"]);
+  // Newest addon first; older ones lack the later fields (0.12 team_ring,
+  // 0.11 spoken menus), so fall back a step at a time.
+  let mr = nr, or = nr;
+  for (const [mf, of] of [
+    [[...menuFields, "spoken"], [...optFields, "name", "description", "team_ring"]],
+    [[...menuFields, "spoken"], [...optFields, "name", "description"]],
+    [menuFields, optFields],
+  ]) {
+    [mr, or] = await Promise.all([sr("phone_bridge.menu", [], mf), sr("phone_bridge.menu.option", [], of)]);
+    if (!mr.fault && !or.fault) break;
   }
   if (nr.fault || mr.fault || or.fault) {
     console.warn("Odoo phone menus / hours not read; left as they were:", String(nr.fault || mr.fault || or.fault).slice(-300));
@@ -184,7 +188,7 @@ export async function syncIvr(env: Env, uid: number, numberOfExt: Map<number, st
       if (id(o.menu_id) !== m.id) continue;
       const k = str(o.key);
       if (!k || !/^[0-9*#]$/.test(k)) continue;
-      keys[k] = action(o.action, o.number, o.submenu_id, exts(o.extension_ids), ringSecs);
+      keys[k] = action(o.action, o.number, o.submenu_id, exts(o.extension_ids), ringSecs, o.team_ring);
       const name = clean(o.name, 60), about = clean(o.description, 500);
       if (name || about) names[k] = { name, about };
     }
@@ -234,7 +238,9 @@ export async function syncIvr(env: Env, uid: number, numberOfExt: Map<number, st
  *    menu <id> <prompt|-> <key timeout> <retries> <direct dial 0|1> <spoken 0|1> <sorry prompt|->
  *    key <menu id> <0-9, s (*), h (#), t (no key)> <action> <spoken confirmation prompt|->
  *    prompt <hash>
- *  Actions: vm, hangup, repeat, fwd<number>, menu<id>, ring<secs>:<legs|->
+ *  Actions: vm, hangup, repeat, fwd<number>, menu<id>, ring<secs>:<legs|->,
+ *  owner<secs>:<all|each>:<team legs|-> (keys only: the caller's salesperson,
+ *  found by GET /pbx/owner at call time, then the team)
  *  (legs as on route lines). A number with no "when" line just rings; one
  *  with no open hours is always open. legsOf turns extensions into legs
  *  (📼, forwarding and the app as for a route). Only numbers with a route
@@ -249,6 +255,7 @@ export async function ivrSyncLines(env: Env, routed: Set<string>, legsOf: (exts:
     if (a.kind === "forward") return a.number && PHONE.test(a.number) ? `fwd${a.number}` : "vm";
     if (a.kind === "menu") return a.menu && menuIds.has(a.menu) ? `menu${a.menu}` : "vm";
     if (a.kind === "ring") return `ring${a.secs ?? 30}:${legsOf(a.exts ?? []).join(",") || "-"}`;
+    if (a.kind === "salesperson") return inMenu ? `owner${a.secs ?? 30}:${a.team === "each" ? "each" : "all"}:${legsOf(a.exts ?? []).join(",") || "-"}` : "vm";
     if (a.kind === "hangup") return "hangup";
     if (a.kind === "repeat" && inMenu) return "repeat";
     return "vm";

@@ -175,3 +175,23 @@ at most 3 times. Keys work throughout; with direct dial a first digit waits
 Setting it up: deploy the worker, upgrade the addon to 18.0.0.11.0, run
 `bash scripts/vps-setup-pbx-ivr.sh` again (installs pb-say.sh and the new
 contexts), then tick the box on a menu.
+
+## "Customer's salesperson" keys
+
+A menu key with the action **Customer's salesperson** (phone_bridge
+18.0.0.12.0) rings the caller's salesperson: the Salesperson on the Odoo
+contact with the caller's number, or on its company. No answer within the
+menu's Ring For, or no salesperson (unknown caller, none set, no extension,
+📼 on): the key's **Ring These Extensions** (the sales team) ring **all at
+once** or **one at a time** in order (Then Ring the Team), Ring For each,
+skipping the salesperson; then voicemail.
+
+```
+key <menu> <k> owner<secs>:<all|each>:<team legs> ──▶ pbkey owner|secs|mode|targets
+[pb-do] owner ──SHELL──▶ pb-owner.sh ──GET /pbx/owner?caller=──▶ worker
+  (Odoo res.partner user_id / commercial partner's, ≤ 3 s) ──▶ "a201" ──▶ Dial
+```
+
+The worker logs each lookup (`salesperson for 441283…: Jo Bloggs (Acme) →
+Steve → a201`). Set up with `bash scripts/vps-setup-pbx-ivr.sh` (installs
+pb-owner.sh) after deploying the worker and upgrading the addon.

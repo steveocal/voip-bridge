@@ -13,7 +13,8 @@
 # opening hours in Odoo: without a pbwhen key [pb-ivr] returns at once.
 #
 # Spoken menus (phone_bridge 18.0.0.11.0, "Callers Can Say Their Choice")
-# add pb-say.sh, which sends what callers say to the worker (POST /pbx/say).
+# add pb-say.sh, which sends what callers say to the worker (POST /pbx/say);
+# "Customer's salesperson" keys (18.0.0.12.0) add pb-owner.sh (GET /pbx/owner).
 #
 # Needs first: migration 0017, the worker deployed, phone_bridge 18.0.0.9.0.
 # Run from this machine: bash scripts/vps-setup-pbx-ivr.sh
@@ -23,6 +24,7 @@ cd "$(dirname "$0")/.."
 
 ssh vps "cat > /tmp/pbx-sync.sh.new" < asterisk/pbx-sync.sh
 ssh vps "cat > /tmp/pb-say.sh.new" < asterisk/pb-say.sh
+ssh vps "cat > /tmp/pb-owner.sh.new" < asterisk/pb-owner.sh
 ssh vps "cat > /tmp/extensions-phone-bridge-routing.conf.new" < asterisk/extensions-phone-bridge-routing.conf
 ssh vps "cat > /tmp/extensions-phone-bridge-ivr.conf.new" < asterisk/extensions-phone-bridge-ivr.conf
 
@@ -37,6 +39,7 @@ install_file() {  # new-file target mode
 }
 install_file /tmp/pbx-sync.sh.new pbx-sync.sh 755
 install_file /tmp/pb-say.sh.new pb-say.sh 755
+install_file /tmp/pb-owner.sh.new pb-owner.sh 755
 install_file /tmp/extensions-phone-bridge-ivr.conf.new extensions-phone-bridge-ivr.conf 644
 install_file /tmp/extensions-phone-bridge-routing.conf.new extensions-phone-bridge-routing.conf 644
 

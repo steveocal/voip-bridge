@@ -115,7 +115,8 @@ sync_family pbfwd "$fwds"
 #   pbmenu/<id> = <prompt|->|<key timeout>|<retries>|<direct dial 0|1>|<spoken 0|1>|<sorry prompt|->
 #   pbkey/<menu id>-<0-9|s|h|t> = <action>
 #   pbsay/<menu id>-<0-9|s|h> = <prompt> (spoken menus: "Putting you through to ...")
-# Actions: vm, hangup, repeat, fwd|<number>, menu|<id>, ring|<secs>|<Dial targets|->
+# Actions: vm, hangup, repeat, fwd|<number>, menu|<id>, ring|<secs>|<Dial targets|->,
+# owner|<secs>|<all|each>|<team Dial targets|-> (keys only)
 # (out of hours: the same, or -|- with no hours). Prompts are WAV files in
 # $PROMPTS, fetched once each; ones no longer used are deleted.
 ivr=$(echo "$cfg" | awk '
@@ -143,6 +144,11 @@ ivr=$(echo "$cfg" | awk '
       c = index(a, ":"); s = substr(a, 5, c - 5) + 0
       if (s >= 5 && s <= 300) return "ring|" s "|" dial(substr(a, c + 1))
     }
+    # owner<secs>:<all|each>:<team legs|->: the callers salesperson, then the team
+    if (a ~ /^owner[0-9]+:(all|each):/) {
+      c = index(a, ":"); s = substr(a, 6, c - 6) + 0; m = substr(a, c + 1, 4); sub(/:$/, "", m)
+      if (s >= 5 && s <= 300) return "owner|" s "|" m "|" dial(substr(a, c + length(m) + 2))
+    }
     return ""
   }
   function hash(h) { return h == "-" || h ~ /^[0-9a-f]+$/ && length(h) == 16 }
@@ -162,7 +168,7 @@ ivr=$(echo "$cfg" | awk '
     say = ($7 == "1" && hash($8)) ? 1 : 0
     print "pbmenu", $2, $3 "|" $4 "|" $5 "|" $6 "|" say "|" (say ? $8 : "-")
   }
-  $1 == "key" && $2 ~ /^[0-9]+$/ && $3 ~ /^([0-9]|s|h|t)$/ && (k = act($4)) != "" && !($3 == "t" && k == "repeat") {
+  $1 == "key" && $2 ~ /^[0-9]+$/ && $3 ~ /^([0-9]|s|h|t)$/ && (k = act($4)) != "" && !($3 == "t" && (k == "repeat" || k ~ /^owner/)) {
     print "pbkey", $2 "-" $3, k
     if ($3 != "t" && hash($5) && $5 != "-") print "pbsay", $2 "-" $3, $5
   }
