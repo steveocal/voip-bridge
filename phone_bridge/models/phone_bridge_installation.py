@@ -1,10 +1,13 @@
 import json
+import logging
 import secrets
 from pathlib import Path
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 from odoo.addons.base.models.res_partner import _tz_get
+
+_logger = logging.getLogger(__name__)
 
 # The worker bundle shipped inside the module (npm run bundle:addon).
 BUNDLE_DIR = Path(__file__).resolve().parent.parent / "data" / "worker"
@@ -273,6 +276,34 @@ class PhoneBridgeInstallation(models.Model):
         if not res.ok:
             raise UserError(body.get("error") or _("The worker answered %s.", res.status_code))
         return body
+
+    @api.model
+    def _notify_deleted(self, calls=(), contacts=()):
+        """Tell the worker that calls (by bridge_call_id) or contacts (ids)
+        were deleted, so its own copies go too. Sent once the deletion is
+        committed (a rolled-back delete must not empty the worker's copy),
+        and never fails the delete: a contact the worker misses is pruned
+        at its next full contact sync."""
+        calls, contacts = [c for c in calls if c], [c for c in contacts if c]
+        if not (calls or contacts):
+            return
+        inst = self.sudo()._get_installation()
+        url, token = inst.worker_url, inst.api_token
+        if not (url and token):
+            return
+        payload = {"calls": calls, "contacts": contacts}
+
+        def send():
+            import requests
+            try:
+                res = requests.post(f"{url}/odoo/deleted", json=payload, timeout=10,
+                                    headers={"Authorization": f"Bearer {token}"})
+                if not res.ok:
+                    _logger.warning("phone_bridge: worker refused deletions (%s): %s", res.status_code, res.text[:200])
+            except requests.RequestException as e:
+                _logger.warning("phone_bridge: couldn't tell the worker about deletions: %s", e)
+
+        self.env.cr.postcommit.add(send)
 
     def _sync_voicemail_box(self, box, enabled, greeting, send_greeting, direct=None):
         """greeting is the Binary field's base64 value (False = none); it's

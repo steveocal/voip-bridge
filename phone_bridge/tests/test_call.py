@@ -42,3 +42,47 @@ class TestBridgeUpsert(TransactionCase):
         self.assertEqual(call.extension, "9301")
         self.assertEqual(call.extension_id.number, "9301")
         self.assertEqual(call.user_id, owner)
+
+
+@tagged("post_install", "-at_install")
+class TestDeletedReachWorker(TransactionCase):
+    """Deleting calls or contacts queues one post-commit request to the worker."""
+
+    def setUp(self):
+        super().setUp()
+        self.sent = []
+        patcher = patch.object(PhoneBridgeInstallation, "_notify_deleted",
+                               lambda _self, calls=(), contacts=(): self.sent.append((list(calls), list(contacts))))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_deleting_a_call_sends_its_bridge_id(self):
+        Call = self.env["phone_bridge.call"]
+        call = Call.browse(Call.bridge_upsert({"bridge_call_id": "9.1", "phone_number": "1"}))
+        call.unlink()
+        self.assertIn((["9.1"], []), self.sent)
+
+    def test_deleting_a_contact_sends_its_id(self):
+        partner = self.env["res.partner"].create({"name": "Gone"})
+        pid = partner.id
+        partner.unlink()
+        self.assertIn(([], [pid]), self.sent)
+
+
+@tagged("post_install", "-at_install")
+class TestNotifyDeleted(TransactionCase):
+
+    def test_waits_for_commit_and_skips_when_not_deployed(self):
+        inst = self.env["phone_bridge.installation"]._get_installation()
+        inst.sudo().write({"worker_url": False})
+        before = len(self.env.cr.postcommit._funcs)
+        self.env["phone_bridge.installation"]._notify_deleted(calls=["1.1"])
+        self.assertEqual(len(self.env.cr.postcommit._funcs), before)
+        inst.sudo().write({"worker_url": "https://w.example", "api_token": "t"})
+        with patch("requests.post") as post:
+            self.env["phone_bridge.installation"]._notify_deleted(calls=["1.1"], contacts=[5])
+            post.assert_not_called()  # not before the commit
+            self.assertEqual(len(self.env.cr.postcommit._funcs), before + 1)
+            self.env.cr.postcommit._funcs[-1]()
+            post.assert_called_once()
+            self.assertEqual(post.call_args.kwargs["json"], {"calls": ["1.1"], "contacts": [5]})

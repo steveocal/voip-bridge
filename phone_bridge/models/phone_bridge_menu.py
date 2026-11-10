@@ -13,6 +13,9 @@ VOICES = [("athena", "Athena (British, female)"), ("helios", "Helios (British, m
 
 ACTIONS = [("ring", "Ring extensions"), ("forward", "Forward to a number"), ("voicemail", "Voicemail"),
            ("menu", "Another menu"), ("repeat", "Repeat this menu"), ("hangup", "Hang up")]
+# Keys only: who rings depends on the caller.
+KEY_ACTIONS = ACTIONS[:1] + [("salesperson", "Customer's salesperson")] + ACTIONS[1:]
+TEAM_RING = [("all", "All at once"), ("each", "One at a time")]
 
 KEYS = [(k, k) for k in "1234567890*#"]
 
@@ -44,10 +47,17 @@ class PhoneBridgeMenu(models.Model):
     timeout = fields.Integer("Wait For a Key (Seconds)", default=5, required=True)
     retries = fields.Integer("Repeat the Prompt", default=2, required=True,
                              help="How many more times the prompt is played when no key or a wrong key is pressed.")
+    spoken = fields.Boolean("Callers Can Say Their Choice",
+                            help="Callers can say what they want (\"sales\", \"my heater's stopped working\") instead of "
+                                 "pressing a key. Their answer is matched against each key's Name and What It's For; "
+                                 "keys still work. Give every key a name, and say the names in the prompt, e.g. "
+                                 "\"Say sales or press 1, say technical or press 2.\"")
     direct_dial = fields.Boolean("Callers Can Dial an Extension",
                                  help="Callers who know an extension number can type it during the prompt.")
     ring_seconds = fields.Integer("Ring For (Seconds)", default=30, required=True,
-                                  help="How long \"Ring extensions\" keys ring before voicemail.")
+                                  help="How long \"Ring extensions\" keys ring before voicemail. For \"Customer's "
+                                       "salesperson\": how long the salesperson rings, then the sales team (each "
+                                       "person in turn when they ring one at a time).")
     noinput_action = fields.Selection([a for a in ACTIONS if a[0] != "repeat"], "When No Key Is Pressed",
                                       default="voicemail", required=True,
                                       help="After the prompt has been repeated.")
@@ -57,9 +67,15 @@ class PhoneBridgeMenu(models.Model):
     noinput_menu_id = fields.Many2one("phone_bridge.menu", "Go To Menu")
     active = fields.Boolean(default=True)
 
-    @api.constrains("prompt", "timeout", "retries", "ring_seconds", "noinput_action", "noinput_number", "noinput_menu_id")
+    @api.constrains("prompt", "timeout", "retries", "ring_seconds", "noinput_action", "noinput_number", "noinput_menu_id",
+                    "spoken", "option_ids")
     def _check_menu(self):
         for menu in self:
+            if menu.spoken:
+                unnamed = menu.option_ids.filtered(lambda o: not (o.name or "").strip())
+                if unnamed:
+                    raise ValidationError(_("Callers can say their choice: give key %s a name (e.g. Sales) so it can be said.",
+                                            ", ".join(unnamed.mapped("key"))))
             if len(menu.prompt or "") > MAX_PROMPT:
                 raise ValidationError(_("Keep the prompt to %s characters.", MAX_PROMPT))
             if not 1 <= menu.timeout <= 30:
@@ -100,18 +116,36 @@ class PhoneBridgeMenuOption(models.Model):
     menu_id = fields.Many2one("phone_bridge.menu", required=True, ondelete="cascade", index=True)
     sequence = fields.Integer(default=10)
     key = fields.Selection(KEYS, required=True)
-    action = fields.Selection(ACTIONS, required=True, default="ring")
+    name = fields.Char("Name", help="The department or choice, e.g. Sales. In a menu callers can speak to, it's what "
+                                    "they say, and they hear \"Putting you through to Sales\".")
+    description = fields.Text("What It's For",
+                              help="What this choice handles, so callers who describe what they want reach the right "
+                                   "place, e.g. \"buying heaters, prices and quotes, placing an order\".")
+    action = fields.Selection(KEY_ACTIONS, required=True, default="ring",
+                              help="Customer's salesperson: callers whose number belongs to a contact with a "
+                                   "Salesperson (or whose company has one) ring that salesperson's extension first. "
+                                   "No answer, or no salesperson: the extensions listed here (the sales team) ring, "
+                                   "then voicemail.")
     extension_ids = fields.Many2many("phone_bridge.extension", "phone_bridge_menu_option_ext_rel",
-                                     "option_id", "extension_id", "Ring These Extensions")
+                                     "option_id", "extension_id", "Ring These Extensions",
+                                     help="For \"Customer's salesperson\": the sales team, rung when the "
+                                          "salesperson doesn't answer or the caller has none.")
+    team_ring = fields.Selection(TEAM_RING, "Then Ring the Team", default="all",
+                                 help="For \"Customer's salesperson\": ring the extensions all at once, or one at "
+                                      "a time in the order listed.")
     number = fields.Char("Forward To")
     submenu_id = fields.Many2one("phone_bridge.menu", "Go To Menu")
 
     _sql_constraints = [("key_uniq", "unique(menu_id, key)", "Each key can only be used once in a menu.")]
 
-    @api.constrains("action", "number", "submenu_id")
+    @api.constrains("action", "number", "submenu_id", "name")
     def _check_option(self):
         for opt in self:
             check_action(opt, opt.action, opt.number, opt.submenu_id, _("Key %s", opt.key))
+            if opt.menu_id.spoken and not (opt.name or "").strip():
+                raise ValidationError(_("Callers can say their choice: give key %s a name (e.g. Sales) so it can be said.", opt.key))
+            if len(opt.name or "") > 60 or len(opt.description or "") > 500:
+                raise ValidationError(_("Key %s: keep the name to 60 characters and What It's For to 500.", opt.key))
 
     @api.model_create_multi
     def create(self, vals_list):

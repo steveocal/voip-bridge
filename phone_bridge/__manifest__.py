@@ -1,6 +1,6 @@
 {
     "name": "Phone Bridge",
-    "version": "18.0.0.9.0",
+    "version": "18.0.0.12.0",
     "category": "Productivity/VoIP",
     "summary": "Phone system for Odoo: softphone, call history, recordings and transcripts, run on your own Cloudflare account",
     "description": """

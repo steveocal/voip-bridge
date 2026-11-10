@@ -8,6 +8,7 @@
                 <field name="name"/>
                 <field name="prompt"/>
                 <field name="voice" optional="hide"/>
+                <field name="spoken" optional="show"/>
                 <field name="direct_dial" optional="show"/>
                 <field name="noinput_action" optional="show"/>
             </list>
@@ -33,9 +34,14 @@
                         <list editable="bottom">
                             <field name="sequence" widget="handle"/>
                             <field name="key"/>
+                            <field name="name" placeholder="e.g. Sales" required="parent.spoken"/>
+                            <field name="description" placeholder="e.g. buying heaters, prices, quotes, orders"
+                                   optional="show"/>
                             <field name="action"/>
                             <field name="extension_ids" widget="many2many_tags" options="{'no_create': True}"
-                                   invisible="action != 'ring'" required="action == 'ring'"/>
+                                   invisible="action not in ('ring', 'salesperson')" required="action == 'ring'"/>
+                            <field name="team_ring" invisible="action != 'salesperson'"
+                                   required="action == 'salesperson'"/>
                             <field name="number" invisible="action != 'forward'" required="action == 'forward'"
                                    placeholder="+44 7700 900123"/>
                             <field name="submenu_id" invisible="action != 'menu'" required="action == 'menu'"/>
@@ -43,6 +49,7 @@
                     </field>
                     <group>
                         <group string="Keys">
+                            <field name="spoken"/>
                             <field name="timeout"/>
                             <field name="retries"/>
                             <field name="direct_dial"/>
@@ -61,6 +68,11 @@
                     <div class="text-muted">
                         The prompt is turned into speech when it is saved and reaches the phone system within about
                         two minutes. "Ring extensions" keys ring those extensions, then go to voicemail.
+                        "Customer's salesperson" keys ring the caller's salesperson (the contact's, or its
+                        company's), then the extensions listed (the sales team) all at once or one at a time,
+                        then voicemail.
+                        When callers can say their choice, what they say is matched to a key by its Name, then by
+                        What It's For (Workers AI); if it isn't clear they're asked again, as for a wrong key.
                     </div>
                 </sheet>
             </form>

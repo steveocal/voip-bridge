@@ -122,6 +122,28 @@ class TestMenusAndHours(TransactionCase):
         with self.assertRaises(ValidationError):
             menu.write({"prompt": "x" * 1001})
 
+    def test_spoken_menu_needs_names(self):
+        menu = self.Menu.create({"name": "Spoken", "prompt": "Say sales or technical.", "option_ids": [
+            (0, 0, {"key": "1", "action": "voicemail", "name": "Sales", "description": "buying heaters"}),
+            (0, 0, {"key": "2", "action": "voicemail"}),
+        ]})
+        with self.assertRaises(ValidationError):
+            menu.write({"spoken": True})
+        menu.option_ids.filtered(lambda o: o.key == "2").write({"name": "Technical"})
+        menu.write({"spoken": True})
+        self.assertTrue(menu.spoken)
+        with self.assertRaises(ValidationError):
+            menu.option_ids.filtered(lambda o: o.key == "2").write({"name": ""})
+        with self.assertRaises(ValidationError):
+            self.env["phone_bridge.menu.option"].create({"menu_id": menu.id, "key": "3", "action": "voicemail"})
+
+    def test_salesperson_key(self):
+        menu = self.Menu.create({"name": "Sales", "prompt": "Press 1.", "option_ids": [
+            (0, 0, {"key": "1", "action": "salesperson", "team_ring": "each"}),
+        ]})
+        opt = menu.option_ids
+        self.assertEqual((opt.action, opt.team_ring), ("salesperson", "each"))
+
     def test_number_menu_and_hours(self):
         menu = self.Menu.create({"name": "Night", "prompt": "We're closed."})
         cal = self.env["resource.calendar"].create({"name": "Office", "tz": "Europe/London"})

@@ -129,6 +129,12 @@ class PhoneBridgeCall(models.Model):
             who = call.partner_id.name or call.phone_number or ""
             call.display_name = f"{'To' if call.direction == 'outgoing' else 'From'} {who}"
 
+    def unlink(self):
+        bridge_ids = self.mapped("bridge_call_id")
+        res = super().unlink()
+        self.env["phone_bridge.installation"]._notify_deleted(calls=bridge_ids)
+        return res
+
     @api.model
     def bridge_upsert(self, vals):
         """Create or update the call identified by vals["bridge_call_id"].

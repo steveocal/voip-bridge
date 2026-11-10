@@ -7,6 +7,12 @@ class ResPartner(models.Model):
     phone_bridge_call_ids = fields.One2many("phone_bridge.call", "partner_id", "Calls")
     phone_bridge_call_count = fields.Integer("Call Count", compute="_compute_phone_bridge_call_count")
 
+    def unlink(self):
+        ids = self.ids
+        res = super().unlink()
+        self.env["phone_bridge.installation"]._notify_deleted(contacts=ids)
+        return res
+
     def _compute_phone_bridge_call_count(self):
         counts = dict(self.env["phone_bridge.call"]._read_group(
             [("partner_id", "in", self.ids)], ["partner_id"], ["__count"]))
