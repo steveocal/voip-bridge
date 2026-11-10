@@ -11,6 +11,7 @@ import { handlePushRegister, handlePushStatus, handlePushWake } from "./push";
 import { handleGetVoicemail, handleSetVoicemail, handleCreateGreeting, handleRenameGreeting, handleDeleteGreeting, handleGreetingAudio, handleVoicemailSync, handleVoicemailSynced } from "./voicemail";
 import type { Contact, Message } from "./odoo";
 import { jotToText } from "./jottext";
+import { handleVoiceNote, handleAddCallNote } from "./followup";
 import { groupCallLegs } from "./calllegs";
 import { type User, sessionUser, handleLogin, handleMe, extensionOwners, extensionUser, syncExtensions, canSee } from "./users";
 import { handlePbxStatus, handlePbxSync, handlePbxSynced, pbxAllowed } from "./pbxsync";
@@ -942,6 +943,11 @@ export default {
       else if (request.method === "POST" && url.pathname === "/call-history/create-missing-contacts") response = await handleCreateMissingContacts(env);
       else if (request.method === "GET" && url.pathname === "/call-notes") response = await handleGetCallNotes(request, env, user);
       else if (request.method === "POST" && url.pathname === "/call-notes") response = await handleSaveCallNotes(request, env, ctx, user);
+      else if (m === "POST" && p === "/call-notes/voice") response = await mayOpenCall(env, user, url.searchParams.get("call_id") ?? "") ? await handleVoiceNote(request, env) : notYours();
+      else if (m === "POST" && p === "/call-notes/add") {
+        const body = await request.clone().json().catch(() => ({})) as { call_id?: string };
+        response = await mayOpenCall(env, user, String(body.call_id ?? "")) ? await handleAddCallNote(request, env, ctx, user) : notYours();
+      }
       else if (request.method === "GET" && url.pathname === "/recording") response = await handleGetRecording(request, env, user);
       else if (request.method === "POST" && url.pathname === "/jot-to-text") response = await handleJotToText(request, env);
       else if (request.method === "GET" && url.pathname === "/transcript") response = await handleGetTranscript(request, env, user);

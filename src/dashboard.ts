@@ -184,7 +184,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .msg-row .sub{font-size:12px;color:#999;margin-top:2px}
 .msg-row .meta{margin-left:auto;font-size:12px;color:#999;flex-shrink:0}
 /* bottom menu */
-.bottom-menu{display:flex;border-top:1px solid #222;background:#0a0a0a;padding:6px 0 env(safe-area-inset-bottom)}
+.bottom-menu{display:flex;border-top:1px solid #222;background:#0a0a0a;padding:6px 0 env(safe-area-inset-bottom);position:relative}
+/* "+" on the hang-up button: hang up, then dictate a note for the call */
+.fab-plus{position:absolute;left:calc(50% + 16px);top:-34px;width:30px;height:30px;border-radius:50%;border:2px solid #0a0a0a;background:#f5f5f5;color:#dc2626;font-size:20px;font-weight:800;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;z-index:2;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.fab-plus:active{transform:scale(.92)}
 .menu-btn{flex:1;background:none;border:none;color:#888;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;font-size:10px}
 .menu-btn .ico{font-size:20px}
 .menu-btn svg.ico{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
@@ -233,6 +236,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .route-sheet button{padding:13px;border:none;border-radius:12px;background:#2c2c2c;color:#ececec;font-size:15px;cursor:pointer;text-align:left}
 .route-sheet button.auto{outline:2px solid #10b981}
 .route-sheet button.cancel{text-align:center;background:#1a1a1a;color:#aaa}
+/* voice note sheet */
+#note-sheet .ns-mic{text-align:center;font-size:17px;font-weight:600;padding:16px}
+#note-sheet .ns-mic.rec{background:#7f1d1d;color:#fecaca}
+#note-sheet .ns-status{font-size:13px;color:#aaa;text-align:center;min-height:17px}
+#note-sheet .ns-status.err{color:#fca5a5}
+#note-sheet textarea{width:100%;min-height:84px;padding:10px 12px;border:none;border-radius:10px;background:#1f1f1f;color:#fff;font:inherit;font-size:15px;resize:vertical;outline:none}
+#note-sheet .ns-fu{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px;color:#aaa}
+#note-sheet .ns-fu button{padding:7px 11px;border-radius:16px;font-size:13px;text-align:center}
+#note-sheet .ns-fu button.on{background:#10b981;color:#04210f;font-weight:600}
+#note-sheet .ns-fu input{padding:6px 8px;border:none;border-radius:8px;background:#1f1f1f;color:#fff;font:inherit;font-size:13px;color-scheme:dark}
+#note-sheet .set-actions button{text-align:center}
 .h-sim{font-size:11px;margin-left:4px;opacity:.8}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px}
 .modal-card{background:#161616;border:1px solid #2c2c2c;border-radius:16px;padding:20px;width:100%;max-width:360px}
@@ -745,6 +759,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <button class="menu-btn call-only" id="nav-hold" onclick="toggleHold()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><g class="norm"><path d="M9 5.5v13"/><path d="M15 5.5v13"/></g><path class="alt" d="M8 5.5l11 6.5-11 6.5z"/></svg><span class="norm">Hold</span><span class="alt">Resume</span></button>
     <button class="menu-btn call-only" id="nav-mute" onclick="toggleMute()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/><path class="alt" d="M4 4l16 16"/></svg><span class="norm">Mute</span><span class="alt">Muted</span></button>
     <button class="dial-fab" id="nav-dial" onclick="navDialAction()" aria-label="Dial"><span class="fab"></span></button>
+    <button class="fab-plus call-only" id="nav-hangplus" onclick="hangupAndNote()" aria-label="Hang up and add a note" title="Hang up and add a note">+</button>
     <button class="menu-btn idle-only" data-view="contacts" onclick="switchView('contacts')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8"/><path d="M18.2 14.4c2 .8 3.3 2.8 3.3 5.6"/></svg><span>Contacts</span></button>
     <button class="menu-btn idle-only" data-view="messages" onclick="switchView('messages')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6.5 8.5-6.5"/></svg><span>Emails</span></button>
     <button class="menu-btn call-only" id="nav-speaker" onclick="toggleSpeaker()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6"/><path d="M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/></svg><span>Speaker</span></button>
@@ -763,6 +778,23 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 <div class="route-sheet hidden" id="route-sheet" onclick="if (event.target === this) closeRouteSheet()">
   <div class="rs-card" id="route-sheet-card"></div>
 </div>
+<div class="route-sheet hidden" id="note-sheet" onclick="if (event.target === this) closeNoteSheet()">
+  <div class="rs-card">
+    <div class="rs-title" id="ns-title">Add to call</div>
+    <button class="ns-mic" id="ns-mic" onclick="toggleNoteRecording()">🎙 Tap to speak</button>
+    <div class="ns-status" id="ns-status"></div>
+    <textarea id="ns-text" placeholder="Your note (say it, or type it)"></textarea>
+    <div class="ns-fu" id="ns-fu">Follow up:
+      <button data-days="">None</button><button data-days="1">Tomorrow</button><button data-days="3">3 days</button><button data-days="7">1 week</button>
+      <input type="date" id="ns-date" aria-label="Follow-up date">
+    </div>
+    <div class="set-actions">
+      <button class="set-cancel" onclick="closeNoteSheet()">Cancel</button>
+      <button class="acc-save" id="ns-save" onclick="saveNoteSheet()">Add to call</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal hidden" id="settings-modal">
   <div class="modal-card compact">
     <div class="modal-head"><span>⚙️ Settings</span><button onclick="cancelSettings()" aria-label="Cancel">✕</button></div>
@@ -3791,6 +3823,152 @@ function hangup() {
   }
   resetCall();
 }
+// ── voice note for a call (＋ on hang-up and on History rows) ──
+// Say the note; the worker transcribes it and spots a follow-up date
+// (POST /call-notes/voice). Check or edit both, then "Add to call" appends
+// it to the call's Notes, time-stamped, and a date makes an Odoo To-Do on
+// the contact (POST /call-notes/add).
+var NOTE_MAX_SECONDS = 180;
+var noteSheet = null;   // { callId, rec, stream, timer, busy, summary }
+function hangupAndNote() {
+  if (!currentCall) return;
+  var id = currentCall.id, label = callerLabel();
+  hangup();
+  openNoteSheet(id, label, true);
+}
+function openNoteSheet(callId, label, autoStart) {
+  if (!callId) return;
+  closeNoteSheet();
+  noteSheet = { callId: callId, rec: null, stream: null, timer: null, busy: false, summary: "" };
+  document.getElementById("ns-title").textContent = "Add to call" + (label ? " — " + label : "");
+  document.getElementById("ns-text").value = "";
+  setNoteFollowUp("");
+  noteStatus("", false);
+  document.getElementById("ns-save").disabled = false;
+  document.getElementById("note-sheet").classList.remove("hidden");
+  if (autoStart) startNoteRecording(); else resetNoteMic();
+}
+function closeNoteSheet() {
+  if (noteSheet) stopNoteRecording(true);
+  noteSheet = null;
+  document.getElementById("note-sheet").classList.add("hidden");
+}
+function noteStatus(msg, err) {
+  var el = document.getElementById("ns-status");
+  el.textContent = msg; el.classList.toggle("err", !!err);
+}
+function resetNoteMic() {
+  var b = document.getElementById("ns-mic");
+  b.textContent = "🎙 Tap to speak"; b.classList.remove("rec"); b.disabled = false;
+}
+function toggleNoteRecording() {
+  if (!noteSheet || noteSheet.busy) return;
+  if (noteSheet.rec) stopNoteRecording(false); else startNoteRecording();
+}
+function startNoteRecording() {
+  if (!navigator.mediaDevices || !window.MediaRecorder) { noteStatus("This device can't record: type the note instead", true); return; }
+  var sheet = noteSheet;
+  navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, noiseSuppression: true, autoGainControl: true } }).then(function(stream) {
+    if (noteSheet !== sheet) { stream.getTracks().forEach(function(t) { t.stop(); }); return; }
+    var rec = new MediaRecorder(stream), chunks = [], started = Date.now(), btn = document.getElementById("ns-mic");
+    sheet.rec = rec; sheet.stream = stream; sheet.discard = false;
+    rec.ondataavailable = function(e) { if (e.data && e.data.size) chunks.push(e.data); };
+    rec.onstop = function() {
+      clearInterval(sheet.timer);
+      stream.getTracks().forEach(function(t) { t.stop(); });
+      sheet.rec = null; sheet.stream = null;
+      if (sheet.discard || noteSheet !== sheet) return;
+      resetNoteMic();
+      if (!chunks.length) { noteStatus("Nothing was recorded", true); return; }
+      transcribeNote(sheet, new Blob(chunks, { type: rec.mimeType }));
+    };
+    var tick = function() {
+      var secs = Math.floor((Date.now() - started) / 1000);
+      btn.textContent = "■ Stop  " + fmtDur(secs);
+      if (secs >= NOTE_MAX_SECONDS) stopNoteRecording(false);
+    };
+    btn.classList.add("rec");
+    noteStatus("Listening… tap Stop when you've finished", false);
+    tick();
+    sheet.timer = setInterval(tick, 500);
+    rec.start();
+  }).catch(function(err) { noteStatus("No microphone (" + err.message + "): type the note instead", true); });
+}
+function stopNoteRecording(discard) {
+  if (!noteSheet || !noteSheet.rec) return;
+  noteSheet.discard = discard;
+  if (noteSheet.rec.state !== "inactive") noteSheet.rec.stop();
+}
+function transcribeNote(sheet, blob) {
+  sheet.busy = true;
+  document.getElementById("ns-mic").disabled = true;
+  noteStatus("Writing it down…", false);
+  blob.arrayBuffer().then(function(buf) {
+    return audioToWav(buf, 16000, NOTE_MAX_SECONDS, "notes can be at most 3 minutes");
+  }).then(function(wav) {
+    return fetch(API + "/call-notes/voice?call_id=" + encodeURIComponent(sheet.callId), { method: "POST", headers: { "Content-Type": "audio/wav" }, body: wav });
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (noteSheet !== sheet) return;
+    if (d.error) throw new Error(d.error);
+    if (!d.text) { noteStatus("Didn't catch that: try again, or type it", true); return; }
+    var ta = document.getElementById("ns-text");
+    ta.value = (ta.value.trim() ? ta.value.trim() + " " : "") + d.text;
+    if (d.follow_up) { setNoteFollowUp(d.follow_up); sheet.summary = d.summary || ""; }
+    noteStatus(d.follow_up ? "Follow-up spotted: " + fmtNoteDate(d.follow_up) + ". Check, then Add." : "Check the text, then Add.", false);
+  }).catch(function(err) {
+    if (noteSheet === sheet) noteStatus("Couldn't transcribe: " + err.message, true);
+  }).then(function() {
+    sheet.busy = false;
+    if (noteSheet === sheet) document.getElementById("ns-mic").disabled = false;
+  });
+}
+function fmtNoteDate(ymd) { return new Date(ymd + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }); }
+function setNoteFollowUp(ymd) {
+  document.getElementById("ns-date").value = ymd || "";
+  var today = new Date(), btns = document.querySelectorAll("#ns-fu button");
+  for (var i = 0; i < btns.length; i++) {
+    var days = btns[i].getAttribute("data-days"), d = new Date(today);
+    if (days) d.setDate(today.getDate() + Number(days));
+    btns[i].classList.toggle("on", days ? ymd(d) === ymd : !ymd);
+  }
+}
+document.getElementById("ns-fu").addEventListener("click", function(e) {
+  var b = e.target.closest("button");
+  if (!b) return;
+  var days = b.getAttribute("data-days"), d = new Date();
+  d.setDate(d.getDate() + Number(days || 0));
+  setNoteFollowUp(days ? ymd(d) : "");
+});
+document.getElementById("ns-date").addEventListener("change", function(e) { setNoteFollowUp(e.target.value); });
+function saveNoteSheet() {
+  var sheet = noteSheet;
+  if (!sheet || sheet.busy) return;
+  if (sheet.rec) { noteStatus("Tap Stop first", true); return; }
+  var text = document.getElementById("ns-text").value.trim();
+  var followUp = document.getElementById("ns-date").value || null;
+  if (!text && !followUp) { noteStatus("Say or type a note first", true); return; }
+  sheet.busy = true;
+  document.getElementById("ns-save").disabled = true;
+  noteStatus("Adding…", false);
+  fetch(API + "/call-notes/add", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ call_id: sheet.callId, text: text, follow_up: followUp, summary: sheet.summary })
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.error) throw new Error(d.error);
+    if (cdOpenCallId === sheet.callId) loadCallDetailNotes(sheet.callId);
+    if (onDialView()) loadHistory();
+    if (followUp && d.activity) loadActivities();
+    if (followUp && !d.activity) { noteStatus("Note added, but the follow-up wasn't: " + (d.activity_error || "unknown error"), true); sheet.busy = false; return; }
+    closeNoteSheet();
+    setStatus(followUp ? "✅ Note added · follow-up " + fmtNoteDate(followUp) : "✅ Note added", false);
+  }).catch(function(err) {
+    if (noteSheet !== sheet) return;
+    sheet.busy = false;
+    document.getElementById("ns-save").disabled = false;
+    noteStatus("Not added: " + err.message, true);
+  });
+}
+
 function answerCall() {
   if (!sipSession || !currentCall || currentCall.dir !== "in" || currentCall.state !== "ringing") return;
   stopRingtone();
@@ -4400,6 +4578,7 @@ function renderHistoryRow(c) {
   var when = d ? ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2) : "";
   var key = "h-" + c.id;
   callsCache[key] = c;
+  var add = c.call_id ? '<button class="h-ic h-add" title="Add a voice note">＋</button>' : '<span class="h-ic"></span>';
   var note = c.has_notes ? '<button class="h-ic h-note" title="Notes">📝</button>' : '<span class="h-ic"></span>';
   var tx = c.has_transcript ? '<button class="h-ic h-tx" title="Transcript">💬</button>'
     : c.has_recording ? '<button class="h-ic h-tx dim" title="Transcribe">💬</button>' : '<span class="h-ic"></span>';
@@ -4407,7 +4586,7 @@ function renderHistoryRow(c) {
   return '<div class="hist-row" data-key="' + esc(key) + '">'
     + '<div class="hist-main">' + dirIcon(dir, missed) + '<span class="h-time">' + when + '</span>'
     + '<span class="who">' + esc(name || num) + (c.did === "SIM" ? ' <span class="h-sim" title="Called from the SIM">📱</span>' : '') + (c.voicemail ? ' <span title="Voicemail">📼</span>' : '') + '</span>'
-    + note + tx + play + '</div>'
+    + add + note + tx + play + '</div>'
     + (c.match ? '<div class="hist-match">' + markMatch(c.match, historyQuery()) + '</div>' : '')
     + '</div>';
 }
@@ -4416,6 +4595,7 @@ function renderHistoryRow(c) {
 function histIconTap(e, row, c) {
   var key = row.getAttribute("data-key");
   if (e.target.closest(".hist-play")) { toggleRecording(row, c); return true; }
+  if (e.target.closest(".h-add")) { openNoteSheet(c.call_id, (c.partner_name || "").trim() || c.phone_number || "", false); return true; }
   if (e.target.closest(".h-note")) { selectItem("call", c, key); openCallDetailView(c, { tab: "notes" }); return true; }
   if (e.target.closest(".h-tx")) { selectItem("call", c, key); openCallDetailView(c, { tab: "transcript" }); return true; }
   return false;
@@ -5768,10 +5948,11 @@ vmList.addEventListener("click", function(e) {
 // Asterisk plays as is. Decoding through an 8 kHz context does the
 // resampling; channels are averaged; the level is raised so a quiet mic
 // recording isn't faint on the phone.
-function vmToWav(buf) {
-  var off = new OfflineAudioContext(1, 1, 8000);
+function vmToWav(buf) { return audioToWav(buf, 8000, VM_MAX_SECONDS, "greetings can be at most 2 minutes"); }
+function audioToWav(buf, rate, maxSecs, tooLong) {
+  var off = new OfflineAudioContext(1, 1, rate);
   return new Promise(function(res, rej) { off.decodeAudioData(buf, res, rej); }).then(function(dec) {
-    if (dec.duration > VM_MAX_SECONDS + 0.5) throw new Error("greetings can be at most 2 minutes");
+    if (dec.duration > maxSecs + 0.5) throw new Error(tooLong);
     var n = dec.length, mono = new Float32Array(n), ch, c, i;
     for (c = 0; c < dec.numberOfChannels; c++) {
       ch = dec.getChannelData(c);
@@ -5784,7 +5965,7 @@ function vmToWav(buf) {
     var str = function(at, t) { for (var k = 0; k < t.length; k++) v.setUint8(at + k, t.charCodeAt(k)); };
     str(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); str(8, "WAVEfmt ");
     v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
-    v.setUint32(24, 8000, true); v.setUint32(28, 16000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
     str(36, "data"); v.setUint32(40, n * 2, true);
     for (i = 0; i < n; i++) {
       var s = Math.max(-1, Math.min(1, mono[i] * gain));
