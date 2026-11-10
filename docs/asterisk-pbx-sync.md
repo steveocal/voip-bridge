@@ -150,3 +150,28 @@ Setting it up (once):
 2. Deploy the worker; upgrade the Odoo addon to phone_bridge 18.0.0.9.0
    (adds a dependency on `resource`).
 3. `bash scripts/vps-setup-pbx-ivr.sh`.
+
+## Spoken menus (callers say their choice)
+
+A menu with **Callers Can Say Their Choice** (phone_bridge 18.0.0.11.0) lets
+callers answer out loud as well as with a key. Each key gets a **Name**
+("Sales") and **What It's For** ("buying heaters, prices, quotes, orders").
+
+```
+[pb-menu-saykeys]: MixMonitor r() records the caller only, BackgroundDetect
+  plays the prompt / listens for the key timeout ──talk──▶ pb-say.sh
+  ──POST /pbx/say?menu=<id> (WAV)──▶ worker: Whisper → name / "two" said
+  outright, else Llama picks the key whose name + description fit ──▶ "1"
+  ──▶ "Putting you through to Sales." (astdb pbsay) ──▶ the key's action
+```
+
+Not understood ("-"): "Sorry, I didn't catch that. You can say Sales or
+Technical, or press a key." and listen again, up to the menu's retries, then
+the no-key action. No words at all (".", a noise): the prompt starts again,
+at most 3 times. Keys work throughout; with direct dial a first digit waits
+2 seconds for more (a lone digit is a key). The worker logs each answer
+(`spoken menu 3: "my heater's broken" → 2 (model) Technical`).
+
+Setting it up: deploy the worker, upgrade the addon to 18.0.0.11.0, run
+`bash scripts/vps-setup-pbx-ivr.sh` again (installs pb-say.sh and the new
+contexts), then tick the box on a menu.

@@ -12,6 +12,9 @@
 # the routing file. Nothing changes for calls until a number gets a menu or
 # opening hours in Odoo: without a pbwhen key [pb-ivr] returns at once.
 #
+# Spoken menus (phone_bridge 18.0.0.11.0, "Callers Can Say Their Choice")
+# add pb-say.sh, which sends what callers say to the worker (POST /pbx/say).
+#
 # Needs first: migration 0017, the worker deployed, phone_bridge 18.0.0.9.0.
 # Run from this machine: bash scripts/vps-setup-pbx-ivr.sh
 # Backs up each file it changes; running it again changes nothing.
@@ -19,6 +22,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 ssh vps "cat > /tmp/pbx-sync.sh.new" < asterisk/pbx-sync.sh
+ssh vps "cat > /tmp/pb-say.sh.new" < asterisk/pb-say.sh
 ssh vps "cat > /tmp/extensions-phone-bridge-routing.conf.new" < asterisk/extensions-phone-bridge-routing.conf
 ssh vps "cat > /tmp/extensions-phone-bridge-ivr.conf.new" < asterisk/extensions-phone-bridge-ivr.conf
 
@@ -32,6 +36,7 @@ install_file() {  # new-file target mode
   mv "$1" "$2"; chmod "$3" "$2"; chown 1000:1000 "$2"; echo "$2: installed"
 }
 install_file /tmp/pbx-sync.sh.new pbx-sync.sh 755
+install_file /tmp/pb-say.sh.new pb-say.sh 755
 install_file /tmp/extensions-phone-bridge-ivr.conf.new extensions-phone-bridge-ivr.conf 644
 install_file /tmp/extensions-phone-bridge-routing.conf.new extensions-phone-bridge-routing.conf 644
 
@@ -46,13 +51,13 @@ fi
 
 A="docker exec asterisk asterisk -rx"
 $A "dialplan reload" >/dev/null
-for c in pb-ivr pb-hours pb-do pb-menu pb-menu-keys pb-menu-dd pb-route; do
+for c in pb-ivr pb-hours pb-do pb-menu pb-menu-keys pb-menu-dd pb-menu-saykeys pb-menu-saydd pb-say-stop pb-route; do
   out=$($A "dialplan show $c")   # not piped into grep -q: with pipefail its early exit fails the pipe
   case "$out" in *"Context '$c'"*) echo "$c: loaded" ;; *) echo "$c: NOT loaded"; exit 1 ;; esac
 done
 case "$($A "dialplan show pb-route")" in *pb-ivr*) echo "pb-route: asks pb-ivr" ;; *) echo "pb-route: NO pb-ivr hook"; exit 1 ;; esac
 echo "--- sync:"
 docker exec -u asterisk asterisk /etc/asterisk/pbx-sync.sh && echo "sync ok" || echo "sync failed; see above"
-for f in pbwhen pbhours pbmenu pbkey; do $A "database show $f"; done
+for f in pbwhen pbhours pbmenu pbkey pbsay; do $A "database show $f"; done
 docker exec asterisk ls -la /var/spool/asterisk/phone-bridge-prompts 2>/dev/null || true
 REMOTE

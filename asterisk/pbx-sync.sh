@@ -112,8 +112,9 @@ sync_family pbfwd "$fwds"
 # Menus and opening hours (src/ivr.ts). astdb, read by [pb-ivr]:
 #   pbwhen/<our number> = <ring|menu>|<menu id|->|<out-of-hours action>|<prompt|->
 #   pbhours/<our number> = <time zone>|<open specs !-joined, or ->|<shut specs, or ->
-#   pbmenu/<id> = <prompt|->|<key timeout>|<retries>|<direct dial 0|1>
+#   pbmenu/<id> = <prompt|->|<key timeout>|<retries>|<direct dial 0|1>|<spoken 0|1>|<sorry prompt|->
 #   pbkey/<menu id>-<0-9|s|h|t> = <action>
+#   pbsay/<menu id>-<0-9|s|h> = <prompt> (spoken menus: "Putting you through to ...")
 # Actions: vm, hangup, repeat, fwd|<number>, menu|<id>, ring|<secs>|<Dial targets|->
 # (out of hours: the same, or -|- with no hours). Prompts are WAV files in
 # $PROMPTS, fetched once each; ones no longer used are deleted.
@@ -158,10 +159,12 @@ ivr=$(echo "$cfg" | awk '
     else sh[$2] = sh[$2] (sh[$2] == "" ? "" : "!") $5
   }
   $1 == "menu" && $2 ~ /^[0-9]+$/ && hash($3) && $4 ~ /^[0-9]+$/ && $4 >= 1 && $4 <= 30 && $5 ~ /^[0-5]$/ && ($6 == "0" || $6 == "1") {
-    print "pbmenu", $2, $3 "|" $4 "|" $5 "|" $6
+    say = ($7 == "1" && hash($8)) ? 1 : 0
+    print "pbmenu", $2, $3 "|" $4 "|" $5 "|" $6 "|" say "|" (say ? $8 : "-")
   }
   $1 == "key" && $2 ~ /^[0-9]+$/ && $3 ~ /^([0-9]|s|h|t)$/ && (k = act($4)) != "" && !($3 == "t" && k == "repeat") {
     print "pbkey", $2 "-" $3, k
+    if ($3 != "t" && hash($5) && $5 != "-") print "pbsay", $2 "-" $3, $5
   }
   $1 == "prompt" && hash($2) && $2 != "-" { print "prompt", $2 }
   END { for (d in tz) print "pbhours", d, tz[d] "|" (op[d] == "" ? "-" : op[d]) "|" (sh[d] == "" ? "-" : sh[d]) }')
@@ -170,6 +173,8 @@ sync_family pbwhen "$(fam pbwhen)"
 sync_family pbhours "$(fam pbhours)"
 sync_family pbmenu "$(fam pbmenu)"
 sync_family pbkey "$(fam pbkey)"
+sync_family pbsay "$(fam pbsay)"
+mkdir -p "${SAY_DIR:-/var/spool/asterisk/phone-bridge-say}" 2>/dev/null   # spoken answers, while pb-say.sh sends them
 
 PROMPTS=${PROMPTS:-/var/spool/asterisk/phone-bridge-prompts}
 mkdir -p "$PROMPTS"

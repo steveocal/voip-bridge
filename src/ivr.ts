@@ -19,7 +19,13 @@ const LEAVE_DAYS = 330;   // Asterisk time specs have no year: stay inside one
 
 type Rec = Record<string, unknown>;
 interface Action { kind: string; number?: string | null; menu?: number | null; exts?: string[]; secs?: number }
-interface Menu { id: number; prompt: string; voice: string; timeout: number; retries: number; direct: boolean; ringSecs: number; keys: Record<string, Action>; noinput: Action }
+interface Choice { name: string; about: string }
+export interface Menu {
+  id: number; prompt: string; voice: string; timeout: number; retries: number; direct: boolean; ringSecs: number;
+  keys: Record<string, Action>; noinput: Action;
+  /** Callers may say their choice (phone_bridge 0.11); names / about by key. */
+  spoken?: boolean; names?: Record<string, Choice>;
+}
 interface Hours { tz: string; open: string[]; shut: string[] }
 interface NumberIvr { number: string; answer: "ring" | "menu"; menu: number | null; hours: Hours | null; closed: Action; closedPrompt: string | null; voice: string }
 export interface Ivr { numbers: NumberIvr[]; menus: Menu[] }
@@ -29,6 +35,36 @@ const id = (v: unknown) => (Array.isArray(v) ? v[0] as number : typeof v === "nu
 const int = (v: unknown, lo: number, hi: number, d: number) => (typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : d);
 const digits = (v: unknown) => str(v)?.replace(/\D/g, "") || null;
 const voice = (v: unknown) => (typeof v === "string" && VOICES.has(v) ? v : "athena");
+const clean = (v: unknown, max: number) => (str(v) ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+
+// ── Spoken menus: what the PBX says around the caller's answer ──
+/** "sales, accounts or technical" */
+function orList(names: string[]): string {
+  return names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`;
+}
+/** Said when an answer wasn't understood, before the caller tries again. */
+export function sorryText(m: Menu): string {
+  const names = Object.keys(m.keys).sort().map((k) => m.names?.[k]?.name).filter((n): n is string => !!n);
+  return names.length ? `Sorry, I didn't catch that. You can say ${orList(names)}, or press a key.` : "Sorry, I didn't catch that. Please press a key.";
+}
+/** Said when a spoken answer picked an option, so the caller knows where they're going. */
+export function confirmText(name: string, a: Action): string {
+  return a.kind === "ring" || a.kind === "forward" ? `Putting you through to ${name}.` : `${name}.`;
+}
+/** Every extra prompt a spoken menu needs. */
+function spokenTexts(m: Menu): string[] {
+  if (!m.spoken) return [];
+  const out = [sorryText(m)];
+  for (const [k, c] of Object.entries(m.names ?? {})) if (c.name && m.keys[k]) out.push(confirmText(c.name, m.keys[k]));
+  return out;
+}
+
+/** One menu from the synced copy (for POST /pbx/say). */
+export async function storedMenu(env: Env, menuId: number): Promise<Menu | null> {
+  const raw = (await env.DB.prepare("SELECT value FROM settings WHERE key = 'pbx_ivr'").first<{ value: string }>())?.value;
+  if (!raw) return null;
+  try { return (JSON.parse(raw) as Ivr).menus.find((m) => m.id === menuId) ?? null; } catch { return null; }
+}
 
 /** sha256(voice, text) → 16 hex: the prompt's file name on the PBX. */
 export async function promptHash(voiceName: string, text: string): Promise<string> {
@@ -99,11 +135,17 @@ function action(kind: unknown, number: unknown, menu: unknown, exts: string[], s
  *  refused (addon before 0.9: no menus; the stored copy is left alone). */
 export async function syncIvr(env: Env, uid: number, numberOfExt: Map<number, string>): Promise<Array<ReturnType<Env["DB"]["prepare"]>> | null> {
   const sr = (model: string, domain: unknown[], fields: string[]) => odooCall(env, uid, model, "search_read", [domain], { fields });
-  const [nr, mr, or] = await Promise.all([
+  const menuFields = ["prompt", "voice", "timeout", "retries", "direct_dial", "ring_seconds", "noinput_action", "noinput_extension_ids", "noinput_number", "noinput_menu_id"];
+  const optFields = ["menu_id", "key", "action", "extension_ids", "number", "submenu_id"];
+  let [nr, mr, or] = await Promise.all([
     sr("phone_bridge.number", [], ["number", "answer", "menu_id", "calendar_id", "closed_action", "closed_number", "closed_menu_id", "closed_message", "voice"]),
-    sr("phone_bridge.menu", [], ["prompt", "voice", "timeout", "retries", "direct_dial", "ring_seconds", "noinput_action", "noinput_extension_ids", "noinput_number", "noinput_menu_id"]),
-    sr("phone_bridge.menu.option", [], ["menu_id", "key", "action", "extension_ids", "number", "submenu_id"]),
+    sr("phone_bridge.menu", [], [...menuFields, "spoken"]),
+    sr("phone_bridge.menu.option", [], [...optFields, "name", "description"]),
   ]);
+  if (mr.fault || or.fault) {
+    // An addon before 0.11 has no spoken menus: read the menus without them.
+    [mr, or] = await Promise.all([sr("phone_bridge.menu", [], menuFields), sr("phone_bridge.menu.option", [], optFields)]);
+  }
   if (nr.fault || mr.fault || or.fault) {
     console.warn("Odoo phone menus / hours not read; left as they were:", String(nr.fault || mr.fault || or.fault).slice(-300));
     return null;
@@ -137,15 +179,20 @@ export async function syncIvr(env: Env, uid: number, numberOfExt: Map<number, st
   const menus: Menu[] = ((mr.parsed ?? []) as Rec[]).map((m) => {
     const ringSecs = int(m.ring_seconds, 5, 300, 30);
     const keys: Record<string, Action> = {};
+    const names: Record<string, Choice> = {};
     for (const o of opts) {
       if (id(o.menu_id) !== m.id) continue;
       const k = str(o.key);
-      if (k && /^[0-9*#]$/.test(k)) keys[k] = action(o.action, o.number, o.submenu_id, exts(o.extension_ids), ringSecs);
+      if (!k || !/^[0-9*#]$/.test(k)) continue;
+      keys[k] = action(o.action, o.number, o.submenu_id, exts(o.extension_ids), ringSecs);
+      const name = clean(o.name, 60), about = clean(o.description, 500);
+      if (name || about) names[k] = { name, about };
     }
     return {
       id: m.id as number, prompt: (str(m.prompt) ?? "").trim().slice(0, 1000), voice: voice(m.voice),
       timeout: int(m.timeout, 1, 30, 5), retries: int(m.retries, 0, 5, 2), direct: !!m.direct_dial, ringSecs, keys,
       noinput: action(m.noinput_action, m.noinput_number, m.noinput_menu_id, exts(m.noinput_extension_ids), ringSecs),
+      spoken: m.spoken === true && Object.keys(names).length > 0, names,
     };
   });
   const numbers: NumberIvr[] = [];
@@ -164,7 +211,10 @@ export async function syncIvr(env: Env, uid: number, numberOfExt: Map<number, st
   const ivr: Ivr = { numbers, menus };
   // The prompts to speak: text and voice by hash (the audio comes later).
   const prompts = new Map<string, [string, string]>();
-  for (const m of menus) if (m.prompt) prompts.set(await promptHash(m.voice, m.prompt), [m.voice, m.prompt]);
+  for (const m of menus) {
+    if (m.prompt) prompts.set(await promptHash(m.voice, m.prompt), [m.voice, m.prompt]);
+    for (const t of spokenTexts(m)) prompts.set(await promptHash(m.voice, t), [m.voice, t]);
+  }
   for (const n of numbers) if (n.closedPrompt) prompts.set(await promptHash(n.voice, n.closedPrompt), [n.voice, n.closedPrompt]);
   const now = Date.now();
   const stmts = [
@@ -181,8 +231,8 @@ export async function syncIvr(env: Env, uid: number, numberOfExt: Map<number, st
 /** pbx-sync.sh lines for the menus and hours (after the route lines):
  *    when <our number> <ring|menu<id>> <out of hours action|-> <prompt|->
  *    hours <our number> <time zone> <open|shut> <IFTIME spec>
- *    menu <id> <prompt|-> <key timeout> <retries> <direct dial 0|1>
- *    key <menu id> <0-9, s (*), h (#), t (no key)> <action>
+ *    menu <id> <prompt|-> <key timeout> <retries> <direct dial 0|1> <spoken 0|1> <sorry prompt|->
+ *    key <menu id> <0-9, s (*), h (#), t (no key)> <action> <spoken confirmation prompt|->
  *    prompt <hash>
  *  Actions: vm, hangup, repeat, fwd<number>, menu<id>, ring<secs>:<legs|->
  *  (legs as on route lines). A number with no "when" line just rings; one
@@ -221,8 +271,15 @@ export async function ivrSyncLines(env: Env, routed: Set<string>, legsOf: (exts:
   for (const m of ivr.menus) {
     let p = "-";
     if (m.prompt) { p = await promptHash(m.voice, m.prompt); prompts.add(p); }
-    lines.push(`menu ${m.id} ${p} ${m.timeout} ${m.retries} ${m.direct ? 1 : 0}`);
-    for (const [k, a] of Object.entries(m.keys).sort()) lines.push(`key ${m.id} ${KEY[k] ?? k} ${act(a, true)}`);
+    let sorry = "-";
+    if (m.spoken) { sorry = await promptHash(m.voice, sorryText(m)); prompts.add(sorry); }
+    lines.push(`menu ${m.id} ${p} ${m.timeout} ${m.retries} ${m.direct ? 1 : 0} ${m.spoken ? 1 : 0} ${sorry}`);
+    for (const [k, a] of Object.entries(m.keys).sort()) {
+      let c = "-";
+      const name = m.names?.[k]?.name;
+      if (m.spoken && name) { c = await promptHash(m.voice, confirmText(name, a)); prompts.add(c); }
+      lines.push(`key ${m.id} ${KEY[k] ?? k} ${act(a, true)} ${c}`);
+    }
     lines.push(`key ${m.id} t ${act(m.noinput, false)}`);
   }
   for (const h of [...prompts].sort()) lines.push(`prompt ${h}`);

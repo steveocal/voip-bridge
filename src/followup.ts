@@ -23,7 +23,7 @@ const PROMPT = "You read a short note someone dictated after a phone call at Inf
 const ymd = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 
 /** 16-bit PCM samples from a WAV file (the dashboard sends 16 kHz mono). */
-function wavSamples(buf: ArrayBuffer): { samples: Int16Array; rate: number } | null {
+export function wavSamples(buf: ArrayBuffer): { samples: Int16Array; rate: number } | null {
   const v = new DataView(buf);
   if (buf.byteLength < 44 || v.getUint32(0) !== 0x52494646 || v.getUint32(8) !== 0x57415645) return null;   // RIFF / WAVE
   let rate = 0;
@@ -31,7 +31,9 @@ function wavSamples(buf: ArrayBuffer): { samples: Int16Array; rate: number } | n
     const id = v.getUint32(at), size = v.getUint32(at + 4, true);
     if (id === 0x666d7420) rate = v.getUint32(at + 12, true);   // "fmt "
     if (id === 0x64617461) {                                     // "data"
-      const len = Math.min(size, buf.byteLength - at - 8) & ~1;
+      // A header still being written (size 0 or -1) means "to the end".
+      const rest = buf.byteLength - at - 8;
+      const len = (size > 0 && size < 0xffffffff ? Math.min(size, rest) : rest) & ~1;
       return rate ? { samples: new Int16Array(buf.slice(at + 8, at + 8 + len)), rate } : null;
     }
     at += 8 + size + (size & 1);

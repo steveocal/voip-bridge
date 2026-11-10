@@ -16,6 +16,7 @@ import { groupCallLegs } from "./calllegs";
 import { type User, sessionUser, handleLogin, handleMe, extensionOwners, extensionUser, syncExtensions, canSee } from "./users";
 import { handlePbxStatus, handlePbxSync, handlePbxSynced, pbxAllowed } from "./pbxsync";
 import { handlePbxPrompt } from "./ivr";
+import { handlePbxSay } from "./ivrsay";
 import { handleStaffEmployees, handleStaffLogin, handleStaffLocation } from "./staff";
 import { handleMobileCall, handleMobileCallEvent } from "./mobilecall";
 import { handleWebCallback, handleWebCallbackConfig, handleWebCallbackStatus, handleWebCallbackEvent } from "./webcallback";
@@ -905,6 +906,7 @@ export default {
     // the PBX secret only, never a signed-in user.
     else if (m === "GET" && p === "/pbx/sync") response = await pbxAllowed(request, env) ? await handlePbxSync(env) : Response.json({ error: "forbidden" }, { status: 403 });
     else if (m === "POST" && p === "/pbx/synced") response = await pbxAllowed(request, env) ? await handlePbxSynced(request, env) : Response.json({ error: "forbidden" }, { status: 403 });
+    else if (m === "POST" && p === "/pbx/say") response = await pbxAllowed(request, env) ? await handlePbxSay(request, env) : Response.json({ error: "forbidden" }, { status: 403 });
     else if (m === "GET" && p.startsWith("/pbx/prompt/")) response = await pbxAllowed(request, env) ? await handlePbxPrompt(env, p.slice(12)) : Response.json({ error: "forbidden" }, { status: 403 });
     else if (request.method === "GET" && url.pathname === "/voicemail/sync") response = await handleVoicemailSync(env);
     else if (request.method === "POST" && url.pathname === "/voicemail/synced") response = await handleVoicemailSynced(request, env);
