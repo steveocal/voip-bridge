@@ -248,6 +248,22 @@ export function displayNumber(number: string): string {
   return digits.length > 10 ? "+" + digits : digits;
 }
 
+/** SQL for phoneKey() over a column: strip the usual punctuation, keep the last 9. */
+export function sqlPhoneKey(col: string): string {
+  let e = col;
+  for (const ch of [" ", "-", "+", "(", ")", ".", "/"]) e = `REPLACE(${e}, '${ch}', '')`;
+  return `substr(${e}, -9)`;
+}
+
+/** The D1 contact cache's match for a phoneKey (no Odoo round-trip). */
+export async function findCachedContact(env: Env, key: string): Promise<Contact | null> {
+  return await env.DB.prepare(
+    `SELECT id, name, phone, mobile, email FROM contacts
+     WHERE active = 1 AND (${sqlPhoneKey("phone")} = ?1 OR ${sqlPhoneKey("mobile")} = ?1)
+     ORDER BY id LIMIT 1`
+  ).bind(key).first<Contact>();
+}
+
 export async function lookupCaller(env: Env, number: string) {
   const key = phoneKey(number);
   if (!key) return null;
@@ -542,23 +558,79 @@ function dt(v: unknown): number | null {
 }
 
 /** Bulk-sync all active res.partner rows into the D1 contacts cache. */
-export async function syncContacts(env: Env): Promise<{ total: number; synced: number }> {
+export async function syncContacts(env: Env): Promise<{ total: number; synced: number; removed: number }> {
   const uid = await odooAuth(env);
-  if (!uid) return { total: 0, synced: 0 };
+  if (!uid) return { total: 0, synced: 0, removed: 0 };
   const fields = ["id", "name", "company_type", "is_company", "phone", "mobile", "email", "website", "vat", "function", "city", "active"];
   const BATCH = 500;
   let offset = 0, synced = 0;
+  const seen = new Set<number>();
   for (;;) {
+    // Archived ones too (they keep active = 0), so only contacts really
+    // deleted in Odoo are missing from the read.
     const r = await odooCall(env, uid, "res.partner", "search_read",
-      [[]], { fields, limit: BATCH, offset, order: "id" });
-    const partners = ((r.parsed ?? []) as unknown as Contact[]);
+      [[]], { fields, limit: BATCH, offset, order: "id", context: { active_test: false } });
+    // A failed page must not look like the end of the list: everything
+    // after it would be pruned below.
+    if (r.fault || !Array.isArray(r.parsed)) throw new Error(`res.partner read failed: ${r.fault ?? "no result"}`);
+    const partners = r.parsed as unknown as Contact[];
     if (!partners.length) break;
     await upsertContacts(env, partners.map(normalizeContact));
+    for (const p of partners) seen.add(p.id);
     synced += partners.length;
     if (partners.length < BATCH) break;
     offset += BATCH;
   }
-  return { total: synced, synced };
+  // Contacts deleted in Odoo while the worker didn't hear about it.
+  let removed = 0;
+  if (seen.size) {
+    const { results } = await env.DB.prepare("SELECT id FROM contacts").all<{ id: number }>();
+    const gone = (results ?? []).map(r => r.id).filter(id => !seen.has(id));
+    removed = await forgetContacts(env, gone);
+  }
+  return { total: synced, synced, removed };
+}
+
+// ── Deleted in Odoo → gone from D1 ────────────────────────────
+
+/** Drop contacts deleted in Odoo: the cached contact and its cached
+ *  messages. Their calls stay (as in Odoo) but no longer point at them. */
+export async function forgetContacts(env: Env, ids: number[]): Promise<number> {
+  ids = [...new Set(ids.filter(id => Number.isInteger(id) && id > 0))];
+  let removed = 0;
+  for (let i = 0; i < ids.length; i += 50) {
+    const chunk = ids.slice(i, i + 50);
+    const ph = chunk.map((_, j) => `?${j + 1}`).join(",");
+    const [del] = await env.DB.batch([
+      env.DB.prepare(`DELETE FROM contacts WHERE id IN (${ph})`).bind(...chunk),
+      env.DB.prepare(`UPDATE call_log SET partner_id = NULL WHERE partner_id IN (${ph})`).bind(...chunk),
+      env.DB.prepare(`DELETE FROM messages WHERE contact_id IN (${ph})`).bind(...chunk),
+    ]);
+    removed += Number(del.meta.changes) || 0;
+  }
+  return removed;
+}
+
+/** Drop calls deleted in Odoo, by the Asterisk id Odoo knows them by
+ *  (bridge_call_id: the call's first leg). Every leg goes, with its notes,
+ *  transcript and History swipes. */
+export async function forgetCalls(env: Env, callIds: string[]): Promise<number> {
+  const rowIds = new Set<number>();
+  for (const callId of new Set(callIds.filter(Boolean))) {
+    for (const leg of await callLegs(env, callId)) rowIds.add(leg.id);
+  }
+  const ids = [...rowIds];
+  let removed = 0;
+  for (let i = 0; i < ids.length; i += 50) {
+    const chunk = ids.slice(i, i + 50);
+    const ph = chunk.map((_, j) => `?${j + 1}`).join(",");
+    const [, del] = await env.DB.batch([
+      env.DB.prepare(`DELETE FROM call_hidden WHERE call_log_id IN (${ph})`).bind(...chunk),
+      env.DB.prepare(`DELETE FROM call_log WHERE id IN (${ph})`).bind(...chunk),
+    ]);
+    removed += Number(del.meta.changes) || 0;
+  }
+  return removed;
 }
 
 /** Sync the most recent N voip.call rows into the D1 call_log cache. */
@@ -601,7 +673,7 @@ export async function syncCallLog(env: Env, limit = 100): Promise<number> {
 // standard voip.call fields are written.
 
 interface CallRow {
-  call_id: string; odoo_id: number | null; phone_number: string | null; did: string | null;
+  id: number; call_id: string; odoo_id: number | null; phone_number: string | null; did: string | null;
   direction: string | null; state: string | null; partner_id: number | null;
   start_date: number | null; end_date: number | null; notes_html: string | null;
   transcript: string | null; recording: string | null; voicemail: number; extension: string | null;

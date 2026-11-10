@@ -1,5 +1,5 @@
 import type { Env, ExecutionContext, D1PreparedStatement, D1Result } from "./types";
-import { lookupCaller, pushCallToOdoo, pushCallHistory, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages, searchQuotations, contactTotals, phoneKey, createContactForNumber, renameContact, userActivities, activityDone, callLegs } from "./odoo";
+import { lookupCaller, pushCallToOdoo, pushCallHistory, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages, searchQuotations, contactTotals, phoneKey, sqlPhoneKey, findCachedContact, createContactForNumber, renameContact, forgetCalls, forgetContacts, userActivities, activityDone, callLegs } from "./odoo";
 import { searchGmailMessages, searchRecentGmailMessages, getGmailBody, sendGmailMessage, listGoogleContacts, googleAccount, handleGoogleConnect, handleGoogleCallback, handleGoogleDisconnect, calendarEvents } from "./gmail";
 import { ariRequest, ariParkedCalls } from "./asterisk";
 import { playbackResponse } from "./recording";
@@ -320,20 +320,6 @@ async function handleCallHistory(request: Request, env: Env, user: User): Promis
 // ── Naming calls: link call_log rows to contacts by phone number ──
 // Numbers are compared on their last 9 digits (phoneKey) after stripping
 // the punctuation people type into Odoo ("01283 246490", "+44 (0)1283-…").
-function sqlPhoneKey(col: string): string {
-  let e = col;
-  for (const ch of [" ", "-", "+", "(", ")", ".", "/"]) e = `REPLACE(${e}, '${ch}', '')`;
-  return `substr(${e}, -9)`;
-}
-
-async function findCachedContact(env: Env, key: string): Promise<Contact | null> {
-  return await env.DB.prepare(
-    `SELECT id, name, phone, mobile, email FROM contacts
-     WHERE active = 1 AND (${sqlPhoneKey("phone")} = ?1 OR ${sqlPhoneKey("mobile")} = ?1)
-     ORDER BY id LIMIT 1`
-  ).bind(key).first<Contact>();
-}
-
 /** Point every unnamed call from this number at the contact. */
 async function linkCallsToContact(env: Env, key: string, contactId: number): Promise<number> {
   const r = await env.DB.prepare(
@@ -737,6 +723,18 @@ async function handleSync(env: Env): Promise<Response> {
   }
 }
 
+// The Odoo addon posts here after calls or contacts are deleted there, so
+// the worker's copies go too: { calls: [bridge_call_id…], contacts: [res.partner id…] }.
+// Only the addon (API token) may: this deletes call history for everyone.
+async function handleOdooDeleted(request: Request, env: Env, user: User): Promise<Response> {
+  if (!user.service) return Response.json({ error: "forbidden" }, { status: 403 });
+  let body: { calls?: unknown; contacts?: unknown };
+  try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
+  const calls = Array.isArray(body.calls) ? body.calls.map(String) : [];
+  const contacts = Array.isArray(body.contacts) ? body.contacts.map(Number) : [];
+  return Response.json({ ok: true, calls: await forgetCalls(env, calls), contacts: await forgetContacts(env, contacts) });
+}
+
 // Backfill: push logged calls that aren't in Odoo's voip.call yet, a batch
 // at a time (recordings make each one a few MB). Call again until remaining=0.
 // ?call_id=… (re)pushes just that call.
@@ -931,6 +929,7 @@ export default {
       else if (request.method === "POST" && url.pathname === "/answer") response = await handleAnswer(request, env);
       else if (request.method === "POST" && url.pathname === "/hangup-call") response = await handleHangupCall(request, env);
       else if (request.method === "POST" && url.pathname === "/sync") response = await handleSync(env);
+      else if (m === "POST" && p === "/odoo/deleted") response = await handleOdooDeleted(request, env, user);
       else if (request.method === "POST" && url.pathname === "/odoo/push-calls") response = await handlePushCalls(request, env);
       else if (request.method === "GET" && url.pathname === "/push/status") response = await handlePushStatus(env);
       else if (request.method === "GET" && url.pathname === "/settings") response = await handleGetSettings(env, user);

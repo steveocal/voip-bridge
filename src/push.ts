@@ -1,4 +1,5 @@
 import type { Env } from "./types";
+import { findCachedContact, lookupCaller, phoneKey } from "./odoo";
 
 // ── FCM push for the Android app ──────────────────────────────
 // Asterisk hits POST /push/wake when an inbound call is about to ring an
@@ -84,6 +85,23 @@ export async function handlePushStatus(env: Env): Promise<Response> {
   return Response.json({ apps: rows.results || [] });
 }
 
+/** The caller's contact name: the D1 contact cache first, then Odoo, capped
+ *  so a slow Odoo never holds up the ring (Asterisk waits on this request). */
+async function callerName(env: Env, number: string): Promise<string> {
+  const key = phoneKey(number);
+  if (!key) return "";
+  try {
+    const cached = await findCachedContact(env, key);
+    if (cached?.name) return cached.name;
+    const timeout = new Promise<null>((r) => setTimeout(() => r(null), 1500));
+    const hit = await Promise.race([lookupCaller(env, number), timeout]);
+    return hit?.name || "";
+  } catch (e) {
+    console.error("Push caller lookup failed:", e);
+    return "";
+  }
+}
+
 // Called by Asterisk (GET or POST): extension, caller, type? — as query params or a
 // JSON body — authenticated by X-Push-Secret or ?secret=. (Asterisk's CURL() can
 // only do a plain GET/form POST, so query params keep the dialplan simple.)
@@ -100,12 +118,16 @@ export async function handlePushWake(request: Request, env: Env): Promise<Respon
   if (!extension) return Response.json({ error: "missing extension" }, { status: 400 });
   const type = (body.type || q.get("type")) === "call_cancelled" ? "call_cancelled" : "incoming_call";
   const caller = String(body.caller || q.get("caller") || "");
+  const name = type === "incoming_call" ? await callerName(env, caller) : "";
 
   const rows = await env.DB.prepare("SELECT token FROM push_tokens WHERE extension = ?").bind(extension).all<{ token: string }>();
   const tokens = (rows.results || []).map((r) => r.token);
   let sent = 0;
   for (const t of tokens) {
-    const r = await sendData(env, t, { type, caller });
+    // caller is "Name — number" so apps before 1.8 (which show it as-is) get
+    // the name too; 1.8+ use name/number and fall back to the phone's own
+    // contacts when name is empty.
+    const r = await sendData(env, t, { type, caller: name ? `${name} — ${caller}` : caller, name, number: caller });
     if (r === "ok") sent++;
     else if (r === "gone") await env.DB.prepare("DELETE FROM push_tokens WHERE token = ?").bind(t).run();
   }

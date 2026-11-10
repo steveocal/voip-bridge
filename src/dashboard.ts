@@ -1843,16 +1843,35 @@ function showCallPanel(show) {
   switchCallTab(activeCpTab || "notes");
 }
 
+// Who's on the line: Odoo contact, else the phone's own contact, else the
+// caller-ID name, else just the number.
+function callerName() {
+  if (!currentCall) return "";
+  if (currentCall.name) return currentCall.name;
+  var dev = deviceContactFor(currentCall.remote);
+  return (dev && dev.name) || currentCall.cidName || "";
+}
+function callerLabel() {
+  if (!currentCall) return "";
+  var n = callerName(), num = currentCall.remote || "";
+  return n && num && n !== num ? n + " — " + num : n || num || "Unknown caller";
+}
 function updateCallPanelCaller() {
   var el = document.getElementById("cp-caller-name");
   if (!currentCall) return;
-  el.textContent = currentCall.remote || "Unknown caller";
+  el.textContent = callerLabel();
   currentCallPartner = null;
+  var call = currentCall;
   fetch(API + "/caller-lookup?number=" + encodeURIComponent(currentCall.remote)).then(function(r){return r.json();}).then(function(d){
-    if (!currentCall) return;
+    if (!currentCall || currentCall !== call) return;
     if (d.found) {
       currentCallPartner = { id: d.id, name: d.name };
-      el.textContent = d.name + " — " + currentCall.remote;
+      var had = callerName();
+      currentCall.name = d.name;
+      el.textContent = callerLabel();
+      if (!currentCall.conf) document.getElementById("banner-remote").textContent = callerLabel();
+      // Still ringing in the background: re-show the notification with the name.
+      if (callNotif && currentCall.state === "ringing" && had !== d.name) showCallNotification(callerLabel());
       if (activeCpTab === "sales") loadQuotationsTab();
       if (activeCpTab === "emails") loadEmailsTab();
     }
@@ -4269,7 +4288,7 @@ function renderCallUI() {
   }
   banner.classList.remove("hidden");
   var conf = !!currentCall.conf;
-  document.getElementById("banner-remote").textContent = conf ? "👥 " + currentCall.confWith.join(", ") : currentCall.remote;
+  document.getElementById("banner-remote").textContent = conf ? "👥 " + currentCall.confWith.join(", ") : callerLabel();
   var si = { ringing: "🔔 Incoming…", calling: "📞 Calling…", active: "🔊 Connected" }[currentCall.state] || currentCall.state;
   document.getElementById("banner-state").textContent = (currentCall.dir === "in" ? "⬇ " : "⬆ ") + si;
   document.getElementById("banner-answer").classList.toggle("hidden", !(currentCall.state === "ringing" && currentCall.dir === "in"));
@@ -6263,11 +6282,14 @@ function initSoftphone() {
       var PN = nativePush();
       if (PN && PN.removeAllDeliveredNotifications) PN.removeAllDeliveredNotifications().catch(function() {});
       sipSession = inv;
-      currentCall = { id: inv.request.callId, dir: "in", remote: inv.remoteIdentity.uri.user || inv.remoteIdentity.displayName, state: "ringing" };
+      var cidName = String(inv.remoteIdentity.displayName || "").trim();
+      currentCall = { id: inv.request.callId, dir: "in", remote: inv.remoteIdentity.uri.user || cidName, state: "ringing" };
+      // Caller-ID name only when it's a real name, not the number again.
+      if (/[a-z]/i.test(cidName) && cidName !== currentCall.remote) currentCall.cidName = cidName;
       renderCallUI();
       logCallEvent("ring");
       startRingtone();
-      showCallNotification(inv.remoteIdentity.displayName || currentCall.remote);
+      showCallNotification(callerLabel());
       if (consumeAutoAnswer()) setTimeout(function() { if (currentCall && currentCall.state === "ringing") answerCall(); }, PV.autoAnswerDelayMs);
       inv.stateChange.on(function(state) {
         if (state === SIP.SessionState.Established) { stopRingtone(); ensureRemoteAudio(inv); currentCall.state = "active"; currentCall.answeredAt = Date.now(); renderCallUI(); logCallEvent("answer"); }

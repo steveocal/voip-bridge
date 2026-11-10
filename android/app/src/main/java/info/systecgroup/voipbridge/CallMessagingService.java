@@ -1,17 +1,22 @@
 package info.systecgroup.voipbridge;
 
+import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.media.AudioAttributes;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
+import android.provider.ContactsContract;
 
 import androidx.core.app.NotificationCompat;
+import androidx.core.content.ContextCompat;
 
 import com.google.firebase.messaging.FirebaseMessagingService;
 import com.google.firebase.messaging.RemoteMessage;
@@ -25,7 +30,8 @@ import java.util.Map;
  * opens the dashboard, which registers with Asterisk and answers the call.
  *
  * Payload (all strings): type = "incoming_call" | "call_cancelled",
- * caller = display number/name.
+ * caller = "Name — number" (or the number), name = contact name from Odoo
+ * (may be empty), number = the bare caller number.
  */
 public class CallMessagingService extends FirebaseMessagingService {
     private static final String CHANNEL_ID = "incoming_calls";
@@ -37,11 +43,40 @@ public class CallMessagingService extends FirebaseMessagingService {
         Map<String, String> data = message.getData();
         String type = data.get("type");
         if ("incoming_call".equals(type)) {
-            showIncomingCall(data.get("caller"));
+            showIncomingCall(callerText(data));
         } else if ("call_cancelled".equals(type)) {
             NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm != null) nm.cancel(NOTIFICATION_ID);
         }
+    }
+
+    /** "Name — number": Odoo's name from the worker, else the phone's own
+     *  contact for the number, else just the number. */
+    private String callerText(Map<String, String> data) {
+        String number = data.get("number");
+        if (number == null || number.isEmpty()) return data.get("caller"); // older worker
+        String name = data.get("name");
+        if (name == null || name.isEmpty()) name = phoneContactName(number);
+        return name == null || name.isEmpty() ? number : name + " — " + number;
+    }
+
+    /** The phone's address-book name for a number, or null (no match, or no
+     *  Contacts permission; this never asks for it). */
+    private String phoneContactName(String number) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS)
+                != PackageManager.PERMISSION_GRANTED) return null;
+        String digits = number.replaceAll("[^0-9]", "");
+        // Asterisk drops the "+", so "447700900123" would miss a contact
+        // saved as 07700 900123; put it back so PhoneLookup can match.
+        String q = number.startsWith("+") || digits.length() <= 10 ? number : "+" + digits;
+        Uri uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(q));
+        try (Cursor c = getContentResolver().query(uri,
+                new String[]{ContactsContract.PhoneLookup.DISPLAY_NAME}, null, null, null)) {
+            if (c != null && c.moveToFirst()) return c.getString(0);
+        } catch (Exception e) {
+            // Unreadable contacts: just show the number.
+        }
+        return null;
     }
 
     private void showIncomingCall(String caller) {
