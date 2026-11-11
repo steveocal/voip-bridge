@@ -112,7 +112,7 @@ sync_family pbfwd "$fwds"
 # Menus and opening hours (src/ivr.ts). astdb, read by [pb-ivr]:
 #   pbwhen/<our number> = <ring|menu>|<menu id|->|<out-of-hours action>|<prompt|->
 #   pbhours/<our number> = <time zone>|<open specs !-joined, or ->|<shut specs, or ->
-#   pbmenu/<id> = <prompt|->|<key timeout>|<retries>|<direct dial 0|1>|<spoken 0|1>|<sorry prompt|->
+#   pbmenu/<id> = <prompt|->|<key timeout>|<retries>|<direct dial 0|1>|<spoken 0|1>|<sorry prompt|->|<while ringing prompt|->
 #   pbkey/<menu id>-<0-9|s|h|t> = <action>
 #   pbsay/<menu id>-<0-9|s|h> = <prompt> (spoken menus: "Putting you through to ...")
 # Actions: vm, hangup, repeat, fwd|<number>, menu|<id>, ring|<secs>|<Dial targets|->,
@@ -166,7 +166,9 @@ ivr=$(echo "$cfg" | awk '
   }
   $1 == "menu" && $2 ~ /^[0-9]+$/ && hash($3) && $4 ~ /^[0-9]+$/ && $4 >= 1 && $4 <= 30 && $5 ~ /^[0-5]$/ && ($6 == "0" || $6 == "1") {
     say = ($7 == "1" && hash($8)) ? 1 : 0
-    print "pbmenu", $2, $3 "|" $4 "|" $5 "|" $6 "|" say "|" (say ? $8 : "-")
+    ring = ($9 != "" && hash($9)) ? $9 : "-"
+    print "pbmenu", $2, $3 "|" $4 "|" $5 "|" $6 "|" say "|" (say ? $8 : "-") "|" ring
+    if (ring != "-") print "ring", ring
   }
   $1 == "key" && $2 ~ /^[0-9]+$/ && $3 ~ /^([0-9]|s|h|t)$/ && (k = act($4)) != "" && !($3 == "t" && (k == "repeat" || k ~ /^owner/)) {
     print "pbkey", $2 "-" $3, k
@@ -194,6 +196,32 @@ for f in "$PROMPTS"/*.wav; do
   [ -e "$f" ] || continue
   h=$(basename "$f" .wav)
   echo "$want" | grep -q -x -F "$h" || rm -f "$f"
+done
+
+# "While ringing" prompts (a menu's message, then ringing tone): each is a
+# music-on-hold class pbring-<prompt> with the WAV in its own directory, so
+# Dial(...,m(pbring-<prompt>)) in [pb-do] plays it while the phones ring.
+# musiconhold.conf #includes $MOHCONF; MoH is reloaded only when it changed.
+MOH=${MOH:-/var/spool/asterisk/phone-bridge-moh}
+MOHCONF="$ETC/musiconhold-phone-bridge.conf"
+mkdir -p "$MOH"
+rings=$(echo "$ivr" | awk '$1 == "ring" { print $2 }' | sort -u)
+tmp="$MOHCONF.tmp.$$"
+{
+  echo "; Written by pbx-sync.sh from the phone menus in Odoo. Don't edit: the next sync overwrites it."
+  for h in $rings; do
+    [ -s "$PROMPTS/$h.wav" ] || continue
+    mkdir -p "$MOH/$h"
+    cmp -s "$PROMPTS/$h.wav" "$MOH/$h/ring.wav" || { cp "$PROMPTS/$h.wav" "$MOH/$h/ring.tmp" && chmod 644 "$MOH/$h/ring.tmp" && mv "$MOH/$h/ring.tmp" "$MOH/$h/ring.wav"; }
+    printf '\n[pbring-%s]\nmode = files\ndirectory = %s/%s\nsort = alpha\n' "$h" "$MOH" "$h"
+  done
+} > "$tmp" || { rm -f "$tmp"; exit 1; }
+if cmp -s "$tmp" "$MOHCONF"; then rm -f "$tmp"
+else mv "$tmp" "$MOHCONF"; chmod 644 "$MOHCONF"; $AST "moh reload" >/dev/null; fi
+for d in "$MOH"/*/; do
+  [ -d "$d" ] || continue
+  h=$(basename "$d")
+  echo "$rings" | grep -q -x -F "$h" || rm -rf "$d"
 done
 
 # Only report what was applied, so the worker can tell it's in step.

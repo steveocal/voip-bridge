@@ -15,6 +15,9 @@
 # Spoken menus (phone_bridge 18.0.0.11.0, "Callers Can Say Their Choice")
 # add pb-say.sh, which sends what callers say to the worker (POST /pbx/say);
 # "Customer's salesperson" keys (18.0.0.12.0) add pb-owner.sh (GET /pbx/owner).
+# "While Ringing, Callers Hear" (18.0.0.13.0) adds musiconhold-phone-bridge.conf
+# (written by pbx-sync.sh, #included from musiconhold.conf): one music-on-hold
+# class per message, played by Dial(...,m(...)) while the phones ring.
 #
 # Needs first: migration 0017, the worker deployed, phone_bridge 18.0.0.9.0.
 # Run from this machine: bash scripts/vps-setup-pbx-ivr.sh
@@ -52,7 +55,17 @@ else
   echo "extensions.conf: ivr included (backup extensions.conf.bak_pre_pbx_ivr_$ts)"
 fi
 
+if grep -q '^#include musiconhold-phone-bridge.conf' musiconhold.conf; then
+  echo "musiconhold.conf: phone bridge already included, unchanged"
+else
+  cp musiconhold.conf "musiconhold.conf.bak_pre_pbx_ring_$ts"
+  printf '\n; "While ringing" messages from the phone menus in Odoo (pbx-sync.sh)\n#include musiconhold-phone-bridge.conf\n' >> musiconhold.conf
+  echo "musiconhold.conf: phone bridge included (backup musiconhold.conf.bak_pre_pbx_ring_$ts)"
+fi
+[ -f musiconhold-phone-bridge.conf ] || { echo "; Written by pbx-sync.sh" > musiconhold-phone-bridge.conf; chmod 644 musiconhold-phone-bridge.conf; chown 1000:1000 musiconhold-phone-bridge.conf; }
+
 A="docker exec asterisk asterisk -rx"
+$A "moh reload" >/dev/null
 $A "dialplan reload" >/dev/null
 for c in pb-ivr pb-hours pb-do pb-menu pb-menu-keys pb-menu-dd pb-menu-saykeys pb-menu-saydd pb-say-stop pb-route; do
   out=$($A "dialplan show $c")   # not piped into grep -q: with pipefail its early exit fails the pipe
@@ -63,4 +76,6 @@ echo "--- sync:"
 docker exec -u asterisk asterisk /etc/asterisk/pbx-sync.sh && echo "sync ok" || echo "sync failed; see above"
 for f in pbwhen pbhours pbmenu pbkey pbsay; do $A "database show $f"; done
 docker exec asterisk ls -la /var/spool/asterisk/phone-bridge-prompts 2>/dev/null || true
+echo "--- while ringing classes:"
+$A "moh show classes" | grep -A2 pbring- || echo "(none yet: set While Ringing, Callers Hear on a menu)"
 REMOTE

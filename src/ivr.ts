@@ -25,6 +25,8 @@ export interface Menu {
   keys: Record<string, Action>; noinput: Action;
   /** Callers may say their choice (phone_bridge 0.11); names / about by key. */
   spoken?: boolean; names?: Record<string, Choice>;
+  /** Played while this menu's keys ring (phone_bridge 0.13), then ringing tone. */
+  ringPrompt?: string;
 }
 interface Hours { tz: string; open: string[]; shut: string[] }
 interface NumberIvr { number: string; answer: "ring" | "menu"; menu: number | null; hours: Hours | null; closed: Action; closedPrompt: string | null; voice: string }
@@ -65,6 +67,13 @@ export async function storedMenu(env: Env, menuId: number): Promise<Menu | null>
   if (!raw) return null;
   try { return (JSON.parse(raw) as Ivr).menus.find((m) => m.id === menuId) ?? null; } catch { return null; }
 }
+
+// A "while ringing" prompt is stored with voice "<voice>:ring": its WAV is the
+// speech followed by RING_SECS of UK ringing tone, played on a loop by the
+// PBX's music on hold while the phones ring.
+const RING = ":ring";
+const RING_SECS = 30;
+const ringVoice = (v: string) => v + RING;
 
 /** sha256(voice, text) → 16 hex: the prompt's file name on the PBX. */
 export async function promptHash(voiceName: string, text: string): Promise<string> {
@@ -139,10 +148,11 @@ export async function syncIvr(env: Env, uid: number, numberOfExt: Map<number, st
   const menuFields = ["prompt", "voice", "timeout", "retries", "direct_dial", "ring_seconds", "noinput_action", "noinput_extension_ids", "noinput_number", "noinput_menu_id"];
   const optFields = ["menu_id", "key", "action", "extension_ids", "number", "submenu_id"];
   const nr = await sr("phone_bridge.number", [], ["number", "answer", "menu_id", "calendar_id", "closed_action", "closed_number", "closed_menu_id", "closed_message", "voice"]);
-  // Newest addon first; older ones lack the later fields (0.12 team_ring,
-  // 0.11 spoken menus), so fall back a step at a time.
+  // Newest addon first; older ones lack the later fields (0.13 ring_prompt,
+  // 0.12 team_ring, 0.11 spoken menus), so fall back a step at a time.
   let mr = nr, or = nr;
   for (const [mf, of] of [
+    [[...menuFields, "spoken", "ring_prompt"], [...optFields, "name", "description", "team_ring"]],
     [[...menuFields, "spoken"], [...optFields, "name", "description", "team_ring"]],
     [[...menuFields, "spoken"], [...optFields, "name", "description"]],
     [menuFields, optFields],
@@ -197,6 +207,7 @@ export async function syncIvr(env: Env, uid: number, numberOfExt: Map<number, st
       timeout: int(m.timeout, 1, 30, 5), retries: int(m.retries, 0, 5, 2), direct: !!m.direct_dial, ringSecs, keys,
       noinput: action(m.noinput_action, m.noinput_number, m.noinput_menu_id, exts(m.noinput_extension_ids), ringSecs),
       spoken: m.spoken === true && Object.keys(names).length > 0, names,
+      ringPrompt: clean(m.ring_prompt, 300) || undefined,
     };
   });
   const numbers: NumberIvr[] = [];
@@ -218,6 +229,7 @@ export async function syncIvr(env: Env, uid: number, numberOfExt: Map<number, st
   for (const m of menus) {
     if (m.prompt) prompts.set(await promptHash(m.voice, m.prompt), [m.voice, m.prompt]);
     for (const t of spokenTexts(m)) prompts.set(await promptHash(m.voice, t), [m.voice, t]);
+    if (m.ringPrompt) prompts.set(await promptHash(ringVoice(m.voice), m.ringPrompt), [ringVoice(m.voice), m.ringPrompt]);
   }
   for (const n of numbers) if (n.closedPrompt) prompts.set(await promptHash(n.voice, n.closedPrompt), [n.voice, n.closedPrompt]);
   const now = Date.now();
@@ -235,7 +247,7 @@ export async function syncIvr(env: Env, uid: number, numberOfExt: Map<number, st
 /** pbx-sync.sh lines for the menus and hours (after the route lines):
  *    when <our number> <ring|menu<id>> <out of hours action|-> <prompt|->
  *    hours <our number> <time zone> <open|shut> <IFTIME spec>
- *    menu <id> <prompt|-> <key timeout> <retries> <direct dial 0|1> <spoken 0|1> <sorry prompt|->
+ *    menu <id> <prompt|-> <key timeout> <retries> <direct dial 0|1> <spoken 0|1> <sorry prompt|-> <while ringing prompt|->
  *    key <menu id> <0-9, s (*), h (#), t (no key)> <action> <spoken confirmation prompt|->
  *    prompt <hash>
  *  Actions: vm, hangup, repeat, fwd<number>, menu<id>, ring<secs>:<legs|->,
@@ -280,7 +292,9 @@ export async function ivrSyncLines(env: Env, routed: Set<string>, legsOf: (exts:
     if (m.prompt) { p = await promptHash(m.voice, m.prompt); prompts.add(p); }
     let sorry = "-";
     if (m.spoken) { sorry = await promptHash(m.voice, sorryText(m)); prompts.add(sorry); }
-    lines.push(`menu ${m.id} ${p} ${m.timeout} ${m.retries} ${m.direct ? 1 : 0} ${m.spoken ? 1 : 0} ${sorry}`);
+    let ring = "-";
+    if (m.ringPrompt) { ring = await promptHash(ringVoice(m.voice), m.ringPrompt); prompts.add(ring); }
+    lines.push(`menu ${m.id} ${p} ${m.timeout} ${m.retries} ${m.direct ? 1 : 0} ${m.spoken ? 1 : 0} ${sorry} ${ring}`);
     for (const [k, a] of Object.entries(m.keys).sort()) {
       let c = "-";
       const name = m.names?.[k]?.name;
@@ -329,11 +343,36 @@ function pcmOf(b: Uint8Array): Uint8Array {
   return new Uint8Array(0);
 }
 
-export async function speak(env: Env, voiceName: string, text: string): Promise<Uint8Array<ArrayBuffer>> {
+/** UK ringing tone (400 + 450 Hz; 0.4 s on, 0.2 off, 0.4 on, 2 off) as 8 kHz PCM. */
+export function ringTone(secs: number, rate = 8000): Uint8Array {
+  const n = Math.round(secs * rate), out = new Uint8Array(n * 2), v = new DataView(out.buffer);
+  for (let i = 0; i < n; i++) {
+    const t = i / rate, c = t % 3;
+    const on = c < 0.4 || (c >= 0.6 && c < 1.0);
+    const s = on ? 0.2 * (Math.sin(2 * Math.PI * 400 * t) + Math.sin(2 * Math.PI * 450 * t)) : 0;
+    v.setInt16(i * 2, Math.round(s * 32767), true);
+  }
+  return out;
+}
+
+/** Speech, half a second's pause, then RING_SECS of ringing tone. */
+async function speakThenRing(env: Env, voiceName: string, text: string): Promise<Uint8Array<ArrayBuffer>> {
+  const speech = await speakPcm(env, voiceName, text);
+  const gap = new Uint8Array(8000), ring = ringTone(RING_SECS);
+  const pcm = new Uint8Array(speech.length + gap.length + ring.length);
+  pcm.set(speech); pcm.set(gap, speech.length); pcm.set(ring, speech.length + gap.length);
+  return wav(pcm);
+}
+
+async function speakPcm(env: Env, voiceName: string, text: string): Promise<Uint8Array> {
   const out = await env.AI.run(TTS_MODEL, { text, speaker: voice(voiceName), encoding: "linear16", container: "none", sample_rate: 8000 });
   const pcm = pcmOf(await bytesOf(out));
   if (pcm.length < 1600) throw new Error(`text to speech gave ${pcm.length} bytes`);
-  return wav(pcm);
+  return pcm;
+}
+
+export async function speak(env: Env, voiceName: string, text: string): Promise<Uint8Array<ArrayBuffer>> {
+  return wav(await speakPcm(env, voiceName, text));
 }
 
 /** GET /pbx/prompt/<hash> (PBX secret only): the prompt as a WAV file,
@@ -344,7 +383,9 @@ export async function handlePbxPrompt(env: Env, hash: string): Promise<Response>
   if (!row) return new Response("no such prompt\n", { status: 404 });
   let audio: Uint8Array<ArrayBuffer> | null = row.audio ? new Uint8Array(row.audio) : null;
   if (!audio || !audio.length) {
-    try { audio = await speak(env, row.voice, row.text); }
+    try {
+      audio = row.voice.endsWith(RING) ? await speakThenRing(env, row.voice.slice(0, -RING.length), row.text) : await speak(env, row.voice, row.text);
+    }
     catch (e) { console.error("prompt", hash, "text to speech failed:", e); return new Response("text to speech failed\n", { status: 502 }); }
     await env.DB.prepare("UPDATE pbx_prompts SET audio = ?1 WHERE hash = ?2").bind(audio, hash).run();
   }
