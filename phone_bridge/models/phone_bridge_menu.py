@@ -20,6 +20,7 @@ TEAM_RING = [("all", "All at once"), ("each", "One at a time")]
 KEYS = [(k, k) for k in "1234567890*#"]
 
 MAX_PROMPT = 1000
+MAX_RING_PROMPT = 300   # said again every ~30 s while the phones ring
 
 
 def check_action(rec, action, number, menu, what):
@@ -52,6 +53,12 @@ class PhoneBridgeMenu(models.Model):
                                  "pressing a key. Their answer is matched against each key's Name and What It's For; "
                                  "keys still work. Give every key a name, and say the names in the prompt, e.g. "
                                  "\"Say sales or press 1, say technical or press 2.\"")
+    ring_prompt = fields.Text("While Ringing, Callers Hear",
+                              help="Played to callers while the phones ring for this menu's \"Ring extensions\", "
+                                   "\"Customer's salesperson\" and \"Forward to a number\" keys, e.g. \"Please "
+                                   "wait while I connect you.\" The phones start ringing straight away; callers hear "
+                                   "the message, then a ringing tone, and the message again about every 30 seconds. "
+                                   "Leave empty for the ringing tone only.")
     direct_dial = fields.Boolean("Callers Can Dial an Extension",
                                  help="Callers who know an extension number can type it during the prompt.")
     ring_seconds = fields.Integer("Ring For (Seconds)", default=30, required=True,
@@ -67,7 +74,7 @@ class PhoneBridgeMenu(models.Model):
     noinput_menu_id = fields.Many2one("phone_bridge.menu", "Go To Menu")
     active = fields.Boolean(default=True)
 
-    @api.constrains("prompt", "timeout", "retries", "ring_seconds", "noinput_action", "noinput_number", "noinput_menu_id",
+    @api.constrains("prompt", "ring_prompt", "timeout", "retries", "ring_seconds", "noinput_action", "noinput_number", "noinput_menu_id",
                     "spoken", "option_ids")
     def _check_menu(self):
         for menu in self:
@@ -78,6 +85,8 @@ class PhoneBridgeMenu(models.Model):
                                             ", ".join(unnamed.mapped("key"))))
             if len(menu.prompt or "") > MAX_PROMPT:
                 raise ValidationError(_("Keep the prompt to %s characters.", MAX_PROMPT))
+            if len(menu.ring_prompt or "") > MAX_RING_PROMPT:
+                raise ValidationError(_("Keep what callers hear while ringing to %s characters.", MAX_RING_PROMPT))
             if not 1 <= menu.timeout <= 30:
                 raise ValidationError(_("Wait 1 to 30 seconds for a key."))
             if not 0 <= menu.retries <= 5:

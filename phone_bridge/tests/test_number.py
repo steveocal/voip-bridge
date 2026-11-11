@@ -137,6 +137,12 @@ class TestMenusAndHours(TransactionCase):
         with self.assertRaises(ValidationError):
             self.env["phone_bridge.menu.option"].create({"menu_id": menu.id, "key": "3", "action": "voicemail"})
 
+    def test_ring_prompt(self):
+        menu = self.Menu.create({"name": "Ring", "prompt": "Press 1.", "ring_prompt": "Please wait while I connect you."})
+        self.assertEqual(menu.ring_prompt, "Please wait while I connect you.")
+        with self.assertRaises(ValidationError):
+            menu.write({"ring_prompt": "x" * 301})
+
     def test_salesperson_key(self):
         menu = self.Menu.create({"name": "Sales", "prompt": "Press 1.", "option_ids": [
             (0, 0, {"key": "1", "action": "salesperson", "team_ring": "each"}),

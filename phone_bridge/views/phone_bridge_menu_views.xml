@@ -28,6 +28,7 @@
                     <group>
                         <field name="prompt" placeholder="Thanks for calling. For sales press 1, for accounts press 2."/>
                         <field name="voice"/>
+                        <field name="ring_prompt" placeholder="Please wait while I connect you."/>
                         <field name="active" invisible="1"/>
                     </group>
                     <field name="option_ids">
@@ -71,6 +72,8 @@
                         "Customer's salesperson" keys ring the caller's salesperson (the contact's, or its
                         company's), then the extensions listed (the sales team) all at once or one at a time,
                         then voicemail.
+                        While Ringing, Callers Hear plays as soon as a key starts ringing, so the phones don't wait
+                        for it to finish.
                         When callers can say their choice, what they say is matched to a key by its Name, then by
                         What It's For (Workers AI); if it isn't clear they're asked again, as for a wrong key.
                     </div>
