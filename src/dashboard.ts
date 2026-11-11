@@ -186,7 +186,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 /* bottom menu */
 .bottom-menu{display:flex;border-top:1px solid #222;background:#0a0a0a;padding:6px 0 env(safe-area-inset-bottom);position:relative}
 /* "+" on the hang-up button: hang up, then dictate a note for the call */
-.fab-plus{position:absolute;left:calc(50% + 16px);top:-34px;width:30px;height:30px;border-radius:50%;border:2px solid #0a0a0a;background:#f5f5f5;color:#dc2626;font-size:20px;font-weight:800;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;z-index:2;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.fab-plus{position:absolute;left:calc(50% + 20px);top:-50px;width:46px;height:46px;border-radius:50%;border:2px solid #0a0a0a;background:#f5f5f5;color:#111;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;z-index:2;box-shadow:0 2px 10px rgba(0,0,0,.55)}
+.fab-plus .ico-note-add{width:30px;height:30px}
+/* note page with a + badge: used on the hang-up button and History rows */
+.ico-note-add{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ico-note-add .pl{fill:#10b981;stroke:none}
+.ico-note-add .plx{stroke:#fff;stroke-width:2.2}
+.hist-main .h-add{width:38px;height:38px}
+.hist-main .h-add .ico-note-add{width:28px;height:28px}
 .fab-plus:active{transform:scale(.92)}
 .menu-btn{flex:1;background:none;border:none;color:#888;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;font-size:10px}
 .menu-btn .ico{font-size:20px}
@@ -759,7 +766,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <button class="menu-btn call-only" id="nav-hold" onclick="toggleHold()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><g class="norm"><path d="M9 5.5v13"/><path d="M15 5.5v13"/></g><path class="alt" d="M8 5.5l11 6.5-11 6.5z"/></svg><span class="norm">Hold</span><span class="alt">Resume</span></button>
     <button class="menu-btn call-only" id="nav-mute" onclick="toggleMute()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/><path class="alt" d="M4 4l16 16"/></svg><span class="norm">Mute</span><span class="alt">Muted</span></button>
     <button class="dial-fab" id="nav-dial" onclick="navDialAction()" aria-label="Dial"><span class="fab"></span></button>
-    <button class="fab-plus call-only" id="nav-hangplus" onclick="hangupAndNote()" aria-label="Hang up and add a note" title="Hang up and add a note">+</button>
+    <button class="fab-plus call-only" id="nav-hangplus" onclick="hangupAndNote()" aria-label="Hang up and add a note" title="Hang up and add a note"><svg class="ico-note-add" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21H12"/><path d="M14 3l5 5v3"/><path d="M14 3v5h5"/><path d="M8 12h6M8 15.5h3"/><circle class="pl" cx="17.5" cy="17.5" r="4.5"/><path class="plx" d="M17.5 15.3v4.4M15.3 17.5h4.4"/></svg></button>
     <button class="menu-btn idle-only" data-view="contacts" onclick="switchView('contacts')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8"/><path d="M18.2 14.4c2 .8 3.3 2.8 3.3 5.6"/></svg><span>Contacts</span></button>
     <button class="menu-btn idle-only" data-view="messages" onclick="switchView('messages')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6.5 8.5-6.5"/></svg><span>Emails</span></button>
     <button class="menu-btn call-only" id="nav-speaker" onclick="toggleSpeaker()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6"/><path d="M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/></svg><span>Speaker</span></button>
@@ -3829,6 +3836,7 @@ function hangup() {
 // it to the call's Notes, time-stamped, and a date makes an Odoo To-Do on
 // the contact (POST /call-notes/add).
 var NOTE_MAX_SECONDS = 180;
+var NOTE_ADD_ICON = '<svg class="ico-note-add" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21H12"/><path d="M14 3l5 5v3"/><path d="M14 3v5h5"/><path d="M8 12h6M8 15.5h3"/><circle class="pl" cx="17.5" cy="17.5" r="4.5"/><path class="plx" d="M17.5 15.3v4.4M15.3 17.5h4.4"/></svg>';
 var noteSheet = null;   // { callId, rec, stream, timer, busy, summary }
 function hangupAndNote() {
   if (!currentCall) return;
@@ -3923,13 +3931,13 @@ function transcribeNote(sheet, blob) {
   });
 }
 function fmtNoteDate(ymd) { return new Date(ymd + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }); }
-function setNoteFollowUp(ymd) {
-  document.getElementById("ns-date").value = ymd || "";
+function setNoteFollowUp(day) {
+  document.getElementById("ns-date").value = day || "";
   var today = new Date(), btns = document.querySelectorAll("#ns-fu button");
   for (var i = 0; i < btns.length; i++) {
     var days = btns[i].getAttribute("data-days"), d = new Date(today);
     if (days) d.setDate(today.getDate() + Number(days));
-    btns[i].classList.toggle("on", days ? ymd(d) === ymd : !ymd);
+    btns[i].classList.toggle("on", days ? ymd(d) === day : !day);
   }
 }
 document.getElementById("ns-fu").addEventListener("click", function(e) {
@@ -4578,7 +4586,7 @@ function renderHistoryRow(c) {
   var when = d ? ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2) : "";
   var key = "h-" + c.id;
   callsCache[key] = c;
-  var add = c.call_id ? '<button class="h-ic h-add" title="Add a voice note">＋</button>' : '<span class="h-ic"></span>';
+  var add = c.call_id ? '<button class="h-ic h-add" title="Add a voice note">' + NOTE_ADD_ICON + '</button>' : '<span class="h-ic"></span>';
   var note = c.has_notes ? '<button class="h-ic h-note" title="Notes">📝</button>' : '<span class="h-ic"></span>';
   var tx = c.has_transcript ? '<button class="h-ic h-tx" title="Transcript">💬</button>'
     : c.has_recording ? '<button class="h-ic h-tx dim" title="Transcribe">💬</button>' : '<span class="h-ic"></span>';
