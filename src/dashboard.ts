@@ -1076,7 +1076,7 @@ defParam(J_WORD, "jotNewWordGapMm", "New word: gap", 2, { unit: "mm", min: 0, ma
 defParam(J_WORD, "jotNewLineMm", "New line = new word", 2, { unit: "mm", min: 0, max: 50, step: 0.5, note: "A stroke whose middle is this far below the word so far starts a new word straight away, with no pause needed" });
 defParam(J_WORD, "jotWordSettleMs", "Word settle delay", 2500, { unit: "ms", min: 500, max: 20000, step: 100, note: "With no new stroke for this long, the word is laid out; the next stroke then always starts a new word" });
 defParam(J_WORD, "jotEdgeZonePct", "End of line zone", 15, { unit: "%", min: 0, max: 50, step: 1, note: "A stroke ending in this right-hand part of the screen leaves no room to write on: the line is laid out and read without waiting (0 = off)" });
-defParam(J_WORD, "jotEdgeSettleMs", "End of line delay", 0, { unit: "ms", min: 0, max: 5000, step: 50, note: "Wait after a stroke in the end of line zone before laying out and reading (time to dot an i or cross a t)" });
+defParam(J_WORD, "jotEdgeSettleMs", "End of line delay", 800, { unit: "ms", min: 0, max: 5000, step: 50, note: "Wait after a stroke in the end of line zone before laying out and reading (time to dot an i or cross a t)" });
 // Touch devices lay out at ~160 CSS px per inch (Android dp / iOS points), desktops at 96.
 var JOT_DEFAULT_PX_PER_MM = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches ? 160 : 96) / 25.4;
 defParam(J_WORD, "jotPxPerMm", "Screen px per mm", JOT_DEFAULT_PX_PER_MM, { unit: "px/mm", min: 1, max: 20, step: 0.01, note: "CSS pixels per real millimetre (~6.3 on phones, ~3.8 on desktops)" }, function(v) { JOT_PX_PER_MM = v; });
