@@ -114,9 +114,13 @@ $pb-red: #ef4444;
         &.active { color: $pb-blue; }
     }
     .o_pb_fab {
-        flex: none; width: 48px; height: 48px; border-radius: 50%; background: $pb-green; color: #fff;
-        margin: -18px 6px 0; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4); justify-content: center;
-        &.active { color: #fff; background: darken($pb-green, 8%); }
+        flex: none; width: 58px; height: 58px; border-radius: 50%; background: $pb-green; color: #fff;
+        margin: -24px 6px 0; box-shadow: 0 4px 16px rgba(16, 185, 129, 0.45); justify-content: center;
+        i { font-size: 24px; }
+        &.active { color: #fff; }
+        // Nothing to dial yet: a dark keypad button, as in the softphone app.
+        &.o_pb_fab_pad { background: #2a2a2a; color: #e5e7eb; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); }
+        &:disabled { opacity: 0.5; }
     }
     .o_pb_badge {
         position: absolute; top: -2px; right: 18px; background: $pb-red; color: #fff;
@@ -125,19 +129,14 @@ $pb-red: #ef4444;
 }
 
 .o_pb_dialrow {
-    display: flex; align-items: center; margin: 14px 4px 8px;
+    display: flex; align-items: center; margin: 6px 4px 8px; flex: none;
     .o_pb_dialinput {
         flex: 1; background: none; border: 0; color: $pb-text; font-size: 26px; text-align: center; outline: none; min-width: 0;
-    }
-    .o_pb_dialcall {
-        width: 38px; height: 38px; border-radius: 50%; background: $pb-green; color: #fff; margin-left: 6px;
-        &:hover:not(:disabled) { background: darken($pb-green, 8%); }
-        &:disabled { opacity: 0.4; }
     }
 }
 
 .o_pb_keys {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 4px 18px;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 4px 18px; flex: none;
     &.o_pb_keys_small { gap: 6px; padding: 4px 30px; margin-top: 10px; .o_pb_key { height: 44px; font-size: 18px; } }
 }
 .o_pb_key {
@@ -185,9 +184,12 @@ $pb-red: #ef4444;
 }
 
 // Keypad matches (names / numbers with the typed part in bold).
+// Keypad view: matches take the free space and scroll; number and keys stay at the bottom.
+.o_pb_body.o_pb_body_keypad { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 14px; }
+.o_pb_dialview { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.o_pb_nomatch { color: $pb-muted; text-align: center; padding: 12px; font-size: 12px; }
 .o_pb_matches {
-    max-height: 140px;
+    flex: 1; min-height: 0;
     overflow-y: auto;
-    margin-bottom: 6px;
     b { color: $pb-green; }
 }

@@ -100,7 +100,7 @@
                     </button>
                 </div>
 
-                <div class="o_pb_body">
+                <div class="o_pb_body" t-att-class="{'o_pb_body_keypad': ui.tab === 'keypad'}">
                     <!-- Activities: everything planned for the user, calls or not -->
                     <t t-if="ui.tab === 'activities'">
                         <div t-if="!ui.activities.length and !ui.loading" class="o_pb_none">No activities. Plan one on any record.</div>
@@ -195,36 +195,34 @@
                         </div>
                     </t>
 
-                    <!-- Keypad -->
+                    <!-- Keypad, laid out like the softphone app: matches scroll on top,
+                         the number and keys sit at the bottom, and the big green button
+                         in the bar below dials. -->
                     <t t-elif="ui.tab === 'keypad'">
-                        <div class="o_pb_dialrow">
-                            <input class="o_pb_dialinput" type="tel" placeholder="Number" t-ref="dialInput" t-att-value="ui.number"
-                                   t-on-input="onKeypadInput" t-on-keydown="onKeypadKeydown"/>
-                            <button class="o_pb_icon" t-if="ui.number" t-on-click="backspace" title="Delete"><i class="fa fa-long-arrow-left"/></button>
-                            <!-- Always in view: on a short screen the matches can push the big call button below the panel. -->
-                            <button type="button" class="o_pb_icon o_pb_dialcall" t-if="ui.number.trim()" t-on-click="() => this.dialTyped()"
-                                    t-att-disabled="state.status !== 'registered'" title="Call"><i class="fa fa-phone"/></button>
-                        </div>
-                        <t t-set="matches" t-value="suggestions"/>
-                        <div t-if="ui.number.trim() and !(ui.picked and ui.picked.num === ui.number)" class="o_pb_matches">
-                            <div t-foreach="matches" t-as="s" t-key="s.key" class="o_pb_row">
-                                <div class="o_pb_main" t-on-click="() => this.pickSuggestion(s)">
-                                    <div t-if="s.name"><t t-foreach="s.nameParts" t-as="p" t-key="p_index"><b t-if="p.on" t-esc="p.t"/><t t-else="" t-esc="p.t"/></t></div>
-                                    <div t-att-class="s.name ? 'o_pb_sub' : ''"><t t-foreach="s.numParts" t-as="p" t-key="p_index"><b t-if="p.on" t-esc="p.t"/><t t-else="" t-esc="p.t"/></t></div>
-                                </div>
-                                <button class="o_pb_icon o_pb_callicon" t-on-click="() => this.callSuggestion(s)" t-att-disabled="state.status !== 'registered'" title="Call"><i class="fa fa-phone"/></button>
+                        <div class="o_pb_dialview">
+                            <t t-set="matches" t-value="suggestions"/>
+                            <div class="o_pb_matches">
+                                <t t-if="ui.number.trim() and !(ui.picked and ui.picked.num === ui.number)">
+                                    <div t-foreach="matches" t-as="s" t-key="s.key" class="o_pb_row">
+                                        <div class="o_pb_main" t-on-click="() => this.pickSuggestion(s)">
+                                            <div t-if="s.name"><t t-foreach="s.nameParts" t-as="p" t-key="p_index"><b t-if="p.on" t-esc="p.t"/><t t-else="" t-esc="p.t"/></t></div>
+                                            <div t-att-class="s.name ? 'o_pb_sub' : ''"><t t-foreach="s.numParts" t-as="p" t-key="p_index"><b t-if="p.on" t-esc="p.t"/><t t-else="" t-esc="p.t"/></t></div>
+                                        </div>
+                                        <button class="o_pb_icon o_pb_callicon" t-on-click="() => this.callSuggestion(s)" t-att-disabled="state.status !== 'registered'" title="Call"><i class="fa fa-phone"/></button>
+                                    </div>
+                                    <div t-if="!matches.length" class="o_pb_nomatch">No matches</div>
+                                </t>
                             </div>
-                            <div t-if="!matches.length" class="o_pb_none">No matches: press call to dial <t t-esc="ui.number.trim()"/></div>
-                        </div>
-                        <div class="o_pb_keys">
-                            <button t-foreach="keys" t-as="k" t-key="k[0]" class="o_pb_key" t-on-click="() => this.pressKey(k[0])">
-                                <span t-esc="k[0]"/><small t-esc="k[1]"/>
-                            </button>
-                        </div>
-                        <div class="text-center mt-2">
-                            <button type="button" class="o_pb_round o_pb_green" t-on-click="() => this.dialTyped()" t-att-disabled="state.status !== 'registered'" title="Call">
-                                <i class="fa fa-phone"/>
-                            </button>
+                            <div class="o_pb_dialrow">
+                                <input class="o_pb_dialinput" type="tel" placeholder="Number or extension" t-ref="dialInput" t-att-value="ui.number"
+                                       t-on-input="onKeypadInput" t-on-keydown="onKeypadKeydown"/>
+                                <button class="o_pb_icon" t-if="ui.number" t-on-click="backspace" title="Delete"><i class="fa fa-long-arrow-left"/></button>
+                            </div>
+                            <div class="o_pb_keys">
+                                <button t-foreach="keys" t-as="k" t-key="k[0]" class="o_pb_key" t-on-click="() => this.pressKey(k[0])">
+                                    <span t-esc="k[0]"/><small t-esc="k[1]"/>
+                                </button>
+                            </div>
                         </div>
                     </t>
                 </div>
@@ -235,7 +233,11 @@
                         <b t-if="ui.activities.length" class="o_pb_badge" t-esc="ui.activities.length"/>
                     </button>
                     <button t-att-class="{'active': ui.tab === 'recent'}" t-on-click="() => this.setTab('recent')"><i class="fa fa-history"/><span>Recent</span></button>
-                    <button class="o_pb_fab" t-att-class="{'active': ui.tab === 'keypad'}" t-on-click="() => this.setTab('keypad')" title="Keypad"><i class="fa fa-th"/></button>
+                    <!-- The one call button: on the keypad with a number typed it dials; otherwise it opens the keypad. -->
+                    <button class="o_pb_fab" t-att-class="{'active': ui.tab === 'keypad', 'o_pb_fab_pad': !fabDials}" t-on-click="onFab"
+                            t-att-disabled="fabDials and state.status !== 'registered'" t-att-title="fabDials ? 'Call' : 'Keypad'">
+                        <i t-att-class="fabDials ? 'fa fa-phone' : 'fa fa-th'"/>
+                    </button>
                     <button t-att-class="{'active': ui.tab === 'contacts'}" t-on-click="() => this.setTab('contacts')"><i class="fa fa-users"/><span>Contacts</span></button>
                     <button t-att-class="{'active': ui.tab === 'emails'}" t-on-click="() => this.setTab('emails')"><i class="fa fa-envelope-o"/><span>Emails</span></button>
                 </nav>

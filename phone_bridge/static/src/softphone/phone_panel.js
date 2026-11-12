@@ -71,6 +71,17 @@ export class PhonePanel extends Component {
         this.loadTab();
     }
 
+    /** The green button in the bar dials what's typed on the keypad, else opens the keypad. */
+    get fabDials() {
+        return this.ui.tab === "keypad" && !!(this.ui.number || "").trim();
+    }
+
+    onFab() {
+        if (this.fabDials) this.dialTyped();
+        else if (this.ui.tab !== "keypad") this.setTab("keypad");
+        else this.dialInput.el?.focus();
+    }
+
     setContactsTab(tab) {
         this.ui.contactsTab = tab;
         localStorage.setItem("phone_bridge.contactsTab", tab);
