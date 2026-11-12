@@ -129,6 +129,11 @@ $pb-red: #ef4444;
     .o_pb_dialinput {
         flex: 1; background: none; border: 0; color: $pb-text; font-size: 26px; text-align: center; outline: none; min-width: 0;
     }
+    .o_pb_dialcall {
+        width: 38px; height: 38px; border-radius: 50%; background: $pb-green; color: #fff; margin-left: 6px;
+        &:hover:not(:disabled) { background: darken($pb-green, 8%); }
+        &:disabled { opacity: 0.4; }
+    }
 }
 
 .o_pb_keys {
@@ -181,7 +186,7 @@ $pb-red: #ef4444;
 
 // Keypad matches (names / numbers with the typed part in bold).
 .o_pb_matches {
-    max-height: 200px;
+    max-height: 140px;
     overflow-y: auto;
     margin-bottom: 6px;
     b { color: $pb-green; }
