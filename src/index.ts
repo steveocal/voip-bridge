@@ -15,7 +15,7 @@ import { jotToText } from "./jottext";
 import { handleVoiceNote, handleAddCallNote } from "./followup";
 import { groupCallLegs } from "./calllegs";
 import { type User, sessionUser, handleLogin, handleMe, extensionOwners, extensionUser, syncExtensions, canSee } from "./users";
-import { handlePbxStatus, handlePbxSync, handlePbxSynced, pbxAllowed } from "./pbxsync";
+import { handlePbxHealth, handlePbxStatus, handlePbxSync, handlePbxSynced, pbxAllowed } from "./pbxsync";
 import { handlePbxPrompt } from "./ivr";
 import { handlePbxSay } from "./ivrsay";
 import { handlePbxOwner } from "./owner";
@@ -908,7 +908,7 @@ export default {
     else if (request.method === "GET" && url.pathname === "/caller-lookup") response = await handleCallerLookup(request, env);
     // The PBX pulls its extensions (pbxsync.ts). These hold SIP passwords:
     // the PBX secret only, never a signed-in user.
-    else if (m === "GET" && p === "/pbx/sync") response = await pbxAllowed(request, env) ? await handlePbxSync(env) : Response.json({ error: "forbidden" }, { status: 403 });
+    else if (m === "GET" && p === "/pbx/sync") response = await pbxAllowed(request, env) ? await handlePbxSync(env, request) : Response.json({ error: "forbidden" }, { status: 403 });
     else if (m === "POST" && p === "/pbx/synced") response = await pbxAllowed(request, env) ? await handlePbxSynced(request, env) : Response.json({ error: "forbidden" }, { status: 403 });
     else if (m === "GET" && p === "/pbx/owner") response = await pbxAllowed(request, env) ? await handlePbxOwner(request, env) : Response.json({ error: "forbidden" }, { status: 403 });
     else if (m === "POST" && p === "/pbx/say") response = await pbxAllowed(request, env) ? await handlePbxSay(request, env) : Response.json({ error: "forbidden" }, { status: 403 });
@@ -927,6 +927,7 @@ export default {
       else if (m === "GET" && p === "/google/status") response = Response.json({ account: await googleAccount(env, user.id) });
       else if (m === "POST" && p === "/extensions/sync") response = Response.json({ extensions: await syncExtensions(env) });
       else if (m === "GET" && p === "/pbx/status") response = await handlePbxStatus(env);
+      else if (m === "GET" && p === "/pbx/health") response = await handlePbxHealth(env);
       else if (m === "POST" && p === "/meeting/start") response = await handleMeetingStart(request, env, user);
       else if (m === "POST" && p === "/meeting/block") response = await handleMeetingBlock(request, env, user);
       else if (m === "POST" && p === "/meeting/finish") response = await handleMeetingFinish(request, env, user);

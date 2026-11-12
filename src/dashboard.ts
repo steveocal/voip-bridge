@@ -39,6 +39,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .route-strip.mob{background:rgba(52,211,153,.12);border:1px solid #34d399;color:#bbf7d0}
 .route-strip button{margin-left:auto;border:none;border-radius:8px;background:#2c2c2c;color:#ececec;font-size:12px;padding:5px 10px;cursor:pointer;flex-shrink:0}
 .route-strip.hidden{display:none}
+.route-strip.amber{background:rgba(245,158,11,.15);border:1px solid #f59e0b;color:#fde68a}
 .meet-bar{margin:0 16px 8px;padding:8px 12px;border-radius:10px;font-size:13px;display:flex;align-items:center;gap:8px;background:rgba(220,38,38,.15);border:1px solid #dc2626;color:#fecaca}
 .meet-bar #meet-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .meet-bar button{border:none;border-radius:8px;background:#2c2c2c;color:#ececec;font-size:12px;padding:5px 10px;cursor:pointer;flex-shrink:0}
@@ -522,6 +523,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
   </div>
 
   <div class="meet-bar hidden" id="meet-bar"><span class="dot"></span><span id="meet-text"></span><button id="meet-pause" onclick="meetPause()">⏸ Pause</button><button class="stop" onclick="meetStop()">⏹ Stop</button></div>
+  <div class="route-strip vm hidden" id="pbx-strip" role="alert"><span id="pbx-text"></span></div>
   <div class="route-strip hidden" id="route-strip"><span id="route-text"></span><button id="route-off">Turn off</button></div>
 
   <div class="call-banner hidden" id="call-banner">
@@ -3487,6 +3489,28 @@ function syncSimDurations() {
 }
 document.addEventListener("visibilitychange", function() { if (!document.hidden) setTimeout(syncSimDurations, 1500); });
 document.addEventListener("DOMContentLoaded", function() { setTimeout(syncSimDurations, 3000); });
+// ── PBX health warning ─────────────────────────────────────────
+// Asks the worker every minute (GET /pbx/health) whether Asterisk on the VPS
+// answers and whether its voip.ms line is registered, and shows a red strip
+// when not. Amber when the VPS hasn't checked in for 10 minutes but Asterisk
+// still answers. Nothing is shown if the worker itself can't be reached
+// (that's this device's connection, not the PBX).
+function checkPbxHealth() {
+  fetch(API + "/pbx/health").then(function(r) { return r.ok ? r.json() : null; }).then(function(h) {
+    var strip = document.getElementById("pbx-strip"), txt = document.getElementById("pbx-text");
+    if (!strip || !h) return;
+    var msg = "", amber = false;
+    if (h.pbx === "down") msg = "⚠️ Phone system offline: the PBX isn't answering. Calls to our numbers go to your mobile; calls from here won't connect.";
+    else if (h.trunk === "down") msg = "⚠️ voip.ms line not registered (" + (h.trunk_state || "down") + "): outside calls go to your mobile and calls out won't connect.";
+    else if (!h.seen_at || Date.now() - h.seen_at > 600000) { msg = "⚠️ The PBX hasn't checked in" + (h.seen_at ? " for " + Math.round((Date.now() - h.seen_at) / 60000) + " min" : "") + ": the voip.ms line can't be checked."; amber = true; }
+    txt.textContent = msg;
+    strip.className = "route-strip " + (amber ? "amber" : "vm") + (msg ? "" : " hidden");
+  }).catch(function() {});
+}
+setInterval(checkPbxHealth, 60000);
+document.addEventListener("visibilitychange", function() { if (!document.hidden) checkPbxHealth(); });
+document.addEventListener("DOMContentLoaded", function() { setTimeout(checkPbxHealth, 2000); });
+
 // ── Meeting recorder (*91 new meeting, *92 add to the last one) ─
 // Dialling *91 records the room through this device's microphone instead of
 // making a call; *92 records another part of your last meeting. Audio is

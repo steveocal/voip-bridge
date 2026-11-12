@@ -1,5 +1,5 @@
 import type { Env } from "./types";
-import { ariSyncExtensions } from "./asterisk";
+import { ariPing, ariSyncExtensions } from "./asterisk";
 import { same, syncExtensions } from "./users";
 import { ivrSyncLines } from "./ivr";
 
@@ -181,13 +181,43 @@ export async function pbxAllowed(request: Request, env: Env): Promise<boolean> {
 /** GET /pbx/sync — refreshes from Odoo when the copy is over a minute old.
  *  503 when Odoo has never sent the full extension details (e.g. the addon
  *  predates them), so the PBX keeps what it has rather than emptying out. */
-export async function handlePbxSync(env: Env): Promise<Response> {
+export async function handlePbxSync(env: Env, request?: Request): Promise<Response> {
+  // Every call is the PBX's heartbeat (pbx-sync.sh, once a minute), with the
+  // voip.ms trunk's registration state as Asterisk sees it (GET /pbx/health).
+  const trunk = (new URL(request?.url ?? "http://x/").searchParams.get("trunk") ?? "").replace(/[^A-Za-z]/g, "").slice(0, 20);
+  await env.DB.batch([putSetting(env, "pbx_seen_at", String(Date.now())), putSetting(env, "pbx_trunk", trunk || "unknown")]);
   const at = Number(await getSetting(env, "pbx_exts_at")) || 0;
   if (Date.now() - at > FRESH_MS) await syncExtensions(env);
   if (!(Number(await getSetting(env, "pbx_exts_at")) > 0)) {
     return new Response("extension details not available from Odoo yet\n", { status: 503, headers: { "Content-Type": "text/plain" } });
   }
   return new Response(await pbxSyncText(env), { headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } });
+}
+
+// ── PBX health, for the dashboard's warning strip ─────────────
+// pbx: Asterisk answers ARI's ping (asked live, at most every 30 s per
+// worker instance). trunk: what pbx-sync.sh last reported, if it reported in
+// the last 3 minutes; otherwise "unknown" (the VPS can't reach the worker,
+// or its cron stopped).
+const HEARTBEAT_MS = 3 * 60_000;
+let pingCache: { at: number; up: boolean } | null = null;
+
+export async function handlePbxHealth(env: Env): Promise<Response> {
+  if (!pingCache || Date.now() - pingCache.at > 30_000) {
+    let up = await ariPing(env);
+    if (!up) up = await ariPing(env);   // one retry before calling it down
+    pingCache = { at: Date.now(), up };
+  }
+  const [seen, trunk] = await Promise.all([getSetting(env, "pbx_seen_at"), getSetting(env, "pbx_trunk")]);
+  const seenAt = Number(seen) || 0;
+  const fresh = Date.now() - seenAt < HEARTBEAT_MS;
+  return Response.json({
+    pbx: pingCache.up ? "up" : "down",
+    trunk: !fresh ? "unknown" : trunk === "Registered" ? "registered" : trunk && trunk !== "unknown" ? "down" : "unknown",
+    trunk_state: fresh ? trunk : null,
+    seen_at: seenAt || null,
+    checked_at: pingCache.at,
+  }, { headers: { "Cache-Control": "no-store" } });
 }
 
 /** POST /pbx/synced — applied=<sha256 of the sync text the PBX applied>. */

@@ -9,6 +9,14 @@ function ariFetch(env: Env, path: string, init: RequestInit = {}) {
   return fetch(`${env.ASTERISK_URL}/ari/${path}`, { ...init, headers });
 }
 
+/** Whether Asterisk answers ARI's ping within a few seconds. */
+export async function ariPing(env: Env): Promise<boolean> {
+  try {
+    const res = await ariFetch(env, "asterisk/ping", { signal: AbortSignal.timeout(4000) });
+    return res.ok;
+  } catch { return false; }
+}
+
 /** Raw audio of a stored recording (/var/spool/asterisk/recording/<name>.*). */
 export function ariRecordingFile(env: Env, name: string) {
   return ariFetch(env, `recordings/stored/${encodeURIComponent(name)}/file`);

@@ -30,7 +30,11 @@ ETC=${ETC:-/etc/asterisk}
 OUT="$ETC/pjsip-phone-bridge-extensions.conf"
 umask 027   # the file holds SIP passwords
 
-cfg=$(curl -sf --max-time 15 -H "X-Pbx-Secret: $PBX_SECRET" "$WORKER/pbx/sync") || exit 1
+# The voip.ms trunk's registration (Registered, Unregistered, Rejected, …)
+# goes along with the request: the worker shows a warning in the dashboard
+# when it isn't Registered, or when these calls stop (GET /pbx/health).
+trunk=$($AST "pjsip show registration voipms" 2>/dev/null | grep -o -m1 -E 'Registered|Unregistered|Rejected|Stopped|Failed' | head -n1)
+cfg=$(curl -sf --max-time 15 -G -H "X-Pbx-Secret: $PBX_SECRET" --data-urlencode "trunk=${trunk:-unknown}" "$WORKER/pbx/sync") || exit 1
 case "$cfg" in "version 1"*) ;; *) exit 1 ;; esac
 
 # Extensions defined by hand: numeric sections in any other pjsip*.conf.
