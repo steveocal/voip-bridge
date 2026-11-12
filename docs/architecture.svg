@@ -1,0 +1,312 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1940" height="1810" viewBox="0 0 1940 1810" font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif">
+<defs>
+<marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker>
+<style>
+.t{font-size:14px;font-weight:700}
+.s{font-size:11px;fill:#64748b;font-style:italic}
+.l{fill:#1e293b}
+.lb{fill:#0f172a;font-weight:700}
+.g{font-size:14px;font-weight:700;fill:#fff}
+.al{font-size:11px;fill:#334155;paint-order:stroke;stroke:#fff;stroke-width:4px;stroke-linejoin:round}
+.h1{font-size:24px;font-weight:800;fill:#0f172a}
+.h2{font-size:13px;fill:#475569}
+.th{font-size:12px;font-weight:700;fill:#92400e}
+</style></defs>
+<rect width="1940" height="1810" fill="#ffffff"/>
+<text x="30" y="40" class="h1">VoIP Bridge: how the parts fit together</text>
+<text x="30" y="62" class="h2">Infrared Heating Products phone system · Odoo (CloudPepper) · Cloudflare Worker + D1 · Asterisk on the VPS · browser dashboard and Android app · as of 13 Nov 2026</text>
+<rect x="20" y="90" width="1860" height="250" rx="14" fill="none" stroke="#3b82f6" stroke-width="2.2" stroke-dasharray="2 0"/>
+<rect x="34" y="78" width="179.6" height="24" rx="6" fill="#3b82f6"/>
+<text x="44" y="95" class="g">WHERE PEOPLE USE IT</text>
+<rect x="40" y="112" width="430" height="212" rx="10" fill="#eef6ff" stroke="#3b82f6" stroke-width="1.6"/>
+<text x="50" y="132" class="t" fill="#3b82f6">Odoo phone panel (inside Odoo, browser)</text>
+<text x="50" y="147" class="s">Odoo users at their desks</text>
+<text x="52" y="167" class="l" font-size="12">phone_bridge/static/src/softphone/</text>
+<text x="52" y="183" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">softphone_service.js</tspan>: SIP.js user agent, tel: links</text>
+<text x="52" y="199" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">phone_panel.js/.xml/.scss</tspan>: Activities · Recent ·</text>
+<text x="52" y="215" class="l" font-size="12">   keypad · Contacts · Emails, T9 matches (t9.js)</text>
+<text x="52" y="231" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">softphone_systray.js</tspan>: green phone in the top bar</text>
+<text x="52" y="247" class="l" font-size="12">Config from /phone_bridge/softphone/config</text>
+<text x="52" y="263" class="l" font-size="12">   (WSS URL, domain, extension, SIP password)</text>
+<text x="52" y="279" class="l" font-size="12">Registers as the user&#x27;s extension (e.g. 203)</text>
+<rect x="490" y="112" width="470" height="212" rx="10" fill="#eef6ff" stroke="#3b82f6" stroke-width="1.6"/>
+<text x="500" y="132" class="t" fill="#3b82f6">Web dashboard (browser)</text>
+<text x="500" y="147" class="s">the main softphone; the Android app shows this same page</text>
+<text x="502" y="167" class="l" font-size="12">Served by the Worker at /dashboard (src/dashboard.ts)</text>
+<text x="502" y="183" class="l" font-size="12">SIP.js softphone, History + keypad on one screen</text>
+<text x="502" y="199" class="l" font-size="12">Call panel: Sales · History · Emails · Notes · Jot</text>
+<text x="502" y="215" class="l" font-size="12">Meeting recorder *91–*94, spoken notes (+)</text>
+<text x="502" y="231" class="l" font-size="12">Call via my mobile, voicemail switch, PBX health strip</text>
+<text x="502" y="247" class="l" font-size="12">Park · Transfer · Add · Merge (conference)</text>
+<text x="502" y="263" class="l" font-size="12">Odoo login via /staff/login → session cookie</text>
+<text x="502" y="279" class="l" font-size="12">Registers as the user&#x27;s extension (201/202/211…)</text>
+<rect x="980" y="112" width="500" height="212" rx="10" fill="#eef6ff" stroke="#3b82f6" stroke-width="1.6"/>
+<text x="990" y="132" class="t" fill="#3b82f6">Android app (Capacitor)  info.systecgroup.voipbridge</text>
+<text x="990" y="147" class="s">mobile staff; APK downloadable at /app</text>
+<text x="992" y="167" class="l" font-size="12">Thin shell that loads https://voip.ihpltd.co.uk/dashboard,</text>
+<text x="992" y="183" class="l" font-size="12">   so UI changes ship with the Worker (no new APK)</text>
+<text x="992" y="199" class="l" font-size="12">Native plugins (android/app/src/main/java/…):</text>
+<text x="992" y="215" class="l" font-size="12">   <tspan font-weight="700" fill="#0f172a">CallMessagingService</tspan>: FCM push wakes the app</text>
+<text x="992" y="231" class="l" font-size="12">   <tspan font-weight="700" fill="#0f172a">RingerPlugin</tspan>: full-screen ringing</text>
+<text x="992" y="247" class="l" font-size="12">   <tspan font-weight="700" fill="#0f172a">SimCallPlugin</tspan>: calls over the SIM</text>
+<text x="992" y="263" class="l" font-size="12">   <tspan font-weight="700" fill="#0f172a">DeviceContactsPlugin</tspan>: the phone&#x27;s own contacts</text>
+<text x="992" y="279" class="l" font-size="12">   <tspan font-weight="700" fill="#0f172a">StaffLocationPlugin + LocationWorker</tspan>: GPS every 15 min</text>
+<rect x="1500" y="112" width="360" height="100" rx="10" fill="#eef6ff" stroke="#3b82f6" stroke-width="1.6"/>
+<text x="1510" y="132" class="t" fill="#3b82f6">Website callback widget</text>
+<text x="1510" y="147" class="s">website visitors</text>
+<text x="1512" y="167" class="l" font-size="12">callback-widget.js on infraredheaterpanels.co.uk</text>
+<text x="1512" y="183" class="l" font-size="12">→ Worker POST /web-callback (call now / later)</text>
+<rect x="1500" y="224" width="360" height="100" rx="10" fill="#eef6ff" stroke="#3b82f6" stroke-width="1.6"/>
+<text x="1510" y="244" class="t" fill="#3b82f6">Desk phone (ext 200)</text>
+<text x="1510" y="259" class="s">hardware handset</text>
+<text x="1512" y="279" class="l" font-size="12">SIP over UDP straight to Asterisk</text>
+<text x="1512" y="295" class="l" font-size="12">No Worker involvement; its internal</text>
+<text x="1512" y="311" class="l" font-size="12">calls aren&#x27;t logged</text>
+<rect x="20" y="380" width="1240" height="270" rx="14" fill="none" stroke="#f97316" stroke-width="2.2" stroke-dasharray="2 0"/>
+<rect x="34" y="368" width="372.8" height="24" rx="6" fill="#f97316"/>
+<text x="44" y="385" class="g">CLOUDFLARE WORKER  voip-bridge  (src/*.ts)</text>
+<rect x="40" y="402" width="390" height="232" rx="10" fill="#fff7ed" stroke="#f97316" stroke-width="1.6"/>
+<text x="50" y="422" class="t" fill="#f97316">Calls &amp; PBX</text>
+<text x="52" y="441" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">index.ts</tspan>: router; /call-event from Asterisk</text>
+<text x="52" y="456" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">callstate.ts</tspan>: Durable Object CallState (live calls)</text>
+<text x="52" y="471" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">calllegs.ts</tspan>: fold legs into one call</text>
+<text x="52" y="486" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">asterisk.ts</tspan>: ARI (originate, ping, park list)</text>
+<text x="52" y="501" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">pbxsync.ts</tspan>: /pbx/sync, /pbx/health</text>
+<text x="52" y="516" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">ivr.ts, ivrsay.ts</tspan>: phone menus, spoken prompts</text>
+<text x="52" y="531" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">owner.ts</tspan>: /pbx/owner (customer&#x27;s salesperson)</text>
+<text x="52" y="546" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">push.ts</tspan>: /push/wake → FCM to Android</text>
+<text x="52" y="561" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">mobilecall.ts · webcallback.ts · voicemail.ts</tspan></text>
+<text x="52" y="576" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">users.ts</tspan>: syncExtensions from Odoo</text>
+<rect x="445" y="402" width="390" height="232" rx="10" fill="#fff7ed" stroke="#f97316" stroke-width="1.6"/>
+<text x="455" y="422" class="t" fill="#f97316">AI, email &amp; meetings</text>
+<text x="457" y="441" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">recording.ts</tspan>: fetch WAV from Asterisk</text>
+<text x="457" y="456" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">transcribe.ts</tspan>: Whisper (Workers AI)</text>
+<text x="457" y="471" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">summarize.ts</tspan>: call summary + follow-ups</text>
+<text x="457" y="486" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">followup.ts</tspan>: spoken note → Notes + Odoo To-Do</text>
+<text x="457" y="501" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">vmemail.ts</tspan>: voicemail email to the extension&#x27;s</text>
+<text x="457" y="516" class="l" font-size="11">   &#x27;Email Voicemail To&#x27; (from Odoo)</text>
+<text x="457" y="531" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">meetings.ts</tspan>: *91–*94 → R2 → transcript → email</text>
+<text x="457" y="546" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">jottext.ts</tspan>: handwriting → text</text>
+<text x="457" y="561" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">gmail.ts</tspan>: send/read with each user&#x27;s Gmail</text>
+<text x="457" y="576" class="l" font-size="11">   (shared account sends voicemails)</text>
+<rect x="850" y="402" width="390" height="232" rx="10" fill="#fff7ed" stroke="#f97316" stroke-width="1.6"/>
+<text x="860" y="422" class="t" fill="#f97316">Odoo &amp; staff links, bindings</text>
+<text x="862" y="441" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">odoo.ts</tspan>: XML-RPC to Odoo</text>
+<text x="862" y="456" class="l" font-size="11">   pushCallToOdoo → phone_bridge.call.bridge_upsert</text>
+<text x="862" y="471" class="l" font-size="11">   (voip.call only if phone_bridge is missing)</text>
+<text x="862" y="486" class="l" font-size="11">   contacts, quotations, activities</text>
+<text x="862" y="501" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">staff.ts</tspan>: /staff/login (Odoo user, or hr.employee</text>
+<text x="862" y="516" class="l" font-size="11">   + Attendances PIN), /staff/location → Odoo</text>
+<text x="862" y="531" class="l" font-size="11">Bindings: <tspan font-weight="700" fill="#0f172a">DB</tspan> D1 voip-bridge-d1 · <tspan font-weight="700" fill="#0f172a">CALL_STATE</tspan> DO</text>
+<text x="862" y="546" class="l" font-size="11">   <tspan font-weight="700" fill="#0f172a">MEETINGS</tspan> R2 · <tspan font-weight="700" fill="#0f172a">AI</tspan> Workers AI</text>
+<text x="862" y="561" class="l" font-size="11">   <tspan font-weight="700" fill="#0f172a">ASSETS</tspan> public/ (dashboard, APK, sip.min.js)</text>
+<text x="862" y="576" class="l" font-size="11">Deploy: npm run deploy (wrangler)</text>
+<rect x="1280" y="402" width="290" height="112" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.6"/>
+<text x="1290" y="422" class="t" fill="#64748b">Google</text>
+<text x="1292" y="442" class="l" font-size="12">Gmail API: send, read, attachments</text>
+<text x="1292" y="458" class="l" font-size="12">People API: Google contacts</text>
+<text x="1292" y="474" class="l" font-size="12">OAuth per user (D1 user_google)</text>
+<rect x="1280" y="526" width="290" height="108" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.6"/>
+<text x="1290" y="546" class="t" fill="#64748b">Workers AI</text>
+<text x="1292" y="566" class="l" font-size="12">Whisper: speech to text</text>
+<text x="1292" y="582" class="l" font-size="12">LLM: summaries, follow-up dates,</text>
+<text x="1292" y="598" class="l" font-size="12">handwriting</text>
+<rect x="1590" y="402" width="290" height="232" rx="10" fill="#fef2f2" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="6 4"/>
+<text x="1600" y="422" class="t" fill="#dc2626">Gaps found while mapping this</text>
+<text x="1602" y="441" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">voip_bridge</tspan>: 0 voip.call records (unused)</text>
+<text x="1602" y="456" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">Bundled phone-bridge worker</tspan> in the addon</text>
+<text x="1602" y="471" class="l" font-size="11">   has never been deployed</text>
+<text x="1602" y="486" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">Two voicemail emails</tspan>: the Worker&#x27;s is live;</text>
+<text x="1602" y="501" class="l" font-size="11">   Odoo&#x27;s bridge_notify_voicemail is never called</text>
+<text x="1602" y="516" class="l" font-size="11"><tspan font-weight="700" fill="#0f172a">Desk phone 200</tspan>: internal calls not logged</text>
+<text x="1602" y="531" class="l" font-size="11">Fixed 13 Nov: Odoo Installation now has the</text>
+<text x="1602" y="546" class="l" font-size="11">   Worker URL + API token (Odoo → Worker link);</text>
+<text x="1602" y="561" class="l" font-size="11">   panel keypad 18.0.0.13.2 is live</text>
+<rect x="20" y="680" width="1860" height="330" rx="14" fill="none" stroke="#d97706" stroke-width="2.2" stroke-dasharray="2 0"/>
+<rect x="34" y="668" width="364.40000000000003" height="24" rx="6" fill="#d97706"/>
+<text x="44" y="685" class="g">DATA: CLOUDFLARE D1 TABLES vs ODOO MODELS</text>
+<text x="48" y="717" class="th">D1 table (Worker)</text>
+<text x="278" y="717" class="th">Odoo model</text>
+<text x="578" y="717" class="th">Master · how it syncs</text>
+<line x1="40" y1="724" x2="1200" y2="724" stroke="#94a3b8"/>
+<rect x="40" y="724" width="1160" height="23" fill="#ffffff" opacity="0.7"/>
+<text x="48" y="739" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">call_log</tspan></text>
+<text x="278" y="739" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">phone_bridge.call</tspan> (249)</text>
+<text x="578" y="739" class="l" font-size="12">Worker. pushCallToOdoo upserts after each event; Odoo panel also writes its own calls</text>
+<text x="48" y="762" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">contacts</tspan>, <tspan font-weight="700" fill="#0f172a">phone_lookup</tspan></text>
+<text x="278" y="762" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">res.partner</tspan></text>
+<text x="578" y="762" class="l" font-size="12">Odoo. Worker caches them for caller ID, T9 and names in History</text>
+<rect x="40" y="770" width="1160" height="23" fill="#ffffff" opacity="0.7"/>
+<text x="48" y="785" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">extensions</tspan></text>
+<text x="278" y="785" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">phone_bridge.extension</tspan> (6) · res.users</text>
+<text x="578" y="785" class="l" font-size="12">Odoo. syncExtensions on save / when stale → pbx-sync.sh → PJSIP endpoints</text>
+<text x="48" y="808" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">pbx_numbers</tspan></text>
+<text x="278" y="808" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">phone_bridge.number</tspan> (5) · <tspan font-weight="700" fill="#0f172a">.menu</tspan> (2) · .option</text>
+<text x="578" y="808" class="l" font-size="12">Odoo. Copied to D1 → AstDB pbroute/&lt;did&gt; + IVR dialplan</text>
+<rect x="40" y="816" width="1160" height="23" fill="#ffffff" opacity="0.7"/>
+<text x="48" y="831" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">web_callbacks</tspan></text>
+<text x="278" y="831" class="l" font-size="12">phone_bridge.call (as a missed call)</text>
+<text x="578" y="831" class="l" font-size="12">Worker. One call_log row &#x27;web-&lt;id&gt;&#x27; each</text>
+<text x="48" y="854" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">user_settings</tspan>, <tspan font-weight="700" fill="#0f172a">user_google</tspan></text>
+<text x="278" y="854" class="l" font-size="12">res.users (login only)</text>
+<text x="578" y="854" class="l" font-size="12">Worker only: prefs and Gmail OAuth tokens</text>
+<rect x="40" y="862" width="1160" height="23" fill="#ffffff" opacity="0.7"/>
+<text x="48" y="877" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">messages</tspan></text>
+<text x="278" y="877" class="l" font-size="12">–</text>
+<text x="578" y="877" class="l" font-size="12">Worker only: Gmail cache for the Emails tab</text>
+<text x="48" y="900" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">greetings</tspan></text>
+<text x="278" y="900" class="l" font-size="12">–</text>
+<text x="578" y="900" class="l" font-size="12">Worker only: voicemail greetings, pulled by Asterisk [greetings-sync]</text>
+<rect x="40" y="908" width="1160" height="23" fill="#ffffff" opacity="0.7"/>
+<text x="48" y="923" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">settings</tspan></text>
+<text x="278" y="923" class="l" font-size="12">phone_bridge.installation</text>
+<text x="578" y="923" class="l" font-size="12">Separate: D1 = Worker key/values; installation = Worker URL + API token (+ bundled worker)</text>
+<text x="48" y="946" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">staff_login_failures</tspan></text>
+<text x="278" y="946" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">hr.employee</tspan> · <tspan font-weight="700" fill="#0f172a">staff.location.stay</tspan></text>
+<text x="578" y="946" class="l" font-size="12">Odoo. Worker checks PIN, passes GPS straight to Odoo</text>
+<rect x="40" y="954" width="1160" height="23" fill="#ffffff" opacity="0.7"/>
+<text x="48" y="969" class="l" font-size="12">R2 MEETINGS · DO CallState</text>
+<text x="278" y="969" class="l" font-size="12">–</text>
+<text x="578" y="969" class="l" font-size="12">Worker only: meeting audio blocks; ringing / live calls</text>
+<text x="48" y="992" class="l" font-size="12">–</text>
+<text x="278" y="992" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">mail.activity</tspan> · <tspan font-weight="700" fill="#0f172a">sale.order</tspan> · voip.call</text>
+<text x="578" y="992" class="l" font-size="12">Odoo only. Worker reads/creates To-Dos, reads quotations; voip.call legacy</text>
+<rect x="1270" y="702" width="590" height="292" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.6"/>
+<text x="1280" y="722" class="t" fill="#64748b">Function overlap (same job in two places)</text>
+<text x="1282" y="742" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">Softphone</tspan>: Odoo panel vs web dashboard / app. Two separate</text>
+<text x="1282" y="758" class="l" font-size="12">   SIP.js clients; the dashboard does far more</text>
+<text x="1282" y="774" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">Call logging</tspan>: the Odoo panel writes phone_bridge.call itself;</text>
+<text x="1282" y="790" class="l" font-size="12">   the Worker upserts the same record (same bridge_call_id)</text>
+<text x="1282" y="806" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">Voicemail email</tspan>: Worker vmemail.ts (live) vs Odoo</text>
+<text x="1282" y="822" class="l" font-size="12">   phone_bridge.call.bridge_notify_voicemail (never called)</text>
+<text x="1282" y="838" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">Call records</tspan>: phone_bridge.call (live) vs voip.call</text>
+<text x="1282" y="854" class="l" font-size="12">   (voip_bridge addon, legacy fallback, empty)</text>
+<text x="1282" y="870" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">Worker code</tspan>: the live voip-bridge worker vs the copy bundled</text>
+<text x="1282" y="886" class="l" font-size="12">   in phone_bridge/data/worker (for other Odoo installs)</text>
+<text x="1282" y="902" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">T9, Activities, Emails</tspan>: built separately in both clients</text>
+<text x="1282" y="918" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">Opening hours</tspan>: Odoo working schedule → D1 → dialplan</text>
+<rect x="20" y="1100" width="900" height="440" rx="14" fill="none" stroke="#7c3aed" stroke-width="2.2" stroke-dasharray="2 0"/>
+<rect x="34" y="1088" width="440.0" height="24" rx="6" fill="#7c3aed"/>
+<text x="44" y="1105" class="g">ODOO 18 on CloudPepper  infraredheaterpanels.co.uk</text>
+<rect x="40" y="1122" width="430" height="300" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.6"/>
+<text x="50" y="1142" class="t" fill="#7c3aed">phone_bridge addon (18.0.0.13.2)</text>
+<text x="50" y="1157" class="s">source: ~/dDev/odoo-phone-bridge/odoo/phone_bridge</text>
+<text x="52" y="1177" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">phone_bridge.extension</tspan>: number, user, device type,</text>
+<text x="52" y="1193" class="l" font-size="12">   SIP password, forwarding, Email Voicemail To</text>
+<text x="52" y="1209" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">phone_bridge.number</tspan>: DIDs, who rings, hours, no answer</text>
+<text x="52" y="1225" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">phone_bridge.menu / .menu.option</tspan>: phone menu keys</text>
+<text x="52" y="1241" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">phone_bridge.call</tspan>: call log, chatter, activities</text>
+<text x="52" y="1257" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">phone_bridge.installation</tspan>: Worker settings,</text>
+<text x="52" y="1273" class="l" font-size="12">   Cloudflare deploy of the bundled worker, SIP WSS</text>
+<text x="52" y="1289" class="l" font-size="12">res.users: extension, Mobile to Ring</text>
+<text x="52" y="1305" class="l" font-size="12">res.partner: calls on contacts</text>
+<text x="52" y="1321" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">controllers/main.py</tspan>: /phone_bridge/* JSON routes</text>
+<text x="52" y="1337" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">data/worker/</tspan>: bundled worker build</text>
+<text x="52" y="1353" class="l" font-size="12">views: Phone app (Calls, Numbers, Menus, Extensions)</text>
+<rect x="490" y="1122" width="410" height="140" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.6"/>
+<text x="500" y="1142" class="t" fill="#7c3aed">voip_bridge addon (18.0.1.0.0)</text>
+<text x="502" y="1162" class="l" font-size="12">Adds recording, transcript, notes, DID and</text>
+<text x="502" y="1178" class="l" font-size="12">voicemail flag to Enterprise <tspan font-weight="700" fill="#0f172a">voip.call</tspan></text>
+<text x="502" y="1194" class="l" font-size="12">Legacy target from before phone_bridge.call</text>
+<text x="502" y="1210" class="l" font-size="12">Depends on voip (installed, not configured)</text>
+<rect x="490" y="1276" width="410" height="146" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.6"/>
+<text x="500" y="1296" class="t" fill="#7c3aed">staff_location addon</text>
+<text x="502" y="1316" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">staff.location.stay</tspan>: stops from phone GPS</text>
+<text x="502" y="1332" class="l" font-size="12">Matches stops to contacts → customer meetings</text>
+<text x="502" y="1348" class="l" font-size="12">Logs visits on contacts and calls</text>
+<text x="502" y="1364" class="l" font-size="12">Map view (staff_map.js)</text>
+<text x="502" y="1380" class="l" font-size="12">Fed by Worker /staff/location (Android app)</text>
+<rect x="40" y="1436" width="860" height="88" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.6"/>
+<text x="50" y="1456" class="t" fill="#7c3aed">Core Odoo models the Worker reads and writes</text>
+<text x="52" y="1476" class="l" font-size="12">res.partner (caller ID, contacts) · res.users (logins, extensions) · hr.employee (staff PIN login) · mail.activity (To-Dos)</text>
+<text x="52" y="1492" class="l" font-size="12">sale.order (quotations in the call panel) · mail.message (notes) · resource.calendar (opening hours, via phone_bridge.number)</text>
+<rect x="940" y="1100" width="940" height="440" rx="14" fill="none" stroke="#059669" stroke-width="2.2" stroke-dasharray="2 0"/>
+<rect x="954" y="1088" width="532.4" height="24" rx="6" fill="#059669"/>
+<text x="964" y="1105" class="g">VPS 64.176.181.195 · Docker &#x27;asterisk&#x27; · /opt/asterisk/config</text>
+<rect x="960" y="1122" width="440" height="300" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="1.6"/>
+<text x="970" y="1142" class="t" fill="#059669">Asterisk config</text>
+<text x="972" y="1162" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">pjsip.conf</tspan>: [voipms] trunk (re-registers every 300 s),</text>
+<text x="972" y="1178" class="l" font-size="12">   Twilio trunk, desk phone 200</text>
+<text x="972" y="1194" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">pjsip-phone-bridge.conf</tspan>: WebRTC template (WSS)</text>
+<text x="972" y="1210" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">pjsip-phone-bridge-extensions.conf</tspan>: generated</text>
+<text x="972" y="1226" class="l" font-size="12">   from Odoo extensions by pbx-sync.sh</text>
+<text x="972" y="1242" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">extensions.conf</tspan>: [default] inbound, [from-internal],</text>
+<text x="972" y="1258" class="l" font-size="12">   outbound-dial, record-call, voicemail, park 700,</text>
+<text x="972" y="1274" class="l" font-size="12">   conference _82XX, web-callback, mobile-call</text>
+<text x="972" y="1290" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">extensions-phone-bridge-routing.conf</tspan>: pb-route,</text>
+<text x="972" y="1306" class="l" font-size="12">   ext-dial (forwarding), pb-ring-mobile</text>
+<text x="972" y="1322" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">extensions-phone-bridge-ivr.conf</tspan>: phone menus</text>
+<text x="972" y="1338" class="l" font-size="12">confbridge.conf · res_parking · musiconhold</text>
+<rect x="1420" y="1122" width="440" height="170" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="1.6"/>
+<text x="1430" y="1142" class="t" fill="#059669">Scripts on the VPS</text>
+<text x="1432" y="1162" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">pbx-sync.sh</tspan> (host cron, every minute): GET /pbx/sync,</text>
+<text x="1432" y="1178" class="l" font-size="12">   writes endpoints + AstDB routes, reports trunk state</text>
+<text x="1432" y="1194" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">pb-say.sh</tspan>: fetches Worker speech for menus</text>
+<text x="1432" y="1210" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">pb-owner.sh</tspan>: asks /pbx/owner for the salesperson</text>
+<text x="1432" y="1226" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">recording-done.sh</tspan>: posts finished WAVs (event=recording)</text>
+<text x="1432" y="1242" class="l" font-size="12">AstDB: pbroute/&lt;did&gt;, pbfwd/&lt;ext&gt;, pbx/push_extensions</text>
+<rect x="1420" y="1306" width="440" height="116" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.6"/>
+<text x="1430" y="1326" class="t" fill="#64748b">Phone lines</text>
+<text x="1432" y="1346" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">voip.ms</tspan> sub account: 01283 246490/1/2, 07520 658657</text>
+<text x="1432" y="1362" class="l" font-size="12">   If Unreachable → Steve&#x27;s mobile</text>
+<text x="1432" y="1378" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">Twilio</tspan>: 07898 117226</text>
+<text x="1432" y="1394" class="l" font-size="12">Cannock 01543 648370 (voip.ms main account)</text>
+<rect x="960" y="1436" width="900" height="88" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="1.6"/>
+<text x="970" y="1456" class="t" fill="#059669">A call coming in</text>
+<text x="972" y="1476" class="l" font-size="12">Caller → voip.ms / Twilio → Asterisk [default] → pb-route (Odoo&#x27;s routing) → ring app / browser extensions (WSS), desk phone,</text>
+<text x="972" y="1492" class="l" font-size="12">   mobiles → no answer: voicemail → recording-done.sh → Worker → transcript → email + Odoo phone_bridge.call</text>
+<rect x="20" y="1570" width="1860" height="190" rx="14" fill="none" stroke="#334155" stroke-width="2.2" stroke-dasharray="2 0"/>
+<rect x="34" y="1558" width="230.0" height="24" rx="6" fill="#334155"/>
+<text x="44" y="1575" class="g">INSTALLATION &amp; DEPLOYMENT</text>
+<rect x="40" y="1592" width="440" height="152" rx="10" fill="#f1f5f9" stroke="#334155" stroke-width="1.6"/>
+<text x="50" y="1612" class="t" fill="#334155">Worker (voip-bridge repo, branch main)</text>
+<text x="52" y="1632" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">npm run deploy</tspan> = check-dashboard + wrangler deploy</text>
+<text x="52" y="1648" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">wrangler d1 migrations apply</tspan> (0001–0020)</text>
+<text x="52" y="1664" class="l" font-size="12">secrets: ODOO_*, GOOGLE_*, PUSH_SECRET, FCM…</text>
+<text x="52" y="1680" class="l" font-size="12">public/: dashboard assets, APK, sip.min.js</text>
+<text x="52" y="1696" class="l" font-size="12">The Android app picks up UI changes at once</text>
+<rect x="495" y="1592" width="440" height="152" rx="10" fill="#f1f5f9" stroke="#334155" stroke-width="1.6"/>
+<text x="505" y="1612" class="t" fill="#334155">Odoo addons</text>
+<text x="507" y="1632" class="l" font-size="12">Source: odoo-phone-bridge/odoo/phone_bridge</text>
+<text x="507" y="1648" class="l" font-size="12">Copy → voip-bridge branch <tspan font-weight="700" fill="#0f172a">odoo-addons</tspan></text>
+<text x="507" y="1664" class="l" font-size="12">   (phone_bridge, voip_bridge, staff_location)</text>
+<text x="507" y="1680" class="l" font-size="12">CloudPepper: <tspan font-weight="700" fill="#0f172a">update repo</tspan> → Apps → <tspan font-weight="700" fill="#0f172a">Upgrade</tspan></text>
+<text x="507" y="1696" class="l" font-size="12">bundle-addon.mjs builds data/worker into the addon</text>
+<rect x="950" y="1592" width="470" height="152" rx="10" fill="#f1f5f9" stroke="#334155" stroke-width="1.6"/>
+<text x="960" y="1612" class="t" fill="#334155">VPS (scripts/vps-*.sh, run from here over ssh)</text>
+<text x="962" y="1632" class="l" font-size="12">setup-pbx-sync · setup-pbx-routing · setup-pbx-ivr</text>
+<text x="962" y="1648" class="l" font-size="12">setup-conference · setup-parking · setup-mobile-call</text>
+<text x="962" y="1664" class="l" font-size="12">setup-mobile-first · persist-astdb · record-far-end</text>
+<text x="962" y="1680" class="l" font-size="12">ring-app-in-parallel · wake-app-30s · voicemail-25s</text>
+<text x="962" y="1696" class="l" font-size="12">internal-voicemail · add-ext203  (each backs up first)</text>
+<rect x="1435" y="1592" width="425" height="152" rx="10" fill="#f1f5f9" stroke="#334155" stroke-width="1.6"/>
+<text x="1445" y="1612" class="t" fill="#334155">Android app</text>
+<text x="1447" y="1632" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">scripts/android-build.sh</tspan> → debug APK</text>
+<text x="1447" y="1648" class="l" font-size="12"><tspan font-weight="700" fill="#0f172a">scripts/android-release.sh</tspan> → signed APK</text>
+<text x="1447" y="1664" class="l" font-size="12">   published at /app on the Worker</text>
+<text x="1447" y="1680" class="l" font-size="12">capacitor.config.ts: server.url = dashboard</text>
+<text x="1447" y="1696" class="l" font-size="12">New APK needed only for native plugin changes</text>
+<line x1="255" y1="324" x2="255" y2="356" stroke="#059669" stroke-width="1.6"/>
+<line x1="725" y1="324" x2="725" y2="356" stroke="#059669" stroke-width="1.6"/>
+<line x1="1230" y1="324" x2="1230" y2="356" stroke="#059669" stroke-width="1.6"/>
+<line x1="1680" y1="324" x2="1680" y2="356" stroke="#059669" stroke-width="1.6"/>
+<polyline points="255,356 1905,356 1905,1072 1180,1072 1180,1122" fill="none" stroke="#059669" stroke-width="2" marker-end="url(#ah)"/>
+<text x="1916" y="700" class="al" fill="#059669" transform="rotate(90 1916 700)" text-anchor="middle">SIP: every softphone and the desk phone register with Asterisk; the audio goes direct</text>
+<text x="1540" y="1067" class="al" fill="#059669" text-anchor="middle">SIP over WSS / UDP</text>
+<polyline points="640,324 640,402" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="600" y="374" class="al" text-anchor="middle">HTTPS API</text>
+<polyline points="1100,324 1100,402" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#ah)" marker-start="url(#ah)"/>
+<text x="1050" y="374" class="al" text-anchor="middle">HTTPS · FCM push</text>
+<polyline points="60,324 60,366 30,366 30,1140 40,1140" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="25" y="720" class="al" transform="rotate(-90 25 720)" text-anchor="middle">Odoo panel → Odoo JSON-RPC /phone_bridge/*</text>
+<polyline points="1240,450 1280,450" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#ah)"/>
+<polyline points="1240,580 1280,580" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#ah)"/>
+<polyline points="1215,634 1215,1030 255,1030 255,1122" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#ah)" marker-start="url(#ah)"/>
+<text x="700" y="1025" class="al" text-anchor="middle">Worker ↔ Odoo XML-RPC: calls, contacts, extensions, numbers, activities</text>
+<polyline points="200,1122 200,1052 1232,1052 1232,640" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="700" y="1066" class="al" text-anchor="middle">Odoo → Worker: panel call events, Emails, Google, Parked (Bearer API_TOKEN)</text>
+<polyline points="1250,650 1250,1122" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#ah)" marker-start="url(#ah)"/>
+<text x="1262" y="845" class="al" transform="rotate(90 1262 845)" text-anchor="middle">Worker ↔ Asterisk: ARI, pbx-sync, /call-event, recordings, /push/wake</text>
+<polyline points="1640,1292 1640,1306" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#ah)"/>
+<text x="30" y="1790" class="h2">Arrows: green = SIP / voice · grey = HTTPS / RPC data · red dashed box = known gaps. Source: docs/architecture.py (regenerate after changes).</text>
+</svg>
