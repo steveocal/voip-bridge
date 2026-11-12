@@ -73,6 +73,7 @@ What the phone system does today (main branch, November 2026). It has four parts
 ## Meetings
 
 - Meeting recorder: dial *91 to record a new meeting, or *92 to add to the last one. A meeting bar shows pause, stop and saving.
+- Online calls: dial *93 (new) or *94 (add to the last meeting) on a computer, pick the Google Meet / LINE Meeting / WhatsApp Web tab and tick "Also share tab audio". The tab's sound and your microphone are recorded together (audio only), then transcribed and emailed like *91. Chrome's "Stop sharing" stops it. Not on Android: the phone doesn't let one app record another app's call.
 - Meetings are saved with their audio and blocks (`/meetings`).
 
 ## Contacts

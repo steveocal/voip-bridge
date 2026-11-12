@@ -7,7 +7,8 @@ import { whisperPiece, translateLines, needsTranslation, meanLevel, fmtTime } fr
 // ── Meeting recorder ──────────────────────────────────────────
 // Dialling *91 in the dashboard records the room through the computer's (or
 // phone's) own microphone. Nothing goes through Asterisk. *92 adds another
-// part to the user's last meeting. The browser keeps 16 kHz 16-bit mono PCM
+// part to the user's last meeting. *93 / *94 do the same for an online call in
+// another browser tab (Meet, LINE): the tab's sound mixed with the microphone. The browser keeps 16 kHz 16-bit mono PCM
 // in 30 s blocks in IndexedDB and uploads them as it goes (POST /meeting/block),
 // so closing the tab loses at most the block in progress. The blocks are
 // kept in R2 at m/<id>/<part>/<seq>.
@@ -25,7 +26,7 @@ const MAX_BLOCK_BYTES = BLOCK_SAMPLES * 2;
 const SUMMARY_MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct";
 const SUMMARY_MAX_CHARS = 120_000;         // transcript sent to the summary model
 const PROMPT = "You write meeting notes for Infrared Heating Products (IHP), a UK company selling infrared heater panels. " +
-  "The input is a transcript of a meeting recorded with one microphone in the room, made by speech recognition, so it may contain errors " +
+  "The input is a transcript of a meeting, recorded either with one microphone in the room or from an online call (Google Meet, LINE and the like) plus the user's microphone, made by speech recognition, so it may contain errors " +
   "and does not say who is speaking. Lines starting with \"→\" are English translations of the line above. " +
   'Reply with JSON only, no markdown: {"title": "a short title for the meeting, at most 8 words", ' +
   '"summary": "3-5 sentences: what the meeting was about and what came of it", ' +
@@ -247,7 +248,7 @@ async function emailNotes(env: Env, user: User, m: MeetingRow, a: Assembled): Pr
     `<p style="color:#666;margin:0 0 12px">${esc(m.label || "")}${m.label ? " · " : ""}${mins} min recorded${m.parts > 1 ? ` in ${m.parts} parts` : ""}</p>` +
     (a.html || "<p>(no summary)</p>") +
     `<hr><p><b>Transcript</b></p><pre style="white-space:pre-wrap;font-family:inherit;font-size:13px">${esc(a.transcript)}</pre>` +
-    `<p style="color:#888;font-size:12px">Recorded with the VoIP Bridge dashboard (*91). Speech recognition can get words wrong; ` +
+    `<p style="color:#888;font-size:12px">Recorded with the VoIP Bridge dashboard (*91 or *93). Speech recognition can get words wrong; ` +
     `the recording is under History.</p></div>`;
   const r = await sendGmailMessage(env, user.id, { to, subject: `Meeting notes${again}: ${a.title}`, html });
   if (r.ok) return { ok: true, error: "" };

@@ -3333,7 +3333,7 @@ function dialOut(num) {
     routeOverride = null;
     var di = document.getElementById("dial-input");
     if (di.value) { di.value = ""; onDialInput(); }
-    startMeeting(mc === "append");
+    startMeeting(mc === "append" || mc === "tab-append", mc.indexOf("tab") === 0);
     return;
   }
   var pick = routeOverride;
@@ -3495,6 +3495,10 @@ document.addEventListener("DOMContentLoaded", function() { setTimeout(syncSimDur
 // what's left uploads the next time the dashboard opens. When you stop, the
 // worker transcribes and summarises the meeting and emails you the notes
 // (src/meetings.ts). Meetings show in History with 🎙.
+// *93 / *94 do the same for an online call in another browser tab (Google
+// Meet, LINE Meeting, WhatsApp Web): Chrome shares that tab's sound, which is
+// mixed with your microphone, so both sides are recorded. Audio only; the
+// tab's picture is asked for (Chrome insists) but never used.
 var MEET_RATE = 16000, MEET_BLOCK = MEET_RATE * 30;
 var meet = null, meetUploading = false, meetRetry = 0, meetRetryTimer = null, meetWaiting = 0, meetSaving = "";
 // Meeting messages share the status line with the SIP registration, so each
@@ -3512,7 +3516,7 @@ function meetNotice(msg, isErr) {
 }
 function meetingCode(num) {
   var n = String(num || "").split(" ").join("");
-  return n === "*91" ? "new" : n === "*92" ? "append" : "";
+  return n === "*91" ? "new" : n === "*92" ? "append" : n === "*93" ? "tab-new" : n === "*94" ? "tab-append" : "";
 }
 var meetDbP = null;
 function meetDb() {
@@ -3538,16 +3542,20 @@ function pad2(n) { return ("0" + n).slice(-2); }
 function meetLabel(d) {
   return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }) + ", " + pad2(d.getHours()) + ":" + pad2(d.getMinutes());
 }
-function startMeeting(append) {
+function startMeeting(append, tab) {
   if (meet) { meetNotice("🎙 A meeting is already recording", true); return; }
   if (currentCall) { meetNotice("❌ End the call before recording a meeting", true); return; }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.AudioContext || !window.AudioWorkletNode || !window.indexedDB) {
     meetNotice("❌ This browser can't record meetings", true); return;
   }
-  var st = { seq: 0, buf: new Int16Array(MEET_BLOCK), fill: 0, samples: 0, paused: false, acc: 0, n: 0, pos: 0 };
-  meetNotice(append ? "🎙 Adding to your last meeting…" : "🎙 Starting a meeting…", false);
-  navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: false, noiseSuppression: true, autoGainControl: true } }).then(function(stream) {
-    st.stream = stream;
+  if (tab && !navigator.mediaDevices.getDisplayMedia) {
+    meetNotice("❌ Recording a tab needs Chrome or Edge on a computer", true); return;
+  }
+  var st = { seq: 0, buf: new Int16Array(MEET_BLOCK), fill: 0, samples: 0, paused: false, acc: 0, n: 0, pos: 0, streams: [], tab: !!tab };
+  meetNotice(tab ? "🖥 Pick the call's tab and tick “Also share tab audio”…" : append ? "🎙 Adding to your last meeting…" : "🎙 Starting a meeting…", false);
+  (tab ? meetTabStreams(st) : navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: false, noiseSuppression: true, autoGainControl: true } }).then(function(stream) {
+    st.streams.push(stream);
+  })).then(function() {
     return fetch(API + "/meeting/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ append: !!append, label: meetLabel(new Date()) }) });
   }).then(function(r) { return r.json(); }).then(function(d) {
     if (!d || !d.id) throw new Error((d && d.error) || "the server didn't start it");
@@ -3558,30 +3566,55 @@ function startMeeting(append) {
     st.timer = setInterval(meetShowState, 1000);
     meetWake();
     meetShowState();
-    meetNotice(st.appended ? "🎙 Recording part " + st.part + " of " + st.title : (append ? "🎙 No earlier meeting, so this is a new one" : "🎙 Recording the meeting"), false);
+    if (st.tab) meetNotice((st.noMic ? "🖥 Recording the tab only (no microphone)" : "🖥 Recording the tab and your microphone") + (st.appended ? ": part " + st.part + " of " + st.title : ""), !!st.noMic);
+    else meetNotice(st.appended ? "🎙 Recording part " + st.part + " of " + st.title : (append ? "🎙 No earlier meeting, so this is a new one" : "🎙 Recording the meeting"), false);
   }).catch(function(e) {
     meetRelease(st);
     meetNotice("❌ Meeting recording: " + (e && e.message ? e.message : e), true);
   });
 }
-// Microphone → AudioWorklet → 16 kHz Int16. The context runs at 16 kHz where
+// The other tab's sound first (getDisplayMedia must run straight from the
+// tap), then the microphone. With no microphone it records the tab alone.
+// Echo cancellation is on here (unlike *91): the call plays through the
+// speakers, and without it the mic would record the far side a second time.
+function meetTabStreams(st) {
+  return navigator.mediaDevices.getDisplayMedia({
+    video: { displaySurface: "browser", frameRate: 1, width: 320, height: 240 },
+    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, suppressLocalAudioPlayback: false },
+    preferCurrentTab: false, selfBrowserSurface: "exclude", surfaceSwitching: "include", systemAudio: "include"
+  }).then(function(ds) {
+    st.streams.push(ds);
+    var at = ds.getAudioTracks()[0];
+    if (!at) throw new Error("no sound shared. Pick a Chrome tab and tick “Also share tab audio”");
+    // Chrome's "Stop sharing" ends the recording like ⏹ Stop.
+    at.addEventListener("ended", function() { if (meet === st) meetStop(); });
+    return navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+      .then(function(mic) { st.streams.push(mic); }, function() { st.noMic = true; });
+  });
+}
+// Microphone (and for *93 the tab's sound, mixed in) → AudioWorklet → 16 kHz Int16. The context runs at 16 kHz where
 // the browser allows it (it resamples the mic properly); otherwise samples
 // are averaged down here.
 function meetAudio(st) {
-  var ctx, src;
-  try { ctx = new AudioContext({ sampleRate: MEET_RATE }); src = ctx.createMediaStreamSource(st.stream); }
-  catch (e) { if (ctx) ctx.close(); ctx = new AudioContext(); src = ctx.createMediaStreamSource(st.stream); }
+  var ctx, srcs;
+  // Only streams with sound: the tab's (unused) picture has none.
+  var audio = st.streams.filter(function(s) { return s.getAudioTracks().length; });
+  function sources() { return audio.map(function(s) { return ctx.createMediaStreamSource(s); }); }
+  try { ctx = new AudioContext({ sampleRate: MEET_RATE }); srcs = sources(); }
+  catch (e) { if (ctx) ctx.close(); ctx = new AudioContext(); srcs = sources(); }
   st.ctx = ctx; st.ratio = ctx.sampleRate / MEET_RATE;
   var code = "class P extends AudioWorkletProcessor{constructor(){super();this.b=new Float32Array(4096);this.n=0}" +
     "process(i){var c=i[0]&&i[0][0];if(!c)return true;for(var k=0;k<c.length;k++){this.b[this.n++]=c[k];" +
     "if(this.n===4096){this.port.postMessage(this.b.slice(0));this.n=0}}return true}}registerProcessor('vb-meet',P)";
   var url = URL.createObjectURL(new Blob([code], { type: "application/javascript" }));
   return ctx.audioWorklet.addModule(url).then(function() {
-    var node = new AudioWorkletNode(ctx, "vb-meet");
+    // One mono input: the sources are summed into it, stereo tab sound downmixed.
+    var node = new AudioWorkletNode(ctx, "vb-meet", { channelCount: 1, channelCountMode: "explicit", channelInterpretation: "speakers" });
     node.port.onmessage = function(e) { meetSamples(st, e.data); };
     var mute = ctx.createGain();
     mute.gain.value = 0;
-    src.connect(node); node.connect(mute); mute.connect(ctx.destination);
+    srcs.forEach(function(src) { src.connect(node); });
+    node.connect(mute); mute.connect(ctx.destination);
     st.node = node;
     if (ctx.state === "suspended") return ctx.resume();
   });
@@ -3629,7 +3662,7 @@ function meetStop() {
 }
 function meetRelease(st) {
   if (st.timer) clearInterval(st.timer);
-  if (st.stream) st.stream.getTracks().forEach(function(t) { t.stop(); });
+  (st.streams || []).forEach(function(s) { s.getTracks().forEach(function(t) { t.stop(); }); });
   if (st.ctx) st.ctx.close().catch(function() {});
   if (st.wake) { st.wake.release().catch(function() {}); st.wake = null; }
 }
