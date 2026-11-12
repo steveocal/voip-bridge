@@ -77,6 +77,13 @@ export async function syncExtensions(env: Env): Promise<number | null> {
   const digits = (v: unknown) => { const d = str(v)?.replace(/\D/g, "") ?? ""; return d || null; };
   const int = (v: unknown) => (typeof v === "number" ? v : null);
   const stmts = [env.DB.prepare("DELETE FROM extensions")];
+  // "Email Voicemail To" on each extension (phone_bridge 0.9+), read on its
+  // own so an older addon without it loses nothing else. Stored as "" when
+  // the field is empty, NULL when the addon doesn't have it.
+  const vmEmail = new Map<number, string>();
+  const vm = await odooCall(env, uid, "phone_bridge.extension", "search_read", [[]], { fields: ["voicemail_email"], context: { active_test: false } });
+  if (vm.fault) console.warn("Odoo extensions: no voicemail_email, voicemails go to the users' emails:", String(vm.fault).slice(-300));
+  else for (const r of (vm.parsed ?? []) as Array<Record<string, unknown>>) vmEmail.set(r.id as number, str(r.voicemail_email) ?? "");
   const numberOfExt = new Map<number, string>();
   for (const e of exts) {
     numberOfExt.set(e.id as number, String(e.number));
@@ -84,11 +91,12 @@ export async function syncExtensions(env: Env): Promise<number | null> {
     const user = userId ? users.get(userId) : undefined;
     const fwd = level >= 2;
     stmts.push(env.DB.prepare(
-      "INSERT OR REPLACE INTO extensions (number, user_id, user_name, user_email, updated_at, name, sip_password, device_type, wake_app, active, forward_mode, forward_number, forward_seconds, user_mobile, user_mobile_delay) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)"
+      "INSERT OR REPLACE INTO extensions (number, user_id, user_name, user_email, updated_at, name, sip_password, device_type, wake_app, active, forward_mode, forward_number, forward_seconds, user_mobile, user_mobile_delay, voicemail_email) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)"
     ).bind(String(e.number), userId, Array.isArray(e.user_id) ? String(e.user_id[1]) : "", user ? String(user.email || user.login || "") : "", now,
       str(e.name), full ? str(e.sip_password) : null, full ? str(e.device_type) : null, full ? (e.wake_app ? 1 : 0) : null, full ? (e.active === false ? 0 : 1) : null,
       fwd ? str(e.forward_mode) : null, fwd ? digits(e.forward_number) : null, fwd ? int(e.forward_seconds) : null,
-      user ? digits(user.phone_bridge_mobile) : null, user ? int(user.phone_bridge_mobile_delay) : null));
+      user ? digits(user.phone_bridge_mobile) : null, user ? int(user.phone_bridge_mobile_delay) : null,
+      vmEmail.has(e.id as number) ? vmEmail.get(e.id as number)! : null));
   }
   if (numbers) {
     stmts.push(env.DB.prepare("DELETE FROM pbx_numbers"));

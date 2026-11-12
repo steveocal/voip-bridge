@@ -8,6 +8,7 @@ import { handleMeetingStart, handleMeetingBlock, handleMeetingFinish, handleMeet
 import { summarizeCall, keepSummary } from "./summarize";
 import { serveDashboard } from "./dashboard";
 import { handlePushRegister, handlePushStatus, handlePushWake } from "./push";
+import { emailVoicemail } from "./vmemail";
 import { handleGetVoicemail, handleSetVoicemail, handleCreateGreeting, handleRenameGreeting, handleDeleteGreeting, handleGreetingAudio, handleVoicemailSync, handleVoicemailSynced } from "./voicemail";
 import type { Contact, Message } from "./odoo";
 import { jotToText } from "./jottext";
@@ -90,6 +91,8 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
     let transcribed = false;
     try { await transcribeCall(env, callId); transcribed = true; } catch (e) { console.error("transcribeCall failed:", e); }
     if (transcribed) { try { await summarizeCall(env, callId); } catch (e) { console.error("summarizeCall failed:", e); } }
+    // A voicemail: email it to whoever the caller was ringing (vmemail.ts).
+    await emailVoicemail(env, callId);
     ctx.waitUntil(pushCallToOdoo(env, callId, true).catch((e) => console.error("pushCallToOdoo failed:", e)));
     return Response.json({ action: "recording", file, transcribed });
   }

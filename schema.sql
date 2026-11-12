@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS call_log (
   recording TEXT,                        -- local-only: Asterisk stored-recording name (see migrations/0006_call_recording.sql)
   transcript TEXT,                       -- local-only: Whisper transcript, one "[m:ss] text" line per segment (NULL = not transcribed)
   voicemail INTEGER NOT NULL DEFAULT 0,  -- local-only: 1 = went to voicemail; the message is in recording (see migrations/0008_voicemail.sql)
+  vm_emailed TEXT,                       -- local-only: who the voicemail was emailed to, or why not (migrations/0020_voicemail_email.sql)
   odoo_synced_at INTEGER,                -- local-only: when pushCallToOdoo last sent this leg's call (see migrations/0009_odoo_push.sql)
   extension TEXT                         -- local-only: the softphone extension that logged this leg (see migrations/0012_call_extension.sql)
 );
@@ -149,7 +150,8 @@ CREATE TABLE IF NOT EXISTS extensions (
   forward_number TEXT,
   forward_seconds INTEGER,
   user_mobile TEXT,
-  user_mobile_delay INTEGER
+  user_mobile_delay INTEGER,
+  voicemail_email TEXT                 -- "Email Voicemail To" from Odoo; NULL = the addon has no such field
 );
 -- Odoo's phone_bridge.number: who rings for each of our numbers (0016, src/pbxsync.ts).
 CREATE TABLE IF NOT EXISTS pbx_numbers (

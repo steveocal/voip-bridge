@@ -305,6 +305,13 @@ function utf8Bin(s: string): string {
 function b64std(s: string): string { return btoa(utf8Bin(s)); }
 function b64url(s: string): string { return b64std(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); }
 
+/** Standard base64 of raw bytes (attachments). */
+function b64bytes(b: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < b.length; i += 0x8000) bin += String.fromCharCode(...b.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
 function wrap76(s: string): string { return s.replace(/.{76}/g, "$&\r\n"); }
 
 function encodeHeader(s: string): string {
@@ -320,11 +327,20 @@ export interface SendOptions {
   /** HTML version; when set, `body` is its plain-text alternative. */
   html?: string;
   replyToGmailId?: string;
+  /** Files to attach (sent through Gmail's upload endpoint, up to 35 MB). */
+  attachments?: { filename: string; mime: string; data: Uint8Array }[];
+  /** The display name on From (default "Steve"). */
+  fromName?: string;
+  /** Send from the shared Google account (GOOGLE_REFRESH_TOKEN) rather than
+   *  the user's own: for mail the system sends, such as voicemail. */
+  shared?: boolean;
 }
 
 /** Send (or reply to) an email via the Gmail API. */
 export async function sendGmailMessage(env: Env, userId: number, opts: SendOptions): Promise<{ ok: boolean; id?: string; threadId?: string; error?: string }> {
-  const token = await getAccessToken(env, userId);
+  const token = opts.shared
+    ? (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_REFRESH_TOKEN ? await refreshAccessToken(env, env.GOOGLE_REFRESH_TOKEN) : null)
+    : await getAccessToken(env, userId);
   if (!token) return { ok: false, error: "no gmail token" };
 
   let inReplyTo = "", references = "", threadId: string | undefined;
@@ -338,7 +354,7 @@ export async function sendGmailMessage(env: Env, userId: number, opts: SendOptio
   }
 
   const parts = [
-    "From: Steve <steve@systecgroup.info>",
+    "From: " + encodeHeader(opts.fromName || "Steve") + " <steve@systecgroup.info>",
     "To: " + opts.to,
     "Subject: " + encodeHeader(opts.subject || ""),
   ];
@@ -349,6 +365,9 @@ export async function sendGmailMessage(env: Env, userId: number, opts: SendOptio
   const html = opts.html || (looksLikeHtml(opts.body || "") ? opts.body! : "");
   const text = (html && !opts.html ? htmlToText(html) : (opts.body || (html ? htmlToText(html) : ""))).replace(/\r\n/g, "\n");
   parts.push("MIME-Version: 1.0");
+  const files = opts.attachments ?? [];
+  const mixed = "pbm-" + crypto.randomUUID();
+  if (files.length) parts.push(`Content-Type: multipart/mixed; boundary="${mixed}"`, "", "--" + mixed);
   if (html) {
     const boundary = "pb-" + crypto.randomUUID();
     parts.push(`Content-Type: multipart/alternative; boundary="${boundary}"`, "",
@@ -358,13 +377,29 @@ export async function sendGmailMessage(env: Env, userId: number, opts: SendOptio
   } else {
     parts.push('Content-Type: text/plain; charset="UTF-8"', "Content-Transfer-Encoding: 8bit", "", text);
   }
+  if (files.length) {
+    for (const f of files) {
+      const name = f.filename.replace(/["\\\r\n]/g, "");
+      parts.push("--" + mixed, `Content-Type: ${f.mime}; name="${name}"`, `Content-Disposition: attachment; filename="${name}"`,
+        "Content-Transfer-Encoding: base64", "", wrap76(b64bytes(f.data)));
+    }
+    parts.push("--" + mixed + "--");
+  }
   const raw = parts.join("\r\n");
 
-  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ raw: b64url(raw), ...(threadId ? { threadId } : {}) }),
-  });
+  // With attachments the message goes as is to the upload endpoint: the JSON
+  // one would base64 it a second time and cap it at 5 MB.
+  const res = files.length && !threadId
+    ? await fetch("https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=media", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "message/rfc822" },
+      body: raw,
+    })
+    : await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ raw: b64url(raw), ...(threadId ? { threadId } : {}) }),
+    });
   if (!res.ok) {
     const t = await res.text().catch(() => "");
     return { ok: false, error: "gmail send " + res.status + " " + t.slice(0, 200) };
