@@ -283,6 +283,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .acc-new{background:#2c2c2c;color:#ececec}
 .switch-row{display:flex;align-items:center;justify-content:space-between;padding:4px 0;margin-bottom:16px}
 .switch-row span{font-size:15px}
+/* Sound outputs (desktop): ringing and call audio on different devices */
+.sink-row{display:flex;gap:8px;align-items:center}
+.sink-row select{flex:1;min-width:0}
+.sink-row button{flex:0 0 auto;padding:11px 12px;border:none;border-radius:10px;background:#2c2c2c;color:#ececec;font-size:14px;cursor:pointer}
 .loc-box{border-top:1px solid #333;margin:4px 0 10px;padding-top:8px}
 .loc-box .loc-title{font-size:13px;font-weight:600;margin-bottom:6px}
 .loc-box .loc-row{display:flex;gap:6px;align-items:center;margin-bottom:6px}
@@ -908,6 +912,17 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       <label class="switch"><input type="checkbox" id="set-sim-auto" onchange="setSimAuto(this.checked)"><span class="track"></span></label>
     </div>
 
+    <div id="sink-box" class="hidden">
+      <div class="set-field">
+        <label>Ringing plays on</label>
+        <div class="sink-row"><select id="set-ring-sink" class="acc-select" onchange="setSink('ring', this.value)"></select><button onclick="testSink('ring')" title="Play a ring on this output">🔔 Test</button></div>
+      </div>
+      <div class="set-field">
+        <label>Call audio plays on</label>
+        <div class="sink-row"><select id="set-call-sink" class="acc-select" onchange="setSink('call', this.value)"></select><button onclick="testSink('call')" title="Play a tone on this output">🔊 Test</button></div>
+      </div>
+    </div>
+
     <div class="set-field">
       <label>My mobile — during a call, Mobile moves the caller here; otherwise the mobile button rings it, then calls the number</label>
       <input id="set-mobile" type="tel" placeholder="+66…" autocomplete="off">
@@ -1507,9 +1522,84 @@ function sharedAudio() {
   if (!sharedAudioCtx) {
     try { sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; }
     sharedAudioCtx.onstatechange = updateAudioHint;
+    applySink(sharedAudioCtx, "ring");
   }
   return sharedAudioCtx;
 }
+// ── sound outputs (desktop browsers) ───────────────────────────
+// Ringing and call audio can go to different devices, e.g. ring on the
+// speakers so it's heard across the room while the call itself is in the
+// headset. The ringtone has its own AudioContext (sharedAudio), the call
+// the remote <audio> element and the outgoing ringback; each is pointed at
+// its device with setSinkId. Device ids are per computer, so they stay in
+// localStorage and aren't synced. A device that's gone (headset unplugged)
+// falls back to the system default.
+var SINK_KEYS = { ring: "vb_ringSink", call: "vb_callSink" };
+function sinkSupported() {
+  return !ringerPlugin() && !!(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices)
+    && typeof HTMLMediaElement !== "undefined" && "setSinkId" in HTMLMediaElement.prototype
+    && typeof AudioContext !== "undefined" && "setSinkId" in AudioContext.prototype;
+}
+function sinkId(kind) { try { return localStorage.getItem(SINK_KEYS[kind]) || ""; } catch (e) { return ""; } }
+function applySink(target, kind) {
+  if (!target || !sinkSupported() || typeof target.setSinkId !== "function") return Promise.resolve();
+  var id = sinkId(kind);
+  if ((target.sinkId || "") === id) return Promise.resolve();
+  return target.setSinkId(id).catch(function() { return target.setSinkId("").catch(function() {}); });
+}
+function applyAllSinks() {
+  if (sharedAudioCtx) applySink(sharedAudioCtx, "ring");
+  if (remoteAudioEl) applySink(remoteAudioEl, "call");
+  if (rbCtx) applySink(rbCtx, "call");
+}
+function setSink(kind, id) {
+  try { if (id) localStorage.setItem(SINK_KEYS[kind], id); else localStorage.removeItem(SINK_KEYS[kind]); } catch (e) {}
+  applyAllSinks();
+}
+function renderSinkSettings() {
+  var box = document.getElementById("sink-box");
+  box.classList.toggle("hidden", !sinkSupported());
+  if (!sinkSupported()) return;
+  navigator.mediaDevices.enumerateDevices().then(function(devs) {
+    var outs = devs.filter(function(d) { return d.kind === "audiooutput" && d.deviceId && d.deviceId !== "default" && d.deviceId !== "communications"; });
+    ["ring", "call"].forEach(function(kind) {
+      var sel = document.getElementById("set-" + kind + "-sink"), cur = sinkId(kind), found = !cur;
+      var html = '<option value="">System default</option>';
+      outs.forEach(function(d, i) {
+        if (d.deviceId === cur) found = true;
+        html += '<option value="' + esc(d.deviceId) + '">' + esc(d.label || "Output " + (i + 1)) + '</option>';
+      });
+      if (!found) html += '<option value="' + esc(cur) + '">Saved device (not connected)</option>';
+      sel.innerHTML = html;
+      sel.value = cur;
+    });
+  }).catch(function() {});
+}
+// A short tone on the chosen output: one ring for ringing, a beep for calls.
+function testSink(kind) {
+  var ctx;
+  try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+  applySink(ctx, kind).then(function() { return ctx.resume(); }).then(function() {
+    var t0 = ctx.currentTime, g = ctx.createGain();
+    g.gain.setValueAtTime(0.001, t0);
+    g.gain.exponentialRampToValueAtTime(0.2, t0 + 0.02);
+    g.gain.setValueAtTime(0.2, t0 + 0.9);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + 1);
+    g.connect(ctx.destination);
+    (kind === "ring" ? [440, 480] : [400, 450]).forEach(function(f) {
+      var o = ctx.createOscillator(); o.frequency.value = f; o.connect(g); o.start(t0); o.stop(t0 + 1);
+    });
+    setTimeout(function() { ctx.close().catch(function() {}); }, 1300);
+  }).catch(function() { ctx.close().catch(function() {}); });
+}
+if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+  // Headset plugged back in: put each sound back on its chosen device.
+  navigator.mediaDevices.addEventListener("devicechange", function() {
+    applyAllSinks();
+    if (!document.getElementById("settings-modal").classList.contains("hidden")) renderSinkSettings();
+  });
+}
+
 function unlockAudio() {
   var ctx = sharedAudio();
   if (ctx && ctx.state !== "running") ctx.resume().then(updateAudioHint).catch(function() {});
@@ -1578,6 +1668,7 @@ function startRingtone() {
   if (R) { nativeRinging = true; R.start().catch(function() {}); return; }
   var ctx = sharedAudio();
   if (ctx) {
+    applySink(ctx, "ring"); // in case it was refused earlier (no permission yet) or the device came back
     if (ctx.state !== "running") ctx.resume().catch(function() {});
     ringGain = ctx.createGain();
     ringGain.connect(ctx.destination);
@@ -1618,7 +1709,7 @@ function stopRingtone() {
 var rbCtx = null, rbTimer = null;
 function startRingback() {
   if (rbCtx) return;
-  try { rbCtx = new (window.AudioContext || window.webkitAudioContext)(); rbCtx.resume().catch(function() {}); } catch (e) { rbCtx = null; return; }
+  try { rbCtx = new (window.AudioContext || window.webkitAudioContext)(); applySink(rbCtx, "call"); rbCtx.resume().catch(function() {}); } catch (e) { rbCtx = null; return; }
   rbCycle();
 }
 function rbCycle() {
@@ -6291,6 +6382,7 @@ function openSettings() {
   document.getElementById("set-mobile").value = settings.mobileNumber || "";
   document.getElementById("sim-auto-row").classList.toggle("hidden", !simPlugin());
   document.getElementById("set-sim-auto").checked = simAuto();
+  renderSinkSettings();
   renderAccountSelect();
   renderStaffLocation();
   renderSessionState();
@@ -6542,6 +6634,7 @@ function playRemoteStream(stream) {
     remoteAudioEl = document.createElement("audio");
     remoteAudioEl.autoplay = true;
     document.body.appendChild(remoteAudioEl);
+    applySink(remoteAudioEl, "call");
   }
   remoteAudioEl.srcObject = stream;
   remoteAudioEl.play().catch(function() {});
