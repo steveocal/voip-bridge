@@ -80,6 +80,18 @@ export async function handleVoiceNote(request: Request, env: Env): Promise<Respo
   return Response.json({ text, follow_up: f.date, summary: f.summary });
 }
 
+/** POST /dictate (WAV): speech → text for the Notes 🎙 Speak button. Like a
+ *  voice note but just the words (translated to English if needed), no
+ *  follow-up date. */
+export async function handleDictate(request: Request, env: Env): Promise<Response> {
+  const wav = wavSamples(await request.arrayBuffer());
+  if (!wav?.samples.length) return Response.json({ error: "send the audio as a WAV file" }, { status: 400 });
+  if (wav.samples.length > wav.rate * (MAX_SECONDS + 1)) return Response.json({ error: `at most ${MAX_SECONDS / 60} minutes at a time` }, { status: 413 });
+  const lines = await whisperPiece(env, wav.samples, wav.rate, 0);
+  if (lines.some(needsTranslation)) await translateLines(env, lines);
+  return Response.json({ text: lines.map(l => l.en || l.text).join(" ").replace(/\s+/g, " ").trim() });
+}
+
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /** An Odoo To-Do for `userId` on a record, due `date`. Returns its id. */

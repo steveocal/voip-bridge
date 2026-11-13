@@ -485,7 +485,18 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 .jt-btn.jt-totext{width:auto;padding:0 9px;font-weight:700;font-size:14px}
 .jt-canvas-wrap{width:100%;border-radius:10px;background:#1e1e1e;border:1px solid #2c2c2c;overflow:hidden}
 .jt-canvas-wrap canvas{display:block;cursor:none}
-#jot-canvas .jt-canvas-wrap{height:420px}
+#jot-canvas .jt-canvas-wrap{height:300px}
+/* Notes: the text on top and the handwriting pad under it (Write), or just
+   the text (Type); 🎙 Speak adds dictated text in either */
+.nb-bar{display:flex;gap:6px;align-items:center;margin:6px 0;flex-shrink:0}
+.nb-bar button{flex:0 0 auto;padding:7px 12px;border:none;border-radius:10px;background:#2c2c2c;color:#ececec;font-size:13px;cursor:pointer}
+.nb-bar button.on{background:#2563eb;color:#fff}
+.nb-bar button.rec{background:#b91c1c;color:#fff}
+.nb-bar .nb-status{font-size:12px;color:#999;margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.nb-type .nb-pad{display:none}
+.nb-pad{margin-top:8px}
+#cp-pane-notes.nb-write .tox-tinymce{height:170px!important}
+#cp-pane-notes.nb-type .tox-tinymce{height:340px!important}
 /* call detail view: in-screen (not a dialog), Details/Notes/Jot tabs, sized for phones */
 .cd-head{display:flex;align-items:center;gap:8px;padding:2px 0 10px}
 .cd-back{background:none;border:none;color:#4db8ff;font-size:24px;line-height:1;cursor:pointer;padding:4px 8px;flex-shrink:0}
@@ -500,10 +511,13 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 #view-call-detail .cd-head,#view-call-detail .cp-tabs,#view-call-detail .cd-footer{flex-shrink:0}
 #view-call-detail .cd-body{flex:1;min-height:0;display:flex;flex-direction:column}
 #view-call-detail .cp-pane{flex:1;min-height:0;display:flex;flex-direction:column;overflow-y:auto}
-#cd-pane-notes .tox-tinymce{flex:1;min-height:200px;height:auto!important;width:100%!important}
-#cd-pane-notes textarea{flex:1}
+#cd-pane-notes{overflow:hidden}
+#cd-notes-host{display:flex;flex-direction:column;min-height:120px}
+#cd-pane-notes.nb-write #cd-notes-host{flex:0 0 38%}
+#cd-pane-notes.nb-type #cd-notes-host{flex:1}
+#cd-notes-host .tox-tinymce{flex:1;height:auto!important;width:100%!important}
+#cd-notes-host textarea{flex:1}
 #cd-pane-transcript .hist-transcript{flex:1;min-height:0;overflow-y:auto}
-#cd-pane-jot{overflow:hidden}
 #cd-jot-canvas{flex:1;min-height:0}
 #cd-jot-canvas .jt-canvas-wrap,#cd-jot-canvas .jt-text{flex:1;min-height:200px;height:auto}
 #view-call-detail .cd-footer{padding:4px 0 0}
@@ -620,23 +634,20 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
           <button class="cp-tab" data-tab="history" onclick="switchCallTab('history')">Call History</button>
           <button class="cp-tab" data-tab="emails" onclick="switchCallTab('emails')">Emails</button>
           <button class="cp-tab active" data-tab="notes" onclick="switchCallTab('notes')">Notes</button>
-          <button class="cp-tab" data-tab="jot" onclick="switchCallTab('jot')">Jot</button>
           <button class="cp-tab hidden" data-tab="keypad" id="cp-tab-keypad" onclick="switchCallTab('keypad')">Keypad</button>
         </div>
         <div class="cp-body">
           <div class="cp-pane hidden" id="cp-pane-sales"><div class="empty">—</div></div>
           <div class="cp-pane hidden" id="cp-pane-history"><div class="empty">—</div></div>
           <div class="cp-pane hidden" id="cp-pane-emails"><div class="empty">—</div></div>
-          <div class="cp-pane" id="cp-pane-notes">
+          <div class="cp-pane nb-write" id="cp-pane-notes">
+            <div class="nb-bar" data-nb="call"><button data-nbm="write" title="Write by hand: Return (↵) reads the line into the notes">🖊 Write</button><button data-nbm="type" title="Type into the notes">⌨ Type</button><button data-nbm="speak" title="Speak: what you say is added to the notes">🎙 Speak</button><span class="nb-status" id="jot-status"></span></div>
             <textarea id="call-notes" placeholder="Call notes… (press # for quick text)" autocomplete="off"></textarea>
             <div class="qt-panel hidden" id="qt-panel">
               <div class="qt-head">Quick text — tap to insert</div>
               <div id="qt-list"></div>
             </div>
-          </div>
-          <div class="cp-pane hidden" id="cp-pane-jot">
-            <div class="jot-toolbar"><span class="jot-status" id="jot-status"></span></div>
-            <div id="jot-canvas"></div>
+            <div class="nb-pad" id="jot-canvas"></div>
           </div>
           <div class="cp-pane hidden" id="cp-pane-keypad">
             <div class="dtmf-sent" id="dtmf-sent"></div>
@@ -738,16 +749,15 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
         <button class="cp-tab" data-tab="details" onclick="switchCallDetailTab('details')">Details</button>
         <button class="cp-tab" data-tab="notes" onclick="switchCallDetailTab('notes')">Notes</button>
         <button class="cp-tab" data-tab="transcript" onclick="switchCallDetailTab('transcript')">Transcript</button>
-        <button class="cp-tab active" data-tab="jot" onclick="switchCallDetailTab('jot')">Jot</button>
       </div>
       <div class="cd-body">
         <div class="cp-pane hidden" id="cd-pane-details"></div>
-        <div class="cp-pane hidden" id="cd-pane-notes"><div class="empty">Loading…</div></div>
-        <div class="cp-pane hidden" id="cd-pane-transcript"></div>
-        <div class="cp-pane" id="cd-pane-jot">
-          <div class="jot-toolbar"><span class="jot-status" id="cd-jot-status"></span></div>
-          <div id="cd-jot-canvas"></div>
+        <div class="cp-pane hidden nb-write" id="cd-pane-notes">
+          <div class="nb-bar" data-nb="cd"><button data-nbm="write" title="Write by hand: Return (↵) reads the line into the notes">🖊 Write</button><button data-nbm="type" title="Type into the notes">⌨ Type</button><button data-nbm="speak" title="Speak: what you say is added to the notes">🎙 Speak</button><span class="nb-status" id="cd-jot-status"></span></div>
+          <div id="cd-notes-host"><div class="empty">Loading…</div></div>
+          <div class="nb-pad" id="cd-jot-canvas"></div>
         </div>
+        <div class="cp-pane hidden" id="cd-pane-transcript"></div>
       </div>
       <div class="cd-footer">
         <span class="jot-status" id="cd-save-status"></span>
@@ -1949,34 +1959,9 @@ function addNoteLine(text) {
     ta.scrollTop = ta.scrollHeight;
   }
 }
-// Jot's text goes into the notes as one "From Jot" block, replaced (not
-// duplicated) by later conversions, removed when the page is emptied. Works on the TinyMCE editor, its plain
-// textarea fallback, or (neither mounted yet) the stored html via setHtml.
+// The old Jot tab put its text into the notes as one "From Jot" block; the
+// pad only checks for it, so ink already read there isn't loaded back.
 var JOT_NOTES_HEAD = "✍️ From Jot";
-function jotNotesBlock(text) {
-  return '<div data-jot-text="1"><p><strong>' + JOT_NOTES_HEAD + '</strong></p>'
-    + text.split(NL).map(function(l) { return '<p>' + (esc(l) || "&nbsp;") + '</p>'; }).join("") + '</div>';
-}
-function upsertJotNotesHtml(html, text) {
-  var box = document.createElement("div");
-  box.innerHTML = html || "";
-  var old = box.querySelector("[data-jot-text]");
-  if (!text) { if (old) old.remove(); return box.innerHTML; }
-  if (old) { old.outerHTML = jotNotesBlock(text); return box.innerHTML; }
-  return (html || "") + jotNotesBlock(text);
-}
-function upsertJotNotesPlain(value, text) {
-  var head = JOT_NOTES_HEAD + ":";
-  var i = value.indexOf(head);
-  var block = head + NL + text;
-  if (i >= 0) {
-    var end = value.indexOf(NL + NL, i);
-    if (!text) return (value.slice(0, i) + (end >= 0 ? value.slice(end + 2) : "")).trim();
-    return value.slice(0, i) + block + (end >= 0 ? value.slice(end) : "");
-  }
-  if (!text) return value;
-  return value ? value + NL + NL + block : block;
-}
 // The From Jot block's text, from the editor, its textarea, or stored html.
 function getJotTextFromNotes(editorId, html) {
   var ed = (typeof tinymce !== "undefined") ? tinymce.get(editorId) : null;
@@ -1996,16 +1981,129 @@ function getJotTextFromNotes(editorId, html) {
   for (var k = 1; k < ps.length; k++) lines.push(ps[k].textContent.split(String.fromCharCode(160)).join(" ").trim());
   return lines.join(NL);
 }
-function putJotTextInNotes(editorId, text, getHtml, setHtml) {
+// ── Notes: one text, written by hand, typed or spoken ──────────
+// The Notes tab (in a call, and a call's detail view) is the call's notes
+// text with a handwriting pad under it. 🖊 Write: a Return (gesture or ↵)
+// reads the pad's ink and adds it to the end of the notes. ⌨ Type: the pad
+// goes and you type in the notes. 🎙 Speak: what you say is transcribed
+// (POST /dictate) and added to the end. Write/Type is remembered per device.
+var NB = {
+  call: { pane: "cp-pane-notes", editor: "call-notes", status: "jot-status",
+    jot: function() { return liveJot; }, initJot: function() { initJotEditor(); },
+    key: function() { return currentCall ? currentCall.id : null; },
+    add: function(text) { appendNoteLine("call-notes", text); scheduleCallSave(); } },
+  cd: { pane: "cd-pane-notes", editor: "cd-notes", status: "cd-jot-status",
+    jot: function() { return cdJot; }, initJot: function() { if (!cdJot) initCallDetailJot(); },
+    key: function() { return cdOpenCallId; },
+    add: function(text) { cdAppendNoteLine(text); } }
+};
+function noteMode() { try { return localStorage.getItem("vb_noteMode") === "type" ? "type" : "write"; } catch (e) { return "write"; } }
+function applyNoteMode(which) {
+  var cfg = NB[which], pane = document.getElementById(cfg.pane), m = noteMode();
+  pane.classList.toggle("nb-write", m === "write");
+  pane.classList.toggle("nb-type", m === "type");
+  var btns = pane.querySelectorAll(".nb-bar [data-nbm]");
+  for (var i = 0; i < btns.length; i++) { var bm = btns[i].getAttribute("data-nbm"); if (bm !== "speak") btns[i].classList.toggle("on", bm === m); }
+  // The pad measures itself when it's made, so only once it's on screen.
+  if (m === "write") cfg.initJot();
+}
+function setNoteMode(which, m) {
+  if (m === "type") { var j = NB[which].jot(); if (j) j.commit(); } // ink still on the pad goes into the text
+  try { localStorage.setItem("vb_noteMode", m); } catch (e) {}
+  applyNoteMode(which);
+  if (m === "type") focusNotesEnd(NB[which].editor);
+}
+function setNbStatus(which, msg) { var el = document.getElementById(NB[which].status); if (el) el.textContent = msg; }
+// Adds a paragraph to the end of the notes (into an empty last paragraph if
+// there is one). Without the editor (still loading), into the stored html.
+function appendNoteLine(editorId, text, getHtml, setHtml) {
   var ed = (typeof tinymce !== "undefined") ? tinymce.get(editorId) : null;
   if (ed && !ed.initialized) ed = null;
+  if (ed) {
+    var body = ed.getBody(), last = body.lastElementChild;
+    if (last && last.nodeName === "P" && !last.textContent.trim() && !last.querySelector("img")) last.textContent = text;
+    else ed.dom.add(body, "p", {}, ed.dom.encode(text));
+    ed.undoManager.add();
+    try { ed.getWin().scrollTo(0, ed.getDoc().documentElement.scrollHeight); } catch (e) {}
+    return;
+  }
+  if (setHtml) setHtml((getHtml() || "") + "<p>" + esc(text) + "</p>");
   var ta = document.getElementById(editorId);
-  if (ed) { ed.setContent(upsertJotNotesHtml(ed.getContent(), text)); return; }
-  // No editor yet: keep the stored html current too, so an editor that
-  // finishes loading later starts from it.
-  if (setHtml) setHtml(upsertJotNotesHtml(getHtml(), text));
-  if (ta) ta.value = upsertJotNotesPlain(ta.value, text);
+  if (ta) ta.value = ta.value.trim() ? ta.value.trimEnd() + String.fromCharCode(10) + text : text;
 }
+function cdAppendNoteLine(text) {
+  appendNoteLine("cd-notes", text, function() { return cdLoadedNotes.notes_html || ""; }, function(h) { cdLoadedNotes.notes_html = h; });
+  scheduleCallDetailSave();
+}
+function focusNotesEnd(editorId) {
+  var ed = (typeof tinymce !== "undefined") ? tinymce.get(editorId) : null;
+  if (ed && ed.initialized) { ed.focus(); ed.selection.select(ed.getBody(), true); ed.selection.collapse(false); return; }
+  var ta = document.getElementById(editorId);
+  if (ta) ta.focus();
+}
+// 🎙 Speak: record until tapped again (at most NOTE_MAX_SECONDS), then add
+// the words to the end of the notes of the call it was started on.
+var dictation = null;   // { which, key, rec, stream, timer, btn, discard }
+function toggleDictation(which) {
+  if (dictation) { var same = dictation.which === which; stopDictation(false); if (same) return; }
+  if (!navigator.mediaDevices || !window.MediaRecorder) { setNbStatus(which, "This device can't record"); return; }
+  var btn = document.querySelector('.nb-bar[data-nb="' + which + '"] [data-nbm="speak"]');
+  var d = { which: which, key: NB[which].key(), btn: btn };
+  dictation = d;
+  navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, noiseSuppression: true, autoGainControl: true } }).then(function(stream) {
+    if (dictation !== d) { stream.getTracks().forEach(function(t) { t.stop(); }); return; }
+    var rec = new MediaRecorder(stream), chunks = [], started = Date.now();
+    d.rec = rec; d.stream = stream;
+    rec.ondataavailable = function(e) { if (e.data && e.data.size) chunks.push(e.data); };
+    rec.onstop = function() {
+      clearInterval(d.timer);
+      stream.getTracks().forEach(function(t) { t.stop(); });
+      btn.classList.remove("rec"); btn.textContent = "🎙 Speak";
+      if (dictation === d) dictation = null;
+      if (d.discard || !chunks.length) { setNbStatus(which, ""); return; }
+      setNbStatus(which, "Writing it down…");
+      new Blob(chunks, { type: rec.mimeType }).arrayBuffer().then(function(buf) {
+        return audioToWav(buf, 16000, NOTE_MAX_SECONDS, "at most 3 minutes at a time");
+      }).then(function(wav) {
+        return fetch(API + "/dictate", { method: "POST", headers: { "Content-Type": "audio/wav" }, body: wav });
+      }).then(function(r) { return r.json(); }).then(function(res) {
+        if (res.error) throw new Error(res.error);
+        if (NB[which].key() !== d.key) { setNbStatus(which, ""); return; } // moved to another call
+        if (!res.text) { setNbStatus(which, "Didn't catch that"); return; }
+        NB[which].add(res.text);
+        setNbStatus(which, "");
+      }).catch(function(err) { setNbStatus(which, "Couldn't transcribe: " + err.message); });
+    };
+    var tick = function() {
+      var secs = Math.floor((Date.now() - started) / 1000);
+      btn.textContent = "■ Stop " + fmtDur(secs);
+      if (secs >= NOTE_MAX_SECONDS) stopDictation(false);
+    };
+    btn.classList.add("rec");
+    setNbStatus(which, "Listening…");
+    tick();
+    d.timer = setInterval(tick, 500);
+    rec.start();
+  }).catch(function(err) {
+    if (dictation === d) dictation = null;
+    setNbStatus(which, "No microphone: " + err.message);
+  });
+}
+function stopDictation(discard) {
+  var d = dictation;
+  if (!d) return;
+  dictation = null;
+  d.discard = discard;
+  if (d.rec && d.rec.state !== "inactive") d.rec.stop();
+  else if (d.btn) { d.btn.classList.remove("rec"); d.btn.textContent = "🎙 Speak"; }
+}
+document.addEventListener("click", function(e) {
+  var b = e.target.closest(".nb-bar [data-nbm]");
+  if (!b) return;
+  var which = b.closest(".nb-bar").getAttribute("data-nb"), m = b.getAttribute("data-nbm");
+  if (m === "speak") toggleDictation(which); else setNoteMode(which, m);
+});
+
 // ── in-call panel: caller name + tabs ───────────────────────────
 var activeCpTab = "notes";
 var currentCallPartner = null;
@@ -2063,7 +2161,7 @@ function switchCallTab(tab) {
   if (tab === "history") loadCallHistoryTab();
   if (tab === "sales") loadQuotationsTab();
   if (tab === "emails") loadEmailsTab();
-  if (tab === "jot") initJotEditor();
+  if (tab === "notes") applyNoteMode("call");
   document.getElementById("banner-keypad").classList.toggle("active", tab === "keypad");
 }
 
@@ -2289,7 +2387,12 @@ function jtMakeWord(strokes, prevRotate, prevScale) {
 // save(text) stores a conversion or edit, saved() returns what's there.
 // The handwriting is read automatically (PV.jotAutoConvertMs after the last
 // finished word) and saved into the notes; Aa shows/edits that text.
-function createJot(hostEl, onChange, notesText) {
+// pad, if given, makes it the Notes tab's handwriting pad instead: nothing
+// is read until a Return (gesture or ↵), then that ink is read, its text is
+// handed to pad.onLine(text) (added to the end of the notes) and the ink
+// leaves the pad. pad.alreadyInNotes() says whether ink saved by the old
+// Jot tab was already read into the notes (then it isn't loaded back).
+function createJot(hostEl, onChange, notesText, pad) {
   hostEl.innerHTML = "";
   hostEl.classList.add("jt-wrap");
 
@@ -2306,7 +2409,8 @@ function createJot(hostEl, onChange, notesText) {
     '<button class="jt-btn" data-act="zoomin" title="Zoom in">+</button>' +
     '<span class="jt-sep"></span>' +
     '<button class="jt-btn ghost" data-act="clear" title="Clear all">🗑</button>' +
-    '<button class="jt-btn jt-totext" data-act="totext" title="Show / edit the text saved to Notes (tap again for the ink)">Aa</button>' +
+    (pad ? '<button class="jt-btn jt-totext" data-act="commit" title="Return: read this line into the notes">↵</button>'
+      : '<button class="jt-btn jt-totext" data-act="totext" title="Show / edit the text saved to Notes (tap again for the ink)">Aa</button>') +
     '<span class="jt-wordinfo" title="Last stroke: pause, gap from the word, and the decision"></span>' +
     '<span class="jt-convinfo"></span>';
   hostEl.appendChild(toolbar);
@@ -2369,6 +2473,9 @@ function createJot(hostEl, onChange, notesText) {
   var jotTextCache = null, jotTextMode = false, jotTextSaveTimer = null;
   var convertTimer = null, convertSeq = 0, convertedSig = "";
   var segTexts = {}, segReading = {};
+  // Pad mode: ink being read (drawn faded), and the reads in order, so lines
+  // reach the notes in the order they were written.
+  var readingIds = {}, padChain = Promise.resolve();
 
   function notifyChange() { scheduleAutoConvert(); if (onChange) onChange(); }
 
@@ -2457,6 +2564,7 @@ function createJot(hostEl, onChange, notesText) {
       var w = box.words[wi];
       if (w.isBreak) continue;
       ctx.save();
+      if (readingIds[w.id]) ctx.globalAlpha = 0.35;
       ctx.translate(w.x, w.y);
       ctx.rotate(-w.rotate);
       ctx.scale(w.scale, w.scale);
@@ -2575,6 +2683,7 @@ function createJot(hostEl, onChange, notesText) {
   // finished box is read straight away in the background while writing
   // carries on in the new one.
   function jtGestureReturn() {
+    if (pad) { commitPad(); return; }
     finalizeWord();
     var id = nextId++;
     actions.push({ type: "add-break", id: id });
@@ -2861,6 +2970,40 @@ function createJot(hostEl, onChange, notesText) {
     withWords.forEach(function(seg, i) { segTexts[segSig(seg)] = lines[i]; });
   }
 
+  // Pad mode Return: read the ink on the pad (not already being read) into
+  // the notes, then take it off the pad. Writing carries on meanwhile.
+  function commitPad() {
+    finalizeWord();
+    var words = box.words.filter(function(w) { return !w.isBreak && !readingIds[w.id]; });
+    if (!words.length) return;
+    var ids = {};
+    words.forEach(function(w) { ids[w.id] = 1; readingIds[w.id] = 1; });
+    var gen = convertSeq;
+    var image = jotToImage(segSVG({ top: 0, h: box.h, words: words }));
+    setConvInfo("Reading…");
+    redraw();
+    padChain = padChain.then(function() { return image; }).then(function(img) {
+      return fetch(API + "/jot-to-text", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: img }) });
+    }).then(function(r) { return r.json(); }).then(function(d) {
+      if (gen !== convertSeq) return;
+      if (d.error) throw new Error(d.error);
+      var text = jtOneLine(d.text);
+      if (text) pad.onLine(text);
+      for (var id in ids) delete readingIds[id];
+      actions = actions.filter(function(a) { return !((a.type === "add-word" && ids[a.id]) || (a.type === "erase-word" && ids[a.targetId])); });
+      rebuildFromActions();
+      if (!box.words.length) camera.y = 0;
+      redraw();
+      setConvInfo(text ? "" : "Couldn't read that line");
+      if (onChange) onChange();
+    }).catch(function(err) {
+      if (gen !== convertSeq) return;
+      for (var id in ids) delete readingIds[id];
+      redraw();
+      setConvInfo("Couldn't read it: ↵ to try again");
+    });
+  }
+
   // Aa: swap the ink for the text that's in the notes, editable.
   function setTextMode(on) {
     if (!on) flushJotTextSave();
@@ -2907,7 +3050,7 @@ function createJot(hostEl, onChange, notesText) {
     if (wordPauseTimer) { clearTimeout(wordPauseTimer); wordPauseTimer = null; }
     writingWord = null; current = null;
     actions = []; drawStrokes = {}; box.words = [];
-    segTexts = {}; segReading = {};
+    segTexts = {}; segReading = {}; readingIds = {};
     relayoutBox();
     camera.x = 0; camera.y = 0;
   }
@@ -2916,6 +3059,7 @@ function createJot(hostEl, onChange, notesText) {
     var btn = e.target.closest(".jt-btn");
     if (!btn) return;
     if (btn.getAttribute("data-act") === "totext") { setTextMode(!jotTextMode); return; }
+    if (btn.getAttribute("data-act") === "commit") { commitPad(); return; }
     // Any other tool goes back to the ink first.
     if (jotTextMode) setTextMode(false);
     var m = btn.getAttribute("data-mode");
@@ -2949,6 +3093,8 @@ function createJot(hostEl, onChange, notesText) {
       camera.scale = 1; updateZoomLabel(); updateDocWidth(); redraw();
     },
     isEmpty: function() { return actions.length === 0 && !writingWord; },
+    // Pad: read whatever ink is waiting (e.g. on switching to typing).
+    commit: function() { if (pad) commitPad(); },
     getJSON: function() { return withPendingWord(function() {
       var ds = [], id;
       for (id in drawStrokes) ds.push({ id: id, points: drawStrokes[id].points });
@@ -3013,6 +3159,16 @@ function createJot(hostEl, onChange, notesText) {
         // Legacy (v1): a single flat page of words.
         for (var m = 0; m < data.words.length; m++) seedWord(data.words[m]);
       }
+      // Pad: ink the old Jot tab already read into the notes stays there as
+      // text; only unread ink (and drawings) comes back onto the pad.
+      if (pad) {
+        var sig0 = (function() { rebuildFromActions(); return textSig(); })();
+        var read = hasText() && (data && typeof data.textSig === "string" ? data.textSig === sig0 : pad.alreadyInNotes());
+        if (read) actions = actions.filter(function(a) { return a.type === "add-stroke" || a.type === "erase-stroke"; });
+        rebuildFromActions();
+        redraw();
+        return;
+      }
       rebuildFromActions();
       redraw();
       // Text already in the notes is current if it was read from exactly
@@ -3074,9 +3230,9 @@ function jtOutlineToPath(outline) {
 function initJotEditor() {
   var host = document.getElementById("jot-canvas");
   if (liveJot) { resetJotIfNewCall(); return; }
-  liveJot = createJot(host, scheduleCallSave, {
-    save: function(text) { putJotTextInNotes("call-notes", text); scheduleCallSave(); },
-    saved: function() { return getJotTextFromNotes("call-notes", ""); }
+  liveJot = createJot(host, scheduleCallSave, null, {
+    onLine: function(text) { appendNoteLine("call-notes", text); scheduleCallSave(); },
+    alreadyInNotes: function() { return !!getJotTextFromNotes("call-notes", ""); }
   });
   jotCallId = currentCall ? currentCall.id : null;
 }
@@ -5702,7 +5858,7 @@ function openCallDetailView(c, opts) {
   document.getElementById("cd-callback-btn").classList.toggle("hidden", !(num && /^[+0-9*#]/.test(num)));
   renderCallDetailsPane(c);
   switchView("call-detail");
-  switchCallDetailTab(opts.tab || "jot");
+  switchCallDetailTab(opts.tab || "notes");
   loadCallDetailNotes(c.call_id || null);
 }
 
@@ -5729,7 +5885,7 @@ function switchCallDetailTab(tab) {
   for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle("active", tabs[i].getAttribute("data-tab") === tab);
   var panes = document.querySelectorAll("#view-call-detail .cp-pane");
   for (var j = 0; j < panes.length; j++) panes[j].classList.toggle("hidden", panes[j].id !== "cd-pane-" + tab);
-  if (tab === "jot" && !cdJot) initCallDetailJot();
+  if (tab === "notes") applyNoteMode("cd");
   if (tab === "transcript" && !cdTranscriptLoaded && cdCall) {
     cdTranscriptLoaded = true;
     fillRecordingPlayer(document.getElementById("cd-pane-transcript"), cdCall, false, cdHighlight);
@@ -5739,7 +5895,7 @@ function switchCallDetailTab(tab) {
 function loadCallDetailNotes(callId) {
   cdOpenCallId = callId;
   cdLoadedNotes = {}; cdJotData = null; cdSeenSummary = false;
-  document.getElementById("cd-pane-notes").innerHTML = '<div class="empty">Loading…</div>';
+  document.getElementById("cd-notes-host").innerHTML = '<div class="empty">Loading…</div>';
   if (!callId) { renderCallDetailNotesPane(); return; }
   fetch(API + "/call-notes?call_id=" + encodeURIComponent(callId)).then(function(r) { return r.json(); }).then(function(d) {
     cdLoadedNotes = (d && d.notes) || {};
@@ -5754,7 +5910,7 @@ function loadCallDetailNotes(callId) {
 }
 
 function renderCallDetailNotesPane() {
-  var pane = document.getElementById("cd-pane-notes");
+  var pane = document.getElementById("cd-notes-host");
   if (!pane) return; // navigated away before the fetch resolved
   pane.innerHTML = '<textarea id="cd-notes"></textarea>';
   document.getElementById("cd-notes").addEventListener("input", function() { scheduleCallDetailSave(); });
@@ -5788,12 +5944,9 @@ function initCallDetailNotesEditor(html) {
 function initCallDetailJot() {
   var host = document.getElementById("cd-jot-canvas");
   if (!host) return;
-  cdJot = createJot(host, scheduleCallDetailSave, {
-    save: function(text) {
-      putJotTextInNotes("cd-notes", text, function() { return cdLoadedNotes.notes_html || ""; }, function(html) { cdLoadedNotes.notes_html = html; });
-      scheduleCallDetailSave();
-    },
-    saved: function() { return getJotTextFromNotes("cd-notes", cdLoadedNotes.notes_html || ""); }
+  cdJot = createJot(host, scheduleCallDetailSave, null, {
+    onLine: function(text) { cdAppendNoteLine(text); },
+    alreadyInNotes: function() { return !!getJotTextFromNotes("cd-notes", cdLoadedNotes.notes_html || ""); }
   });
   if (cdJotData) cdJot.loadJSON(cdJotData);
 }
