@@ -1990,7 +1990,7 @@ function getJotTextFromNotes(editorId, html) {
 // ── Notes: one text, written by hand, typed or spoken ──────────
 // The Notes tab (in a call, and a call's detail view) is the call's notes
 // text with a handwriting pad under it. 🖊 Write: a Return (gesture or ↵)
-// reads the pad's ink and adds it to the end of the notes. ⌨ Type: the pad
+// reads the pad's ink and adds it onto the end of the notes. ⌨ Type: the pad
 // goes and you type in the notes. 🎙 Speak: what you say is transcribed
 // (POST /dictate) and added to the end. Write/Type is remembered per device.
 var NB = {
@@ -2028,22 +2028,35 @@ function mountJotToolbar(which, host) {
   if (tb) bar.insertBefore(tb, bar.querySelector(".nb-status"));
 }
 function setNbStatus(which, msg) { var el = document.getElementById(NB[which].status); if (el) el.textContent = msg; }
-// Adds a paragraph to the end of the notes (into an empty last paragraph if
-// there is one). Without the editor (still loading), into the stored html.
+// Adds the text onto the end of the notes, carrying on the last paragraph
+// after a space (or a new paragraph if the notes end with something else,
+// e.g. a list or an image). Without the editor (still loading), into the
+// stored html.
 function appendNoteLine(editorId, text, getHtml, setHtml) {
   var ed = (typeof tinymce !== "undefined") ? tinymce.get(editorId) : null;
   if (ed && !ed.initialized) ed = null;
   if (ed) {
     var body = ed.getBody(), last = body.lastElementChild;
-    if (last && last.nodeName === "P" && !last.textContent.trim() && !last.querySelector("img")) last.textContent = text;
-    else ed.dom.add(body, "p", {}, ed.dom.encode(text));
+    if (last && last.nodeName === "P" && !last.querySelector("img")) {
+      var cur = last.textContent.trim();
+      if (!cur) last.textContent = text;
+      else {
+        var br = last.lastChild;   // drop a trailing <br> so the words follow on
+        if (br && br.nodeName === "BR") br.remove();
+        last.appendChild(ed.getDoc().createTextNode((/[ ]$/.test(last.textContent) ? "" : " ") + text));
+      }
+    } else ed.dom.add(body, "p", {}, ed.dom.encode(text));
     ed.undoManager.add();
     try { ed.getWin().scrollTo(0, ed.getDoc().documentElement.scrollHeight); } catch (e) {}
     return;
   }
-  if (setHtml) setHtml((getHtml() || "") + "<p>" + esc(text) + "</p>");
+  if (setHtml) {
+    var h = (getHtml() || "").trimEnd();
+    if (/<[/]p>$/i.test(h) && !/<p[^>]*>[ ]*<[/]p>$/i.test(h)) setHtml(h.slice(0, -4) + " " + esc(text) + "</p>");
+    else setHtml(h + "<p>" + esc(text) + "</p>");
+  }
   var ta = document.getElementById(editorId);
-  if (ta) ta.value = ta.value.trim() ? ta.value.trimEnd() + String.fromCharCode(10) + text : text;
+  if (ta) ta.value = ta.value.trim() ? ta.value.trimEnd() + " " + text : text;
 }
 function cdAppendNoteLine(text) {
   appendNoteLine("cd-notes", text, function() { return cdLoadedNotes.notes_html || ""; }, function(h) { cdLoadedNotes.notes_html = h; });
