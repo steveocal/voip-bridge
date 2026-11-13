@@ -339,6 +339,12 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 .hist-toolbar .mob-btn{flex:0 0 52px;padding:4px 0;display:flex;align-items:center;justify-content:center}
 .hist-toolbar .mob-btn.hidden{display:none}
 .hist-toolbar .mob-btn.busy{opacity:.5}
+/* second row under the toolbar while a call is selected: voice note / notes / transcript / play */
+#hist-call-actions{padding-top:0}
+#hist-call-actions.hidden{display:none}
+#hist-call-actions button{display:flex;align-items:center;justify-content:center;gap:4px}
+#hist-call-actions .ico-note-add{width:20px;height:20px}
+#hist-call-actions .hca-play:not(:disabled){color:#34d399}
 #ctl-mobile{display:flex;align-items:center;justify-content:center;gap:5px;padding:5px 6px}
 #ctl-mobile.hidden{display:none}
 /* History swipes: ← archive, → delete; undo toast */
@@ -417,10 +423,11 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 /* favourites star */
 .fav-star{flex-shrink:0;background:none;border:none;font-size:24px;line-height:1;cursor:pointer;padding:2px 4px;color:#555;width:38px;margin-left:auto}
 .fav-star.on{color:#f7c948}
-/* in-call panel: caller name + tabs (Sales/Quotations, Call History, Notes, Jot) */
+/* in-call panel: tabs (Sales/Quotations, Call History, Emails, Notes, Jot) */
 .call-panel{margin:8px 16px 0;background:#1a1a1a;border:1px solid #2c2c2c;border-radius:14px;overflow:hidden}
-.cp-head{padding:12px 14px 2px;display:flex;align-items:center;gap:8px}
-.cp-caller{font-size:16px;font-weight:700;color:#ececec;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+/* The caller's name is in the call banner above, so the panel doesn't repeat it; its head only holds the notes' saved status. */
+.cp-head{padding:6px 14px 0;display:flex;align-items:center;gap:8px;min-height:6px}
+.cp-caller{display:none}
 .cp-tabs{display:flex;border-bottom:1px solid #2c2c2c;padding:0 4px;margin-top:8px;overflow-x:auto;scrollbar-width:none}
 .cp-tab{flex:1 0 auto;background:none;border:none;color:#999;font-size:11.5px;font-weight:600;padding:10px 6px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
 .cp-tab.active{color:#4db8ff;border-bottom-color:#4db8ff}
@@ -562,6 +569,12 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
         <button data-action="details" onclick="histAction('details')" disabled>📄 Details</button>
         <button data-action="contact" onclick="histAction('contact')" disabled>👤 Contact</button>
         <button class="mob-btn hidden" id="hist-mobile" data-action="mobile" onclick="callViaMobile()" title="Call via my mobile: rings your mobile, then the number in the box (or the last one you called)" aria-label="Call via my mobile"><svg class="mob-ic" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6.5" y="2" width="11" height="20" rx="2.5"/><path d="M10.5 18.6h3"/></svg></button>
+      </div>
+      <div class="hist-toolbar hidden" id="hist-call-actions">
+        <button data-action="voicenote" onclick="histCallAction('voicenote')" title="Add a voice note"></button>
+        <button data-action="notes" onclick="histCallAction('notes')" title="Notes">📝 Notes</button>
+        <button data-action="transcript" onclick="histCallAction('transcript')" title="Transcript">💬 Transcript</button>
+        <button class="hca-play" data-action="play" onclick="histCallAction('play')" title="Play recording">▶ Play</button>
       </div>
       <div class="dial-scroll" id="history-list"><div class="empty">Loading…</div></div>
       <div class="dial-scroll suggestions hidden" id="dial-suggestions"></div>
@@ -4527,6 +4540,7 @@ function updateDialBottomVisibility() {
   document.getElementById("dial-entry").classList.toggle("hidden", inAnyCall || !(dialKeypadOpen || hasNum || historyTxSearch));
   document.getElementById("dial-callbar").classList.toggle("hidden", inAnyCall);
   document.getElementById("hist-toolbar").classList.toggle("hidden", inAnyCall);
+  updateHistToolbar(); // the selected call's buttons row hides during a call too
   document.getElementById("history-list").classList.toggle("hidden", inAnyCall || typed);
   document.getElementById("dial-suggestions").classList.toggle("hidden", inAnyCall || !typed);
   document.getElementById("banner-keypad").classList.toggle("hidden", !connected);
@@ -4647,8 +4661,9 @@ function renderHistory(calls) {
   }
   return html;
 }
-// One line per call: direction, time, caller name, then fixed slots for the
-// notes / transcript / recording icons so rows line up. The number only
+// One line per call: direction, time, caller name, and the 💬 transcript
+// icon at the far right. The other actions (voice note, notes, play) are
+// buttons under the toolbar once the call is selected. The number only
 // stands in when there's no name.
 function renderHistoryRow(c) {
   if (c.meeting) return renderMeetingRow(c);
@@ -4661,15 +4676,12 @@ function renderHistoryRow(c) {
   var when = d ? ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2) : "";
   var key = "h-" + c.id;
   callsCache[key] = c;
-  var add = c.call_id ? '<button class="h-ic h-add" title="Add a voice note">' + NOTE_ADD_ICON + '</button>' : '<span class="h-ic"></span>';
-  var note = c.has_notes ? '<button class="h-ic h-note" title="Notes">📝</button>' : '<span class="h-ic"></span>';
   var tx = c.has_transcript ? '<button class="h-ic h-tx" title="Transcript">💬</button>'
     : c.has_recording ? '<button class="h-ic h-tx dim" title="Transcribe">💬</button>' : '<span class="h-ic"></span>';
-  var play = c.has_recording ? '<button class="h-ic hist-play" title="Play recording">▶</button>' : '<span class="h-ic"></span>';
   return '<div class="hist-row" data-key="' + esc(key) + '">'
     + '<div class="hist-main">' + dirIcon(dir, missed) + '<span class="h-time">' + when + '</span>'
     + '<span class="who">' + esc(name || num) + (c.did === "SIM" ? ' <span class="h-sim" title="Called from the SIM">📱</span>' : '') + (c.voicemail ? ' <span title="Voicemail">📼</span>' : '') + '</span>'
-    + add + note + tx + play + '</div>'
+    + tx + '</div>'
     + (c.match ? '<div class="hist-match">' + markMatch(c.match, historyQuery()) + '</div>' : '')
     + '</div>';
 }
@@ -4733,7 +4745,8 @@ function toggleRecording(row, c) {
   var box = document.createElement("div");
   box.className = "hist-player";
   row.appendChild(box);
-  row.querySelector(".hist-play").textContent = "■";
+  var pb = row.querySelector(".hist-play");
+  if (pb) pb.textContent = "■";
   fillRecordingPlayer(box, c, true);
 }
 // Audio player + transcript into box (shared by History rows and the call
@@ -4822,6 +4835,7 @@ function closeRecording(box) {
   var btn = box.parentNode.querySelector(".hist-play");
   if (btn) btn.textContent = "▶";
   box.parentNode.removeChild(box);
+  updateHistToolbar();
 }
 function histSelectedCall() { return (selected && selected.type === "call") ? selected.data : null; }
 function histNumber(c) { return (c.phone_number && c.phone_number !== "unknown") ? c.phone_number : (c.did || ""); }
@@ -4830,6 +4844,32 @@ function updateHistToolbar() {
   var can = { email: !!(c && c.partner_email), details: !!c, contact: !!(c && c.partner_id), mobile: true };
   var btns = document.querySelectorAll("#hist-toolbar button");
   for (var i = 0; i < btns.length; i++) btns[i].disabled = !can[btns[i].getAttribute("data-action")];
+  var row = histSelectedRow();
+  var bar = document.getElementById("hist-call-actions");
+  bar.classList.toggle("hidden", !row || !!currentCall);
+  if (!row) return;
+  var vn = bar.querySelector('[data-action="voicenote"]');
+  if (!vn.innerHTML) vn.innerHTML = NOTE_ADD_ICON + ' Note';
+  var tx = bar.querySelector('[data-action="transcript"]');
+  tx.innerHTML = c.has_transcript || !c.has_recording ? "💬 Transcript" : "💬 Transcribe";
+  var play = bar.querySelector('[data-action="play"]');
+  play.innerHTML = row.querySelector(".hist-player") ? "■ Stop" : "▶ Play";
+  var ok = { voicenote: !!c.call_id, notes: !!c.has_notes, transcript: !!(c.has_transcript || c.has_recording), play: !!c.has_recording };
+  var cb = bar.querySelectorAll("button");
+  for (var j = 0; j < cb.length; j++) cb[j].disabled = !ok[cb[j].getAttribute("data-action")];
+}
+// The selected call's row in History (not a contact's Calls tab).
+function histSelectedRow() {
+  if (!histSelectedCall()) return null;
+  return document.querySelector("#history-list .hist-row.selected");
+}
+function histCallAction(action) {
+  var c = histSelectedCall(), row = histSelectedRow();
+  if (!c || !row) return;
+  if (action === "voicenote") openNoteSheet(c.call_id, (c.partner_name || "").trim() || c.phone_number || "", false);
+  else if (action === "notes") openCallDetailView(c, { tab: "notes" });
+  else if (action === "transcript") openCallDetailView(c, { tab: "transcript" });
+  else if (action === "play") { toggleRecording(row, c); updateHistToolbar(); }
 }
 function histAction(action) {
   var c = histSelectedCall();
