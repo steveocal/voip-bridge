@@ -466,12 +466,10 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 .jt-text{display:flex;flex-direction:column}
 .jt-text-edit{flex:1;width:100%;min-height:120px;background:transparent;border:none;outline:none;resize:none;color:#e9ecef;font:inherit;font-size:16px;line-height:1.55;padding:0}
 #jot-canvas .jt-text{height:420px}
-#cd-jot-canvas .jt-text{height:58vh}
 .jt-btn.jt-totext{width:auto;padding:0 9px;font-weight:700;font-size:14px}
 .jt-canvas-wrap{width:100%;border-radius:10px;background:#1e1e1e;border:1px solid #2c2c2c;overflow:hidden}
 .jt-canvas-wrap canvas{display:block;cursor:none}
 #jot-canvas .jt-canvas-wrap{height:420px}
-#cd-jot-canvas .jt-canvas-wrap{height:58vh}
 /* call detail view: in-screen (not a dialog), Details/Notes/Jot tabs, sized for phones */
 .cd-head{display:flex;align-items:center;gap:8px;padding:2px 0 10px}
 .cd-back{background:none;border:none;color:#4db8ff;font-size:24px;line-height:1;cursor:pointer;padding:4px 8px;flex-shrink:0}
@@ -481,6 +479,18 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 .cd-callback{background:linear-gradient(135deg,#34d399,#10b981);border:none;color:#04210f;width:40px;height:40px;border-radius:50%;font-size:17px;cursor:pointer;flex-shrink:0}
 .cd-callback.hidden{display:none}
 .cd-body{padding-top:6px}
+/* call detail fills the screen: the open tab (Details / Notes / Transcript / Jot) takes all the height left under the tabs */
+#view-call-detail{display:flex;flex-direction:column;height:100%;min-height:0}
+#view-call-detail .cd-head,#view-call-detail .cp-tabs,#view-call-detail .cd-footer{flex-shrink:0}
+#view-call-detail .cd-body{flex:1;min-height:0;display:flex;flex-direction:column}
+#view-call-detail .cp-pane{flex:1;min-height:0;display:flex;flex-direction:column;overflow-y:auto}
+#cd-pane-notes .tox-tinymce{flex:1;min-height:200px;height:auto!important;width:100%!important}
+#cd-pane-notes textarea{flex:1}
+#cd-pane-transcript .hist-transcript{flex:1;min-height:0;overflow-y:auto}
+#cd-pane-jot{overflow:hidden}
+#cd-jot-canvas{flex:1;min-height:0}
+#cd-jot-canvas .jt-canvas-wrap,#cd-jot-canvas .jt-text{flex:1;min-height:200px;height:auto}
+#view-call-detail .cd-footer{padding:4px 0 0}
 .ct-name-edit{width:100%;font:inherit;font-size:16px;font-weight:600;color:#fff;background:#111;border:1px solid #2c2c2c;border-radius:8px;padding:9px 11px;outline:none}
 .ct-name-edit:focus{border-color:#2563eb}
 .ct-label{display:flex;justify-content:space-between;font-size:12px;color:#999;margin:4px 0 6px}
