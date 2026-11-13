@@ -488,7 +488,13 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 #jot-canvas .jt-canvas-wrap{height:300px}
 /* Notes: the text on top and the handwriting pad under it (Write), or just
    the text (Type); 🎙 Speak adds dictated text in either */
-.nb-bar{display:flex;gap:6px;align-items:center;margin:6px 0;flex-shrink:0}
+.nb-bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0;flex-shrink:0}
+/* the pad's tools sit in the bar, only while writing; the editor's
+   formatting toolbar shows only while typing */
+.nb-bar .jt-toolbar{flex-wrap:nowrap}
+.nb-bar .jt-wordinfo{display:none}
+.nb-type .nb-bar .jt-toolbar{display:none}
+.nb-write .tox .tox-editor-header{display:none}
 .nb-bar button{flex:0 0 auto;padding:7px 12px;border:none;border-radius:10px;background:#2c2c2c;color:#ececec;font-size:13px;cursor:pointer}
 .nb-bar button.on{background:#2563eb;color:#fff}
 .nb-bar button.rec{background:#b91c1c;color:#fff}
@@ -2013,6 +2019,14 @@ function setNoteMode(which, m) {
   applyNoteMode(which);
   if (m === "type") focusNotesEnd(NB[which].editor);
 }
+// The pad's tools (pen, draw, erase, undo, zoom, clear, ↵) go into the
+// Write/Type/Speak bar, before the status; a pad made again replaces them.
+function mountJotToolbar(which, host) {
+  var bar = document.querySelector('.nb-bar[data-nb="' + which + '"]'), tb = host.querySelector(".jt-toolbar");
+  var old = bar.querySelectorAll(".jt-toolbar");
+  for (var i = 0; i < old.length; i++) old[i].remove();
+  if (tb) bar.insertBefore(tb, bar.querySelector(".nb-status"));
+}
 function setNbStatus(which, msg) { var el = document.getElementById(NB[which].status); if (el) el.textContent = msg; }
 // Adds a paragraph to the end of the notes (into an empty last paragraph if
 // there is one). Without the editor (still loading), into the stored html.
@@ -3234,6 +3248,7 @@ function initJotEditor() {
     onLine: function(text) { appendNoteLine("call-notes", text); scheduleCallSave(); },
     alreadyInNotes: function() { return !!getJotTextFromNotes("call-notes", ""); }
   });
+  mountJotToolbar("call", host);
   jotCallId = currentCall ? currentCall.id : null;
 }
 
@@ -5948,6 +5963,7 @@ function initCallDetailJot() {
     onLine: function(text) { cdAppendNoteLine(text); },
     alreadyInNotes: function() { return !!getJotTextFromNotes("cd-notes", cdLoadedNotes.notes_html || ""); }
   });
+  mountJotToolbar("cd", host);
   if (cdJotData) cdJot.loadJSON(cdJotData);
 }
 
@@ -5959,6 +5975,8 @@ function destroyCallDetailEditors() {
   try { if (typeof tinymce !== "undefined" && tinymce.get("cd-notes")) tinymce.get("cd-notes").remove(); } catch (e) {}
   try { if (cdJot) cdJot.destroy(); } catch (e) {}
   cdJot = null;
+  var tb = document.querySelector('.nb-bar[data-nb="cd"] .jt-toolbar');
+  if (tb) tb.remove();
 }
 
 function stripHtml(h) { return String(h || "").replace(/<[^>]*>/g, " ").replace(/ +/g, " ").trim(); }
