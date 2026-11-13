@@ -105,6 +105,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .xfer .exts{display:flex;flex-wrap:wrap;gap:6px}
 .xfer .exts button{flex:0 0 auto;padding:6px 12px}
 .xfer button.go{background:#10b981}
+/* transfer target picker: Extensions / Favourites / Recent / Contacts, or type a name */
+.xfer .xfer-tabs{display:flex;gap:4px}
+.xfer .xfer-tabs button{padding:7px 4px;font-size:12px;background:#222;color:#999}
+.xfer .xfer-tabs button.active{background:#1e3a5f;color:#ececec}
+.xfer-list{max-height:34vh;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
+.xfer-list.exts{flex-direction:row;flex-wrap:wrap;gap:6px}
+.xfer-list.exts button{flex:0 0 auto;padding:6px 12px}
+.xfer-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;background:#222;cursor:pointer}
+.xfer-row.on{background:#1e3a5f}
+.xfer-row .n{flex:1;min-width:0;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.xfer-row .s{font-size:12px;color:#999;white-space:nowrap}
+.xfer-list .empty{padding:12px 0}
 .parked-strip{display:flex;flex-wrap:wrap;gap:6px;margin:0 16px 8px;align-items:center;font-size:13px;color:#aaa}
 .parked-strip button{flex:0 0 auto;background:#1e3a5f}
 .hidden{display:none!important}
@@ -559,8 +571,14 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <button id="ctl-mobile" onclick="moveToMobile()" title="Move this call to my mobile"><svg class="mob-ic" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6.5" y="2" width="11" height="20" rx="2.5"/><path d="M10.5 18.6h3"/></svg>Mobile</button>
   </div>
   <div class="xfer hidden" id="xfer-panel">
-    <div class="row"><input id="xfer-input" type="tel" placeholder="Extension or number" autocomplete="off"><button class="x" onclick="closeTransfer()" aria-label="Close">✕</button></div>
-    <div class="exts" id="xfer-exts"></div>
+    <div class="row"><input id="xfer-input" type="text" placeholder="Extension, number or name" autocomplete="off" autocapitalize="off"><button class="x" onclick="closeTransfer()" aria-label="Close">✕</button></div>
+    <div class="xfer-tabs" id="xfer-tabs">
+      <button data-src="ext" onclick="setTransferSource('ext')">Extensions</button>
+      <button data-src="fav" onclick="setTransferSource('fav')">★ Favourites</button>
+      <button data-src="recent" onclick="setTransferSource('recent')">Recent</button>
+      <button data-src="contacts" onclick="setTransferSource('contacts')">Contacts</button>
+    </div>
+    <div class="xfer-list" id="xfer-list"></div>
     <div class="row"><button class="go" id="xfer-now" onclick="blindTransfer()">Transfer now</button><button id="xfer-talk" onclick="consultTransfer()">Talk first</button></div>
   </div>
   <div class="consult-bar hidden" id="consult-bar">
@@ -4211,21 +4229,117 @@ function openTransfer(mode) {
   var add = mode === "add";
   document.getElementById("xfer-now").classList.toggle("hidden", add);
   document.getElementById("xfer-talk").textContent = add ? "📞 Call" : "Talk first";
-  var mine = myExtension();
-  document.getElementById("xfer-exts").innerHTML = XFER_EXTS.filter(function(x) { return x !== mine; })
-    .map(function(x) { return '<button onclick="pickTransferExt(this.textContent)">' + x + '</button>'; }).join("");
   document.getElementById("xfer-panel").classList.remove("hidden");
   var inp = document.getElementById("xfer-input");
   inp.value = "";
+  xferPick = null;
+  loadT9Corpus();
+  loadTransferRecent();
+  setTransferSource(xferSource);
   inp.focus();
 }
-function pickTransferExt(x) { document.getElementById("xfer-input").value = x; }
+// Where the transfer target comes from: a tab (extensions, favourites,
+// recent callers, contacts), or a name/number typed in the box, which
+// searches favourites, recent callers and contacts together. Picking a row
+// puts its number in the box; xferPick keeps the name for the call notes.
+var xferSource = "ext", xferPick = null, xferRecent = [], xferRows = [];
+function loadTransferRecent() {
+  fetch(API + "/call-history?limit=60&q=&ext=" + encodeURIComponent(myExtension())).then(function(r) { return r.json(); }).then(function(d) {
+    var seen = {}, out = [];
+    (d.calls || []).forEach(function(c) {
+      var num = histNumber(c), key = digitsOnly(num);
+      if (!key || num === "unknown" || seen[key]) return;
+      seen[key] = 1;
+      out.push({ name: (c.partner_name || "").trim(), num: String(num) });
+    });
+    xferRecent = out;
+    if (xferSource === "recent" && !document.getElementById("xfer-input").value.trim()) renderTransferList();
+  }).catch(function() {});
+}
+function setTransferSource(src) {
+  xferSource = src;
+  var tabs = document.querySelectorAll("#xfer-tabs button");
+  for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle("active", tabs[i].getAttribute("data-src") === src);
+  renderTransferList();
+}
+function transferPool(src) {
+  if (src === "fav") return favourites.filter(function(f) { return f.num; }).map(function(f) { return { name: f.name || "", num: String(f.num) }; });
+  if (src === "recent") return xferRecent;
+  if (src === "contacts") return t9Corpus.map(function(e) { return { name: e.name, num: e.num }; })
+    .sort(function(a, b) { return a.name.localeCompare(b.name); });
+  return [];
+}
+function renderTransferList() {
+  var el = document.getElementById("xfer-list");
+  var raw = document.getElementById("xfer-input").value.trim();
+  var q = raw && !(xferPick && raw === xferPick.num) ? raw : "";
+  el.classList.toggle("exts", !q && xferSource === "ext");
+  if (!q && xferSource === "ext") {
+    var mine = myExtension();
+    el.innerHTML = XFER_EXTS.filter(function(x) { return x !== mine; })
+      .map(function(x) { return '<button onclick="pickTransferExt(this.textContent)">' + x + '</button>'; }).join("");
+    return;
+  }
+  var rows;
+  if (q) {
+    // Typed: one list from every source, favourites first, one row per number.
+    var letters = /[a-zA-Z]/.test(q), tq = letters ? q.toLowerCase() : digitsOnly(q), seen = {}, hits = [];
+    if (!tq) { el.innerHTML = ""; xferRows = []; return; }
+    ["fav", "recent", "contacts"].forEach(function(src, si) {
+      transferPool(src).forEach(function(r, ri) {
+        var key = digitsOnly(r.num);
+        if (!key || seen[key]) return;
+        var m = t9Match(t9Entry(r.name, r.num), tq, letters);
+        if (!m) return;
+        seen[key] = 1;
+        hits.push({ r: r, score: m.score, order: si * 100000 + ri });
+      });
+    });
+    hits.sort(function(a, b) { return (b.score - a.score) || (a.order - b.order); });
+    rows = hits.slice(0, 40).map(function(h) { return h.r; });
+  } else {
+    rows = transferPool(xferSource).slice(0, 200);
+  }
+  xferRows = rows;
+  if (!rows.length) {
+    el.innerHTML = '<div class="empty">' + (q ? "No matches" : xferSource === "fav" ? "No favourites with a number" : xferSource === "recent" ? "Loading…" : "Loading contacts…") + '</div>';
+    if (!q && xferSource === "contacts" && !t9Corpus.length) setTimeout(function() { if (xferSource === "contacts") renderTransferList(); }, 800);
+    return;
+  }
+  el.innerHTML = rows.map(function(r, i) {
+    var on = xferPick && digitsOnly(xferPick.num) === digitsOnly(r.num);
+    return '<div class="xfer-row' + (on ? ' on' : '') + '" data-i="' + i + '"><span class="n">' + esc(r.name || r.num) + '</span>'
+      + (r.name ? '<span class="s">' + esc(r.num) + '</span>' : '') + '</div>';
+  }).join("");
+}
+document.getElementById("xfer-list").addEventListener("click", function(e) {
+  var row = e.target.closest(".xfer-row");
+  if (!row) return;
+  var r = xferRows[+row.getAttribute("data-i")];
+  if (!r) return;
+  xferPick = r;
+  document.getElementById("xfer-input").value = r.num;
+  renderTransferList();
+});
+document.getElementById("xfer-input").addEventListener("input", function() {
+  if (xferPick && this.value.trim() !== xferPick.num) xferPick = null;
+  renderTransferList();
+});
+function pickTransferExt(x) { xferPick = null; document.getElementById("xfer-input").value = x; }
 function closeTransfer() { document.getElementById("xfer-panel").classList.add("hidden"); }
+// The number to transfer to. A typed name isn't one: the top match is used
+// if there's exactly one, otherwise ask to pick from the list.
 function transferInput() {
-  var v = document.getElementById("xfer-input").value.trim();
-  if (!v) document.getElementById("xfer-input").focus();
+  var inp = document.getElementById("xfer-input"), v = inp.value.trim();
+  if (v && /[a-zA-Z]/.test(v)) {
+    if (xferRows.length === 1) { xferPick = xferRows[0]; v = xferPick.num; }
+    else { setStatus("Pick who to transfer to from the list", true); inp.focus(); return ""; }
+  }
+  if (!v) inp.focus();
   return v;
 }
+// "Name (number)" for the call notes when picked from a list.
+function transferLabel(to) { return xferPick && xferPick.name && xferPick.num === to ? xferPick.name + " (" + to + ")" : to; }
 function referTo(session, target, done) {
   session.refer(target, { requestDelegate: {
     onAccept: function() { if (done) done(); },
@@ -4236,7 +4350,7 @@ function blindTransfer() {
   var to = transferInput();
   if (!to || !sipSession) return;
   closeTransfer();
-  noteTransfer("Transferred to " + to);
+  noteTransfer("Transferred to " + transferLabel(to));
   // Asterisk hangs our leg up once the caller is on their way.
   referTo(sipSession, sipTarget(to));
 }
@@ -4246,7 +4360,7 @@ function consultTransfer() {
   closeTransfer();
   var start = onHold ? Promise.resolve() : holdLeg(true).then(function() { onHold = true; });
   start.then(function() {
-    consultTarget = to;
+    consultTarget = transferLabel(to);
     var inv = new SIP.Inviter(sipUA, sipTarget(to), { sessionDescriptionHandlerOptions: { constraints: { audio: true, video: false } } });
     consultSession = inv;
     inv.stateChange.on(function(state) {
