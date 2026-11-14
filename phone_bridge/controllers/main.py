@@ -20,7 +20,7 @@ class PhoneBridgeController(http.Controller):
     def _installation(self):
         return request.env["phone_bridge.installation"].sudo().search([], limit=1)
 
-    @http.route("/phone_bridge/softphone/config", type="json", auth="user")
+    @http.route("/phone_bridge/softphone/config", type="jsonrpc", auth="user")
     def softphone_config(self):
         inst = self._installation()
         ext = request.env.user.phone_bridge_extension_id.sudo()
@@ -63,7 +63,7 @@ class PhoneBridgeController(http.Controller):
             return
         Call.bridge_upsert(vals)
 
-    @http.route("/phone_bridge/call_event", type="json", auth="user")
+    @http.route("/phone_bridge/call_event", type="jsonrpc", auth="user")
     def call_event(self, event, call_id, caller="", direction="incoming", duration=0):
         """The softphone's own call events: logged in Odoo, then passed on to
         the worker with the API token, which never reaches the browser."""
@@ -112,14 +112,14 @@ class PhoneBridgeController(http.Controller):
 
     # Each user reads their own Gmail through the worker, once they have
     # connected it (/phone_bridge/google_connect).
-    @http.route("/phone_bridge/emails", type="json", auth="user")
+    @http.route("/phone_bridge/emails", type="jsonrpc", auth="user")
     def emails(self, days=7):
         data = self._worker_get("/messages/recent", {"days": int(days), "limit": 50})
         if not data:
             return {"ok": False, "messages": []}
         return {"ok": bool(data.get("gmailOk")), "messages": data.get("messages", [])}
 
-    @http.route("/phone_bridge/google_status", type="json", auth="user")
+    @http.route("/phone_bridge/google_status", type="jsonrpc", auth="user")
     def google_status(self):
         data = self._worker_get("/google/status") or {}
         return data.get("account") or False
@@ -134,14 +134,14 @@ class PhoneBridgeController(http.Controller):
             return request.make_response(_("The phone service couldn't start the Google sign-in."), status=502)
         return request.redirect(data["url"], local=False)
 
-    @http.route("/phone_bridge/email", type="json", auth="user")
+    @http.route("/phone_bridge/email", type="jsonrpc", auth="user")
     def email(self, gmail_id):
         """One email's full body: plain text and, when it has one, HTML."""
         data = self._worker_get("/message", {"gmail_id": gmail_id}) or {}
         message = data.get("message") or {}
         return {"text": message.get("body") or "", "html": message.get("body_html") or ""}
 
-    @http.route("/phone_bridge/parked", type="json", auth="user")
+    @http.route("/phone_bridge/parked", type="jsonrpc", auth="user")
     def parked(self):
         """Calls waiting in the PBX's parking lot, from the worker."""
         inst = self._installation()
@@ -155,7 +155,7 @@ class PhoneBridgeController(http.Controller):
             _logger.warning("phone_bridge: parked calls failed: %s", e)
             return []
 
-    @http.route("/phone_bridge/lookup", type="json", auth="user")
+    @http.route("/phone_bridge/lookup", type="jsonrpc", auth="user")
     def lookup(self, number):
         """The contact a number belongs to, matched like the worker does: a
         wildcard between every digit (Odoo numbers are free text), then the
@@ -184,7 +184,7 @@ class PhoneBridgeController(http.Controller):
             return partner.phone or partner.mobile or "", partner
         return "", None
 
-    @http.route("/phone_bridge/activities", type="json", auth="user")
+    @http.route("/phone_bridge/activities", type="jsonrpc", auth="user")
     def activities(self, limit=100):
         """All the user's open activities, soonest first, each with the
         number to ring for its record (if there is one)."""
@@ -214,7 +214,7 @@ class PhoneBridgeController(http.Controller):
             })
         return out
 
-    @http.route("/phone_bridge/activity_done", type="json", auth="user")
+    @http.route("/phone_bridge/activity_done", type="jsonrpc", auth="user")
     def activity_done(self, activity_id, feedback=""):
         act = request.env["mail.activity"].browse(int(activity_id)).exists()
         if act and act.user_id == request.env.user:

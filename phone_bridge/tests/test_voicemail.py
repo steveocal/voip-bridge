@@ -87,7 +87,7 @@ class TestVoicemail(TransactionCase):
 
     def test_portal_owner_gets_email_without_activity(self):
         portal = self.env["res.users"].create({"name": "Portal Owner", "login": "ext_portal", "email": "portal@example.com",
-                                               "groups_id": [(6, 0, [self.env.ref("base.group_portal").id])]})
+                                               "group_ids": [(6, 0, [self.env.ref("base.group_portal").id])]})
         self.ext.write({"user_id": portal.id, "voicemail_email": "portal@example.com"})
         self.assertTrue(self.ext.user_share)
         call = self._voicemail("9201", "vm.3")

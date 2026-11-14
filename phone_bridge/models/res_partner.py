@@ -4,6 +4,10 @@ from odoo import fields, models
 class ResPartner(models.Model):
     _inherit = "res.partner"
 
+    # Odoo 19 dropped res.partner.mobile; the phone panel, caller lookup and the
+    # Cloudflare worker still rely on it, so phone_bridge provides it again.
+    mobile = fields.Char("Mobile")
+
     phone_bridge_call_ids = fields.One2many("phone_bridge.call", "partner_id", "Calls")
     phone_bridge_call_count = fields.Integer("Call Count", compute="_compute_phone_bridge_call_count")
 

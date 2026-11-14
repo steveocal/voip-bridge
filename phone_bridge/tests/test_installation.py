@@ -37,4 +37,4 @@ class TestInstallation(TransactionCase):
         self.inst._ensure_generated()
         self.assertEqual((self.inst.api_token, self.inst.odoo_api_key), (token, key))
         uid = self.env["res.users.apikeys"]._check_credentials(scope="rpc", key=key)
-        self.assertEqual(uid, self.inst.odoo_user_id.id)
+        self.assertEqual(uid, self.inst._worker_user().id)

@@ -81,7 +81,7 @@ class TestNumberRouting(TransactionCase):
 
     def test_user_can_set_own_mobile(self):
         user = self.env["res.users"].create({"name": "Own Mobile", "login": "pb_own_mobile",
-                                             "groups_id": [(6, 0, [self.env.ref("base.group_user").id])]})
+                                             "group_ids": [(6, 0, [self.env.ref("base.group_user").id])]})
         self.Ext.create({"number": "9404", "user_id": user.id})
         self.sent.clear()
         user.with_user(user).write({"phone_bridge_mobile": "+447700900125", "phone_bridge_mobile_delay": 10})

@@ -60,7 +60,7 @@ class TestExtensionPbx(TransactionCase):
 
     def test_portal_user_can_own_an_extension(self):
         portal = self.env["res.users"].create({"name": "Portal Phone", "login": "pb_portal_phone",
-                                               "groups_id": [(6, 0, [self.env.ref("base.group_portal").id])]})
+                                               "group_ids": [(6, 0, [self.env.ref("base.group_portal").id])]})
         ext = self.Ext.create({"number": "9306", "user_id": portal.id})
         self.assertTrue(ext.user_share)
         self.assertFalse(self.Ext._fields["user_id"].domain)

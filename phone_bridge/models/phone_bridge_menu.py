@@ -145,7 +145,10 @@ class PhoneBridgeMenuOption(models.Model):
     number = fields.Char("Forward To")
     submenu_id = fields.Many2one("phone_bridge.menu", "Go To Menu")
 
-    _sql_constraints = [("key_uniq", "unique(menu_id, key)", "Each key can only be used once in a menu.")]
+    _key_uniq = models.Constraint(
+        "unique(menu_id, key)",
+        "Each key can only be used once in a menu.",
+    )
 
     @api.constrains("action", "number", "submenu_id", "name")
     def _check_option(self):

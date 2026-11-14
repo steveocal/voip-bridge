@@ -62,7 +62,10 @@ class PhoneBridgeExtension(models.Model):
     voicemail_email = fields.Char("Email Voicemail To", compute="_compute_voicemail_email", store=True, readonly=False,
                                   help="Comma-separated. Each message is emailed with its transcript and audio.")
 
-    _sql_constraints = [("number_uniq", "unique(number)", "That extension already exists.")]
+    _number_uniq = models.Constraint(
+        "unique(number)",
+        "That extension already exists.",
+    )
 
     @api.depends("user_id")
     def _compute_voicemail_email(self):

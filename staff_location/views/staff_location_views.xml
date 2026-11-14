@@ -78,12 +78,11 @@
                 <separator/>
                 <filter name="today" string="Today" domain="[('arrived_at', '&gt;=', (context_today()).strftime('%Y-%m-%d'))]"/>
                 <filter name="arrived_at" string="Arrived" date="arrived_at"/>
-                <group expand="0" string="Group By">
+                <separator/>
                     <filter name="group_week" string="Week" context="{'group_by': 'arrived_at:week'}"/>
                     <filter name="group_day" string="Day" context="{'group_by': 'arrived_at:day'}"/>
                     <filter name="group_employee" string="Employee" context="{'group_by': 'employee_id'}"/>
                     <filter name="group_partner" string="Contact" context="{'group_by': 'partner_id'}"/>
-                </group>
             </search>
         </field>
     </record>

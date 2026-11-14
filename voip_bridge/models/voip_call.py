@@ -13,9 +13,10 @@ class VoipCall(models.Model):
     recording = fields.Binary(attachment=True, readonly=True)
     recording_filename = fields.Char(readonly=True)
 
-    _sql_constraints = [
-        ("bridge_call_id_uniq", "unique(bridge_call_id)", "This Asterisk call is already logged."),
-    ]
+    _bridge_call_id_uniq = models.Constraint(
+        "unique(bridge_call_id)",
+        "This Asterisk call is already logged.",
+    )
 
     @api.depends("start_date", "end_date")
     def _compute_duration(self):

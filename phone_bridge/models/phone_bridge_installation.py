@@ -150,6 +150,14 @@ class PhoneBridgeInstallation(models.Model):
 
     # ── Values the worker runs with ──
 
+    def _worker_user(self):
+        """The user the worker signs in as. Odoo 19 rejects API keys of inactive
+        users, so never fall back to the (inactive) superuser."""
+        user = self.odoo_user_id or self.env.user
+        if not user.active:
+            user = self.env.ref("base.user_admin")
+        return user
+
     def _ensure_generated(self):
         """Secrets that are made, not typed: created on first deploy, then kept."""
         self.ensure_one()
@@ -159,7 +167,7 @@ class PhoneBridgeInstallation(models.Model):
         if not self.pbx_secret:
             vals["pbx_secret"] = secrets.token_urlsafe(24)
         if not self.odoo_api_key:
-            user = self.odoo_user_id or self.env.user
+            user = self._worker_user()
             vals["odoo_api_key"] = self.env["res.users.apikeys"].with_user(user).sudo()._generate(
                 None, f"Phone Bridge worker ({self.worker_name})", None)
         if vals:
@@ -173,7 +181,7 @@ class PhoneBridgeInstallation(models.Model):
             "PBX_SECRET": self.pbx_secret,
             "ODOO_URL": (self.odoo_url or "").rstrip("/"),
             "ODOO_DB": self.env.cr.dbname,
-            "ODOO_USER": (self.odoo_user_id or self.env.user).login,
+            "ODOO_USER": self._worker_user().login,
             "ODOO_PASS": self.odoo_api_key,
             "PBX_PROVIDER": self.pbx_provider,
             # Left unset: the worker derives it from API_TOKEN.

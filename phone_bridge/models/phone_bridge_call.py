@@ -52,9 +52,10 @@ class PhoneBridgeCall(models.Model):
     voicemail_heard = fields.Boolean("Heard")
     voicemail_notified = fields.Boolean(readonly=True, copy=False)
 
-    _sql_constraints = [
-        ("bridge_call_id_uniq", "unique(bridge_call_id)", "This PBX call is already logged."),
-    ]
+    _bridge_call_id_uniq = models.Constraint(
+        "unique(bridge_call_id)",
+        "This PBX call is already logged.",
+    )
 
     # Fields the worker may set through bridge_upsert.
     BRIDGE_FIELDS = (
@@ -102,7 +103,9 @@ class PhoneBridgeCall(models.Model):
             # Portal and public users can't open calls in Odoo, so they get
             # the email only.
             if user and not user.share:
-                call.activity_schedule(
+                # The voicemail email already tells them; skip Odoo's
+                # separate "assigned to you" email.
+                call.with_context(mail_activity_quick_update=True).activity_schedule(
                     "mail.mail_activity_data_todo", user_id=user.id,
                     summary=_("Voicemail from %s", call.partner_id.name or call.phone_number),
                     note=call.transcript or _("No transcript."))

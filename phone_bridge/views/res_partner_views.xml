@@ -11,6 +11,12 @@
                     <field string="Calls" name="phone_bridge_call_count" widget="statinfo"/>
                 </button>
             </div>
+            <xpath expr="//field[@name='phone']/.." position="after">
+                <div class="d-flex align-items-baseline w-md-50">
+                    <i class="fa fa-fw me-1 fa-mobile text-primary" title="Mobile"/>
+                    <field name="mobile" class="w-100" widget="phone" placeholder="Mobile"/>
+                </div>
+            </xpath>
         </field>
     </record>
 </odoo>

@@ -94,12 +94,11 @@
                 <filter name="voicemail" string="Voicemail" domain="[('voicemail', '=', True)]"/>
                 <filter name="unheard" string="Unheard voicemail" domain="[('voicemail', '=', True), ('voicemail_heard', '=', False)]"/>
                 <filter name="recorded" string="Recorded" domain="[('recording', '!=', False)]"/>
-                <group expand="0" string="Group By">
+                <separator/>
                     <filter name="group_extension" string="Extension" context="{'group_by': 'extension'}"/>
                     <filter name="group_partner" string="Contact" context="{'group_by': 'partner_id'}"/>
                     <filter name="group_box" string="Mailbox" context="{'group_by': 'voicemail_box'}"/>
                     <filter name="group_day" string="Day" context="{'group_by': 'start_date:day'}"/>
-                </group>
             </search>
         </field>
     </record>

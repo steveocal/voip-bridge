@@ -63,7 +63,10 @@ class PhoneBridgeNumber(models.Model):
         from .phone_bridge_menu import VOICES
         return VOICES
 
-    _sql_constraints = [("number_uniq", "unique(number)", "That number is already set up.")]
+    _number_uniq = models.Constraint(
+        "unique(number)",
+        "That number is already set up.",
+    )
 
     @api.depends("number", "name")
     def _compute_display_name(self):

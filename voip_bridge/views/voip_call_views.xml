@@ -77,10 +77,9 @@
                 <filter name="missed" string="Missed" domain="[('state', '=', 'missed')]"/>
                 <filter name="voicemail" string="Voicemail" domain="[('voicemail', '=', True)]"/>
                 <filter name="recorded" string="Recorded" domain="[('recording', '!=', False)]"/>
-                <group expand="0" string="Group By">
+                <separator/>
                     <filter name="group_partner" string="Contact" context="{'group_by': 'partner_id'}"/>
                     <filter name="group_day" string="Day" context="{'group_by': 'start_date:day'}"/>
-                </group>
             </search>
         </field>
     </record>

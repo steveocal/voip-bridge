@@ -41,7 +41,8 @@ class TestPhonePanel(HttpCase):
         self.assertEqual(other[0]["icon"], todo_type.icon or "fa-tasks")
 
         self.make_jsonrpc_request("/phone_bridge/activity_done", {"activity_id": overdue.id})
-        self.assertFalse(overdue.exists())
+        # Odoo 19 archives finished activities instead of deleting them.
+        self.assertFalse(overdue.with_context(active_test=False).active)
 
     def test_softphone_calls_are_logged_in_odoo(self):
         admin = self.env.ref("base.user_admin")
