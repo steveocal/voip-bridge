@@ -595,7 +595,7 @@ async function handleRecentMessages(request: Request, env: Env, user: User): Pro
   let gmailOk = false;
   let messages: Message[] = [];
   try {
-    messages = await searchRecentGmailMessages(env, user.id, days, limit);
+    messages = await searchRecentGmailMessages(env, user.id, days, limit, (url.searchParams.get("q") ?? "").slice(0, 200));
     gmailOk = true;
   } catch (e) {
     console.error("Recent Gmail sync failed:", e);

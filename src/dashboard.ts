@@ -169,6 +169,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .hist-player{margin:6px 0 4px 26px;font-size:12px;color:#999}
 .hist-tx-btn{flex-shrink:0;width:46px;height:46px;border:none;border-radius:10px;background:#1a1a1a;color:#ececec;font-size:17px;cursor:pointer}
 .hist-tx-btn.on{background:linear-gradient(135deg,#4db8ff,#2563eb)}
+.hist-tx-btn .srch-ic{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;vertical-align:middle}
+.hist-tabs button.on{background:#2563eb;color:#fff}
 .hist-match{margin:0 0 4px 74px;font-size:12.5px;color:#ccc;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hist-match mark{background:#f7c948;color:#000;border-radius:2px;font-style:normal}
 .hist-player audio{width:100%;height:36px}
@@ -500,7 +502,14 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 .nb-bar button.rec{background:#b91c1c;color:#fff}
 .nb-bar .nb-status{font-size:12px;color:#999;margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .nb-type .nb-pad{display:none}
-.nb-pad{margin-top:8px}
+.nb-pad{margin-top:8px;flex:0 0 auto!important}
+/* handwriting strip under the notes: two white lines and a dotted one,
+   read a word or two at a time straight into the text (like Gboard) */
+.hw-wrap{display:flex;flex-direction:column}
+.hw-pad{position:relative;height:150px;border-radius:12px;background:#1e1e1e;border:1px solid #2c2c2c;overflow:hidden;touch-action:none}
+.hw-pad canvas{display:block;touch-action:none;cursor:crosshair}
+#cd-pane-notes.nb-write #cd-notes-host{flex:1}
+.fu-pane.nb-write #fu-notes{flex:1}
 #cp-pane-notes.nb-write .tox-tinymce{height:170px!important}
 #cp-pane-notes.nb-type .tox-tinymce{height:340px!important}
 /* call detail view: in-screen (not a dialog), Details/Notes/Jot tabs, sized for phones */
@@ -629,20 +638,21 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
   <div class="views">
     <!-- DIAL VIEW -->
     <div class="view" id="view-dial">
-      <div class="hist-toolbar" id="hist-toolbar">
-        <button data-action="email" onclick="histAction('email')" disabled>✉️ Email</button>
-        <button data-action="details" onclick="histAction('details')" disabled>📄 Details</button>
-        <button data-action="contact" onclick="histAction('contact')" disabled>👤 Contact</button>
-        <button class="mob-btn hidden" id="hist-mobile" data-action="mobile" onclick="callViaMobile()" title="Call via my mobile: rings your mobile, then the number in the box (or the last one you called)" aria-label="Call via my mobile"><svg class="mob-ic" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6.5" y="2" width="11" height="20" rx="2.5"/><path d="M10.5 18.6h3"/></svg></button>
+      <div class="hist-toolbar hist-tabs" id="hist-toolbar">
+        <button data-src="calls" class="on" onclick="setHistTab('calls')">📞 Calls</button>
+        <button data-src="transcripts" onclick="setHistTab('transcripts')">💬 Transcripts</button>
+        <button data-src="emails" onclick="setHistTab('emails')">✉️ Emails</button>
       </div>
       <div class="hist-toolbar hidden" id="hist-call-actions">
-        <button data-action="voicenote" onclick="histCallAction('voicenote')" title="Add a voice note"></button>
+        <button data-action="email" onclick="histAction('email')" title="Email">✉️ Email</button>
+        <button data-action="details" onclick="histAction('details')" title="Details">📄 Details</button>
+        <button data-action="contact" onclick="histAction('contact')" title="Contact">👤 Contact</button>
         <button data-action="notes" onclick="histCallAction('notes')" title="Notes">📝 Notes</button>
-        <button data-action="transcript" onclick="histCallAction('transcript')" title="Transcript">💬 Transcript</button>
-        <button class="hca-play" data-action="play" onclick="histCallAction('play')" title="Play recording">▶ Play</button>
+        <button data-action="transcript" onclick="histCallAction('transcript')" title="Transcript">💬</button>
       </div>
       <div class="dial-scroll" id="history-list"><div class="empty">Loading…</div></div>
       <div class="dial-scroll suggestions hidden" id="dial-suggestions"></div>
+      <div class="dial-scroll hidden" id="hist-emails"></div>
       <div class="call-panel hidden" id="call-panel">
         <div class="cp-head">
           <div class="cp-caller" id="cp-caller-name">Unknown caller</div>
@@ -690,8 +700,8 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       <div class="dial-bottom" id="dial-bottom">
         <div class="entry" id="dial-entry">
           <input id="dial-input" type="text" placeholder="Number or name (T9)" autocomplete="off" autocapitalize="off">
-          <button class="hist-tx-btn" id="hist-tx-btn" onclick="toggleTranscriptSearch()" title="Search call transcripts">💬</button>
-          <button class="backspace" id="dial-bksp" title="Hold to clear">⌫</button>
+          <button class="backspace" id="dial-bksp" title="Clear" aria-label="Clear">✕</button>
+          <button class="hist-tx-btn" id="hist-search-btn" onclick="histSearch()" title="Search" aria-label="Search"><svg class="srch-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg></button>
         </div>
         <div class="dialpad" id="dialpad">
           <button class="key" data-d="1"><span class="digit">1</span><span class="letters"></span></button>
@@ -1164,6 +1174,8 @@ defParam(G_TIME, "suggestDebounceMs", "Dial T9 search delay", 60, { unit: "ms", 
 defParam(G_TIME, "historyDebounceMs", "History search delay", 250, { unit: "ms", min: 0, max: 2000, step: 10 });
 defParam(G_TIME, "contactsDebounceMs", "Contacts search delay", 250, { unit: "ms", min: 0, max: 2000, step: 10 });
 defParam(G_TIME, "doubleTapMs", "Double-tap window", 300, { unit: "ms", min: 100, max: 1000, step: 10, note: "Contacts / email rows" });
+defParam(G_TIME, "hwPauseMs", "Handwriting read delay", 800, { unit: "ms", min: 200, max: 5000, step: 50, note: "Notes handwriting strip: pause after the last stroke before the ink is read into the text" });
+defParam(G_TIME, "hwMidline", "Handwriting dotted line", 0.67, { min: 0.2, max: 0.9, step: 0.01, note: "Where the dotted line sits between the two white lines (0 = top line, 1 = bottom line)" });
 defParam(G_TIME, "jotAutoConvertMs", "Jot auto-convert delay", 1500, { unit: "ms", min: 0, max: 30000, step: 100, note: "Wait after the last finished word before the handwriting is read and copied into the notes" });
 defParam(G_TIME, "jotTextAutosaveMs", "Jot text edit autosave delay", 800, { unit: "ms", min: 200, max: 10000, step: 100, note: "Wait after the last keystroke before copying edited Aa text into the notes" });
 defParam(G_TIME, "contactRenameAutosaveMs", "Contact rename autosave delay", 900, { unit: "ms", min: 200, max: 10000, step: 100, note: "Wait after the last keystroke before saving the name to Odoo" });
@@ -1532,7 +1544,7 @@ function initCallNotesEditor() {
     branding: false,
     skin: "oxide-dark",
     content_css: "dark",
-    setup: function(editor) { editor.on("input change undo redo", scheduleCallSave); }
+    setup: function(editor) { editor.on("input change undo redo", scheduleCallSave); watchNoteEditor(editor); }
   });
 }
 // Plain-textarea fallback (TinyMCE failed to load) still autosaves on input.
@@ -1793,7 +1805,7 @@ var PHONE_ICON = '<svg class="ph" viewBox="0 0 24 24" aria-hidden="true"><path d
 function navHistory() {
   if (onDialView()) {
     var inp = document.getElementById("dial-input");
-    if (inp.value) { inp.value = ""; onDialInput(); if (historyTxSearch) loadHistory(); }
+    if (inp.value) { inp.value = ""; onDialInput(); if (histTab !== "calls") histSearch(); }
     return;
   }
   switchView("dial");
@@ -1802,7 +1814,8 @@ function onDialView() { return !document.getElementById("view-dial").classList.c
 function navDialAction() {
   if (currentCall) { hangup(); return; }
   if (!onDialView()) { switchView("dial"); dialKeypadOpen = true; updateDialBottomVisibility(); return; }
-  if (document.getElementById("dial-input").value.trim() && !historyTxSearch) { dialAction(); return; }
+  if (histTab !== "calls") { setHistTab("calls"); dialKeypadOpen = true; updateDialBottomVisibility(); return; }
+  if (document.getElementById("dial-input").value.trim()) { dialAction(); return; }
   dialKeypadOpen = !dialKeypadOpen;
   updateDialBottomVisibility();
 }
@@ -1846,26 +1859,14 @@ function backspace() {
   onDialInput();
 }
 
-// ⌫ deletes a character; held, it clears the whole number.
-var bkspTimer = null, bkspCleared = false;
-(function() {
-  var b = document.getElementById("dial-bksp");
-  function cancel() { clearTimeout(bkspTimer); bkspTimer = null; }
-  b.addEventListener("pointerdown", function() {
-    bkspCleared = false;
-    cancel();
-    bkspTimer = setTimeout(function() {
-      bkspTimer = null; bkspCleared = true;
-      document.getElementById("dial-input").value = "";
-      onDialInput();
-    }, PV.longPressPlusMs);
-  });
-  b.addEventListener("pointerup", cancel);
-  b.addEventListener("pointerleave", cancel);
-  b.addEventListener("pointercancel", cancel);
-  b.addEventListener("contextmenu", function(e) { e.preventDefault(); });
-  b.addEventListener("click", function() { if (bkspCleared) { bkspCleared = false; return; } backspace(); });
-})();
+// ✕ clears the box (and what it was searching).
+document.getElementById("dial-bksp").addEventListener("click", function() {
+  var inp = document.getElementById("dial-input");
+  if (!inp.value) return;
+  inp.value = "";
+  onDialInput();
+  if (histTab !== "calls") histSearch();
+});
 
 function keyDown(d) {
   if (inCall()) { padTone(d); return; }
@@ -2036,7 +2037,7 @@ var NB = {
   call: { pane: "cp-pane-notes", editor: "call-notes", status: "jot-status",
     jot: function() { return liveJot; }, initJot: function() { initJotEditor(); },
     key: function() { return currentCall ? currentCall.id : null; },
-    add: function(text) { appendNoteLine("call-notes", text); scheduleCallSave(); } },
+    add: function(text) { insertNoteText("call-notes", text); scheduleCallSave(); } },
   cd: { pane: "cd-pane-notes", editor: "cd-notes", status: "cd-jot-status",
     jot: function() { return cdJot; }, initJot: function() { if (!cdJot) initCallDetailJot(); },
     key: function() { return cdOpenCallId; },
@@ -2053,6 +2054,7 @@ function applyNoteMode(which) {
   pane.classList.toggle("nb-type", m === "type");
   var btns = pane.querySelectorAll(".nb-bar [data-nbm]");
   for (var i = 0; i < btns.length; i++) { var bm = btns[i].getAttribute("data-nbm"); if (bm !== "speak") btns[i].classList.toggle("on", bm === m); }
+  setNotesInputMode(cfg.editor);
   // The pad measures itself when it's made, so only once it's on screen.
   if (m === "write") cfg.initJot();
 }
@@ -2102,7 +2104,7 @@ function appendNoteLine(editorId, text, getHtml, setHtml) {
   if (ta) ta.value = ta.value.trim() ? ta.value.trimEnd() + " " + text : text;
 }
 function cdAppendNoteLine(text) {
-  appendNoteLine("cd-notes", text, function() { return cdLoadedNotes.notes_html || ""; }, function(h) { cdLoadedNotes.notes_html = h; });
+  insertNoteText("cd-notes", text, function() { return cdLoadedNotes.notes_html || ""; }, function(h) { cdLoadedNotes.notes_html = h; });
   scheduleCallDetailSave();
 }
 function focusNotesEnd(editorId) {
@@ -3270,6 +3272,234 @@ function createJot(hostEl, onChange, notesText, pad) {
 // Jot SVG (light ink on dark) → dark-on-white JPEG data URL for the vision
 // model, at most JOT_OCR_MAX_W wide.
 var JOT_OCR_MAX_W = 1000, JOT_OCR_MAX_H = 4000;
+// ── Notes handwriting strip (Gboard-style) ──────────────────────
+// A strip at the bottom of Notes with two white lines and a dotted one
+// between them. Write a word or a few; after a short pause
+// (PV.hwPauseMs) the ink slides off to the left and is read
+// (POST /jot-to-text), and the words go into the notes: at the end, or
+// where you tapped in the text. Writing carries on while it reads; the
+// strip also slides left as you near its right edge. ↶ takes back a
+// stroke, 🗑 clears the ink, ↵ reads it now. opts: onText(text),
+// status(msg).
+function createHwPad(host, opts) {
+  host.innerHTML = "";
+  host.classList.add("hw-wrap");
+  var toolbar = document.createElement("div");
+  toolbar.className = "jt-toolbar";
+  toolbar.innerHTML = '<button class="jt-btn" data-act="undo" title="Undo the last stroke">↶</button>'
+    + '<button class="jt-btn ghost" data-act="clear" title="Clear the ink">🗑</button>'
+    + '<button class="jt-btn jt-totext" data-act="commit" title="Read the ink now">↵</button>';
+  host.appendChild(toolbar);
+  var wrap = document.createElement("div");
+  wrap.className = "hw-pad";
+  var cv = document.createElement("canvas");
+  wrap.appendChild(cv);
+  host.appendChild(wrap);
+  var g = cv.getContext("2d");
+  var W = 0, H = 0, dpr = 1, strokes = [], cur = null, curId = null, timer = null, reading = 0, dead = false, anim = null;
+  var chain = Promise.resolve();
+  function size() {
+    var r = wrap.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    dpr = window.devicePixelRatio || 1; W = r.width; H = r.height;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    cv.style.width = W + "px"; cv.style.height = H + "px";
+    draw();
+  }
+  var ro = window.ResizeObserver ? new ResizeObserver(size) : null;
+  if (ro) ro.observe(wrap); else window.addEventListener("resize", size);
+  function guides() {
+    var top = H * 0.16, base = H * 0.80, mid = top + (base - top) * PV.hwMidline;
+    g.lineWidth = 1.5; g.strokeStyle = "rgba(255,255,255,.85)"; g.setLineDash([]);
+    g.beginPath(); g.moveTo(10, top); g.lineTo(W - 10, top); g.moveTo(10, base); g.lineTo(W - 10, base); g.stroke();
+    g.lineWidth = 1.2; g.strokeStyle = "rgba(255,255,255,.55)"; g.setLineDash([3, 6]);
+    g.beginPath(); g.moveTo(10, mid); g.lineTo(W - 10, mid); g.stroke();
+    g.setLineDash([]);
+  }
+  function path(ctx, pts, dx, k, ox, oy) {
+    ctx.beginPath();
+    var X = function(p) { return (p[0] + dx - ox) * k; }, Y = function(p) { return (p[1] - oy) * k; };
+    if (pts.length === 1) { ctx.arc(X(pts[0]), Y(pts[0]), ctx.lineWidth / 2, 0, Math.PI * 2); ctx.fill(); return; }
+    ctx.moveTo(X(pts[0]), Y(pts[0]));
+    for (var i = 1; i < pts.length - 1; i++) {
+      ctx.quadraticCurveTo(X(pts[i]), Y(pts[i]), (X(pts[i]) + X(pts[i + 1])) / 2, (Y(pts[i]) + Y(pts[i + 1])) / 2);
+    }
+    ctx.lineTo(X(pts[pts.length - 1]), Y(pts[pts.length - 1]));
+    ctx.stroke();
+  }
+  function draw() {
+    if (!W) return;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, W, H);
+    guides();
+    g.lineCap = "round"; g.lineJoin = "round"; g.lineWidth = 3;
+    for (var i = 0; i < strokes.length; i++) {
+      var st = strokes[i];
+      g.globalAlpha = st.alpha;
+      g.strokeStyle = g.fillStyle = "#e9ecef";
+      path(g, st.pts, st.dx, 1, 0, 0);
+    }
+    g.globalAlpha = 1;
+  }
+  function bbox(list) {
+    var b = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    list.forEach(function(st) { st.pts.forEach(function(p) {
+      var x = p[0] + st.dx;
+      if (x < b.x0) b.x0 = x; if (x > b.x1) b.x1 = x;
+      if (p[1] < b.y0) b.y0 = p[1]; if (p[1] > b.y1) b.y1 = p[1];
+    }); });
+    return b;
+  }
+  // Slide strokes left by "by" px over a moment; done() after.
+  function slide(list, by, fade, done) {
+    var from = list.map(function(st) { return st.dx; }), t0 = performance.now(), ms = 260;
+    function step(t) {
+      if (dead) return;
+      var f = Math.min(1, (t - t0) / ms), e = 1 - Math.pow(1 - f, 3);
+      list.forEach(function(st, i) { st.dx = from[i] - by * e; if (fade) st.alpha = 1 - e; });
+      draw();
+      if (f < 1) anim = requestAnimationFrame(step); else { anim = null; if (done) done(); }
+    }
+    anim = requestAnimationFrame(step);
+  }
+  function toImage(list) {
+    var b = bbox(list), padPx = 16;
+    var w = b.x1 - b.x0 + padPx * 2, h = Math.max(b.y1 - b.y0, H * 0.4) + padPx * 2;
+    var k = Math.min(2, JOT_OCR_MAX_W / w, JOT_OCR_MAX_H / h);
+    var c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
+    var x = c.getContext("2d");
+    x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height);
+    x.strokeStyle = x.fillStyle = "#000"; x.lineCap = "round"; x.lineJoin = "round"; x.lineWidth = Math.max(2, 3 * k);
+    var oy = b.y0 - padPx - Math.max(0, (H * 0.4 - (b.y1 - b.y0)) / 2);
+    list.forEach(function(st) { x.fillStyle = "#000"; path(x, st.pts, st.dx, k, b.x0 - padPx, oy); });
+    return c.toDataURL("image/jpeg", 0.9);
+  }
+  function setStatus() { if (opts.status) opts.status(reading ? "Reading…" : ""); }
+  // Read every stroke on the strip: slide it away, then insert the words.
+  function read() {
+    clearTimeout(timer); timer = null;
+    if (cur) return;
+    var batch = strokes.slice();
+    if (!batch.length) return;
+    var image = toImage(batch);
+    var b = bbox(batch);
+    reading++; setStatus();
+    slide(batch, b.x1 + 20, true, function() {
+      strokes = strokes.filter(function(st) { return batch.indexOf(st) < 0; });
+      draw();
+    });
+    chain = chain.then(function() {
+      return fetch(API + "/jot-to-text", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: image }) })
+        .then(function(r) { return r.json(); });
+    }).then(function(d) {
+      if (dead) return;
+      if (d.error) throw new Error(d.error);
+      var text = String(d.text || "").split(NL).map(function(l) { return l.trim(); }).filter(Boolean).join(" ").split("[?]").join("").trim();
+      if (text) opts.onText(text);
+      reading--; setStatus();
+      if (!text && opts.status) opts.status("Couldn't read that");
+    }).catch(function(err) {
+      if (dead) return;
+      reading--;
+      // Put the ink back so ↵ can try again.
+      batch.forEach(function(st) { st.dx = 0; st.alpha = 1; });
+      strokes = batch.concat(strokes.filter(function(st) { return batch.indexOf(st) < 0; }));
+      draw();
+      if (opts.status) opts.status("Couldn't read it (" + err.message + "): ↵ to try again");
+    });
+  }
+  function pt(e) { var r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+  cv.addEventListener("pointerdown", function(e) {
+    if (cur || (e.pointerType === "mouse" && e.button !== 0)) return;
+    e.preventDefault();
+    clearTimeout(timer); timer = null;
+    try { cv.setPointerCapture(e.pointerId); } catch (x) {}
+    curId = e.pointerId;
+    cur = { pts: [pt(e)], dx: 0, alpha: 1 };
+    strokes.push(cur);
+    draw();
+  });
+  cv.addEventListener("pointermove", function(e) {
+    if (!cur || e.pointerId !== curId) return;
+    var evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+    if (!evs.length) evs = [e];
+    for (var i = 0; i < evs.length; i++) cur.pts.push(pt(evs[i]));
+    draw();
+  });
+  function up(e) {
+    if (!cur || e.pointerId !== curId) return;
+    cur = null; curId = null;
+    // Near the right edge: slide what's there left to make room.
+    var b = bbox(strokes);
+    if (b.x1 > W * 0.85) slide(strokes.slice(), b.x1 - W * 0.55, false);
+    timer = setTimeout(read, PV.hwPauseMs);
+  }
+  cv.addEventListener("pointerup", up);
+  cv.addEventListener("pointercancel", up);
+  toolbar.addEventListener("click", function(e) {
+    var b = e.target.closest("[data-act]");
+    if (!b) return;
+    var a = b.getAttribute("data-act");
+    if (a === "undo") { strokes.pop(); clearTimeout(timer); timer = strokes.length ? setTimeout(read, PV.hwPauseMs) : null; draw(); }
+    else if (a === "clear") { strokes = []; clearTimeout(timer); timer = null; draw(); }
+    else if (a === "commit") read();
+  });
+  size();
+  return {
+    commit: read,
+    isEmpty: function() { return !strokes.length; },
+    clear: function() { strokes = []; clearTimeout(timer); timer = null; draw(); },
+    destroy: function() { dead = true; clearTimeout(timer); if (anim) cancelAnimationFrame(anim); if (ro) ro.disconnect(); host.innerHTML = ""; },
+    getSVG: function() { return ""; }, getJSON: function() { return null; }, loadJSON: function() {}
+  };
+}
+// Where handwriting / speech goes in a notes box: where you last tapped in
+// the text, else onto the end. noteCaret[id] is set by a tap in the box.
+var noteCaret = {};
+function isWs(ch) { return ch === " " || ch === NL || ch === String.fromCharCode(160) || ch === String.fromCharCode(9); }
+function insertAtCaret(editorId, text) {
+  var ed = (typeof tinymce !== "undefined") ? tinymce.get(editorId) : null;
+  if (ed && !ed.initialized) ed = null;
+  if (ed) {
+    var rng = ed.selection.getRng();
+    if (!rng || !ed.getBody().contains(rng.startContainer)) return false;
+    var sc = rng.startContainer, ec = rng.endContainer;
+    var before = sc.nodeType === 3 ? sc.data.slice(0, rng.startOffset) : "";
+    var after = ec.nodeType === 3 ? ec.data.slice(rng.endOffset) : "";
+    var t = (before && !isWs(before.slice(-1)) ? " " : "") + text + (after && !isWs(after.charAt(0)) ? " " : "");
+    ed.selection.setContent(ed.dom.encode(t));
+    ed.undoManager.add();
+    return true;
+  }
+  var ta = document.getElementById(editorId);
+  if (!ta || ta.selectionStart == null) return false;
+  var a = ta.selectionStart, z = ta.selectionEnd, v = ta.value;
+  var t2 = (a > 0 && !isWs(v.charAt(a - 1)) ? " " : "") + text + (z < v.length && !isWs(v.charAt(z)) ? " " : "");
+  ta.setRangeText(t2, a, z, "end");
+  return true;
+}
+function insertNoteText(editorId, text, getHtml, setHtml) {
+  if (noteCaret[editorId] && insertAtCaret(editorId, text)) return;
+  appendNoteLine(editorId, text, getHtml, setHtml);
+}
+// A tap in a notes box picks where the next words go. While writing by
+// hand the tap mustn't bring up the keyboard (inputmode none).
+document.addEventListener("pointerdown", function(e) {
+  var t = e.target.closest && e.target.closest("#call-notes, #cd-notes, #fu-notes");
+  if (t) noteCaret[t.id] = true;
+}, true);
+function watchNoteEditor(editor) {
+  editor.on("click touchend", function() { noteCaret[editor.id] = true; });
+  editor.on("init", function() { setNotesInputMode(editor.id); });
+}
+function setNotesInputMode(editorId) {
+  var write = noteMode() === "write";
+  var ed = (typeof tinymce !== "undefined") ? tinymce.get(editorId) : null;
+  var el = ed && ed.initialized ? ed.getBody() : document.getElementById(editorId);
+  if (!el) return;
+  if (write) el.setAttribute("inputmode", "none"); else el.removeAttribute("inputmode");
+}
 function jotToImage(svg) {
   svg = svg.split("#1e1e1e").join("#ffffff").split("#e9ecef").join("#000000");
   return new Promise(function(resolve, reject) {
@@ -3302,9 +3532,9 @@ function jtOutlineToPath(outline) {
 function initJotEditor() {
   var host = document.getElementById("jot-canvas");
   if (liveJot) { resetJotIfNewCall(); return; }
-  liveJot = createJot(host, scheduleCallSave, null, {
-    onLine: function(text) { appendNoteLine("call-notes", text); scheduleCallSave(); },
-    alreadyInNotes: function() { return !!getJotTextFromNotes("call-notes", ""); }
+  liveJot = createHwPad(host, {
+    onText: function(text) { NB.call.add(text); },
+    status: function(m) { setNbStatus("call", m); }
   });
   mountJotToolbar("call", host);
   jotCallId = currentCall ? currentCall.id : null;
@@ -3362,8 +3592,7 @@ function saveCallRecord() {
   var ta = document.getElementById("call-notes");
   var notesHtml = ed ? ed.getContent() : (ta ? ta.value : "");
   setCallSaveStatus("Saving\u2026");
-  var jotSvg = (liveJot && !liveJot.isEmpty()) ? liveJot.getSVG() : "";
-  var jotJson = liveJot ? JSON.stringify(liveJot.getJSON()) : "";
+  var jotSvg = "", jotJson = "";
   postCallSave(callId, notesHtml, jotSvg, jotJson);
 }
 function postCallSave(callId, notesHtml, jotSvg, jotJson) {
@@ -3592,6 +3821,7 @@ function onDialInput() {
     loadHistory();
   }
   updateDialBottomVisibility();
+  if (histTab === "emails") return;
   if (historyTxSearch) {
     if (historyTimer) clearTimeout(historyTimer);
     historyTimer = setTimeout(loadHistory, PV.historyDebounceMs);
@@ -3645,7 +3875,11 @@ document.getElementById("dial-suggestions").addEventListener("click", function(e
   setPickedNumber(num, n);
 });
 document.getElementById("dial-input").addEventListener("input", onDialInput);
-document.getElementById("dial-input").addEventListener("keydown", function(e) { if (e.key === "Enter" && !historyTxSearch) { e.preventDefault(); dialAction(); } });
+document.getElementById("dial-input").addEventListener("keydown", function(e) {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  if (histTab === "calls") dialAction(); else histSearch();
+});
 function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/'/g,"&#39;").replace(/"/g,"&quot;"); }
 // Combined color+direction indicator: ▲ outgoing / ▼ incoming, colored green
 // (completed in), blue (completed out), or red (missed/rejected/aborted).
@@ -4191,9 +4425,10 @@ function callButtonNumber(btn) {
 }
 document.addEventListener("pointerdown", function(e) {
   var btn = e.target.closest && e.target.closest(CALL_BTNS);
-  if (!btn || !simPlugin() || currentCall) return;
+  if (!btn || currentCall || !(simPlugin() || settings.mobileNumber)) return;
   var num = callButtonNumber(btn);
-  if (!num || isExtensionNumber(num)) return;
+  if (btn.id === "nav-dial" && histTab !== "calls") return;
+  if (!num ? !(btn.id === "nav-dial" && settings.mobileNumber) : isExtensionNumber(num)) return;
   lpFired = false; lpX = e.clientX; lpY = e.clientY;
   clearTimeout(lpTimer);
   lpTimer = setTimeout(function() {
@@ -4212,12 +4447,20 @@ document.addEventListener("click", function(e) {
   if (e.target.closest && e.target.closest(CALL_BTNS)) { e.preventDefault(); e.stopPropagation(); }
   lpFired = false;
 }, true);
-document.addEventListener("contextmenu", function(e) { if (e.target.closest && e.target.closest(CALL_BTNS) && simPlugin()) e.preventDefault(); }, true);
-var routeSheetBtn = null;
+document.addEventListener("contextmenu", function(e) { if (e.target.closest && e.target.closest(CALL_BTNS) && (simPlugin() || settings.mobileNumber)) e.preventDefault(); }, true);
+var routeSheetBtn = null, routeSheetNum = "";
 function openRouteSheet(btn, num) {
-  routeSheetBtn = btn;
-  var dc = deviceContactFor(num);
-  var auto = autoRoute(num);
+  routeSheetBtn = btn; routeSheetNum = num;
+  var dc = num ? deviceContactFor(num) : null;
+  var auto = num ? autoRoute(num) : "";
+  var mob = settings.mobileNumber ? '<button onclick="pickRoute(' + "'mobile'" + ')">📲 Call via my mobile' + (num ? "" : " · the last number") + '</button>' : "";
+  if (!num || !simPlugin()) {
+    document.getElementById("route-sheet-card").innerHTML = '<div class="rs-title">Call ' + esc(num ? (dc ? dc.name + " · " + num : num) : "") + '</div>'
+      + (num ? '<button class="auto" onclick="pickRoute(' + "'voip'" + ')">🌐 VoIP · ext ' + esc(myExtension() || "?") + '</button>' : "") + mob
+      + '<button class="cancel" onclick="closeRouteSheet()">Cancel</button>';
+    document.getElementById("route-sheet").classList.remove("hidden");
+    return;
+  }
   loadSims().then(function(sims) {
     var h = '<div class="rs-title">Call ' + esc(dc ? dc.name + " · " + num : num) + '</div>';
     h += '<button class="' + (auto === "voip" ? "auto" : "") + '" onclick="pickRoute(' + "'voip'" + ')">🌐 VoIP · ext ' + esc(myExtension() || "?") + '</button>';
@@ -4228,7 +4471,7 @@ function openRouteSheet(btn, num) {
     } else {
       h += '<button class="' + (auto === "sim" ? "auto" : "") + '" onclick="pickRoute(' + "'sim'" + ')">📱 SIM' + (sims[0] ? " · " + esc(sims[0].label) : "") + '</button>';
     }
-    h += '<button class="cancel" onclick="closeRouteSheet()">Cancel</button>';
+    h += mob + '<button class="cancel" onclick="closeRouteSheet()">Cancel</button>';
     document.getElementById("route-sheet-card").innerHTML = h;
     document.getElementById("route-sheet").classList.remove("hidden");
   });
@@ -4237,8 +4480,10 @@ function closeRouteSheet() { document.getElementById("route-sheet").classList.ad
 function pickRoute(route, simIndex) {
   var btn = routeSheetBtn;
   var sim = route === "sim" && simList && simIndex != null && simList[simIndex] ? simList[simIndex].id : "";
+  var num = routeSheetNum;
   closeRouteSheet();
   if (!btn) return;
+  if (route === "mobile") { lpFired = false; callViaMobile(num); return; }
   routeOverride = { route: route, sim: sim };
   lpFired = false;
   btn.click();
@@ -4440,6 +4685,7 @@ function openFollowUp(which) {
   if (dictation) stopDictation(true);
   var day = when.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" }) + " " + hhmm(when);
   fu = { which: which, callId: callId, head: name + " · " + day, title: "", busy: false };
+  noteCaret["fu-notes"] = false;
   var ta = document.getElementById("fu-notes");
   ta.value = fu.head + NL;
   document.getElementById("fu-sub").textContent = name;
@@ -4474,14 +4720,15 @@ function closeFollowUp() {
 function initFollowUpJot() {
   if (fuJot || !fu) return;
   var host = document.getElementById("fu-jot-canvas");
-  fuJot = createJot(host, function() {}, null, {
-    onLine: function(text) { fuAppend(text); },
-    alreadyInNotes: function() { return false; }
+  fuJot = createHwPad(host, {
+    onText: function(text) { fuAppend(text); },
+    status: function(m) { setNbStatus("fu", m); }
   });
   mountJotToolbar("fu", host);
 }
 // Written / spoken words carry on the last line (a new line after the heading).
 function fuAppend(text) {
+  if (noteCaret["fu-notes"] && insertAtCaret("fu-notes", text)) return;
   var ta = document.getElementById("fu-notes"), v = ta.value;
   ta.value = !v.trim() ? text : v.slice(-1) === NL ? v + text : v.trimEnd() + " " + text;
   ta.scrollTop = ta.scrollHeight;
@@ -4974,17 +5221,14 @@ function moveToMobile() {
 // picked from History) — or, with the box empty, the last number I called —
 // and join us. One small request; Asterisk carries the call (see
 // src/mobilecall.ts), so it works when the internet is too poor for VoIP.
-function updateMobileBtn() {
-  var b = document.getElementById("hist-mobile");
-  if (b) b.classList.toggle("hidden", !settings.mobileNumber);
-}
+function updateMobileBtn() {}
 var mobileCallBusy = false;
-function callViaMobile() {
+function callViaMobile(number) {
   if (currentCall) { moveToMobile(); return; }
   if (mobileCallBusy) return;
   if (!settings.mobileNumber) { showToast("Set “My mobile” in Settings first"); return; }
-  var num = historyTxSearch ? "" : document.getElementById("dial-input").value.trim();
-  var btn = document.getElementById("hist-mobile");
+  var num = number != null ? number : histTab === "calls" ? document.getElementById("dial-input").value.trim() : "";
+  var btn = document.getElementById("nav-dial");
   mobileCallBusy = true; btn.classList.add("busy");
   showToast("📱 Ringing your mobile…");
   fetch(API + "/mobile-call", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ number: num }) })
@@ -5146,7 +5390,7 @@ function updateDialBottomVisibility() {
   var connected = !!(currentCall && currentCall.state === "active");
   // Typing shows T9 matches in place of the list — unless 💬 is on, when the
   // box searches transcripts and the list itself shows the hits.
-  var hasNum = !!document.getElementById("dial-input").value.trim() && !historyTxSearch;
+  var hasNum = !!document.getElementById("dial-input").value.trim() && histTab === "calls";
   var typed = hasNum && !histFilter;
   // Green handset when there's a number to call (or red to hang up);
   // otherwise a keypad, which opens and closes the dialpad.
@@ -5159,13 +5403,14 @@ function updateDialBottomVisibility() {
   document.getElementById("bottom-menu").classList.toggle("in-call", inAnyCall);
   updateBottomMenuHide();
   renderCallBar();
-  document.getElementById("dialpad").classList.toggle("hidden", inAnyCall || !dialKeypadOpen);
-  document.getElementById("dial-entry").classList.toggle("hidden", inAnyCall || !(dialKeypadOpen || hasNum || historyTxSearch));
+  document.getElementById("dialpad").classList.toggle("hidden", inAnyCall || !dialKeypadOpen || histTab !== "calls");
+  document.getElementById("dial-entry").classList.toggle("hidden", inAnyCall);
   document.getElementById("dial-callbar").classList.toggle("hidden", inAnyCall);
   document.getElementById("hist-toolbar").classList.toggle("hidden", inAnyCall);
   updateHistToolbar(); // the selected call's buttons row hides during a call too
-  document.getElementById("history-list").classList.toggle("hidden", inAnyCall || typed);
+  document.getElementById("history-list").classList.toggle("hidden", inAnyCall || typed || histTab === "emails");
   document.getElementById("dial-suggestions").classList.toggle("hidden", inAnyCall || !typed);
+  document.getElementById("hist-emails").classList.toggle("hidden", inAnyCall || histTab !== "emails");
   document.getElementById("banner-keypad").classList.toggle("hidden", !connected);
   document.getElementById("banner-keypad").classList.toggle("active", connected && activeCpTab === "keypad");
   document.getElementById("cp-tab-keypad").classList.toggle("hidden", !connected);
@@ -5231,18 +5476,53 @@ function setStatus(msg, isErr) {
 // ── history ────────────────────────────────────────────────────
 var historyTimer = null;
 var historyTxSearch = false;
-// 💬 beside the dial box: the box searches what was said on calls instead
-// of T9-matching names/numbers.
-function toggleTranscriptSearch() {
-  historyTxSearch = !historyTxSearch;
-  document.getElementById("hist-tx-btn").classList.toggle("on", historyTxSearch);
+// History's top row: Calls, Transcripts or Emails. The box at the bottom
+// searches whichever is picked: 🔍 (or Enter) runs it, ✕ clears it. On
+// Calls it's also the dial box, with T9 matches as you type.
+var histTab = "calls";
+var HIST_PLACEHOLDER = { calls: "Number or name (T9)", transcripts: "Search transcripts", emails: "Search emails" };
+function setHistTab(tab) {
+  if (tab === histTab) { if (tab === "emails") loadHistEmails(); return; }
+  histTab = tab;
+  historyTxSearch = tab === "transcripts";
+  var b = document.querySelectorAll("#hist-toolbar [data-src]");
+  for (var i = 0; i < b.length; i++) b[i].classList.toggle("on", b[i].getAttribute("data-src") === tab);
   var inp = document.getElementById("dial-input");
-  inp.placeholder = historyTxSearch ? "Search transcripts" : "Number or name (T9)";
+  inp.placeholder = HIST_PLACEHOLDER[tab];
   inp.value = "";
-  inp.focus();
-  onDialInput();
-  loadHistory();
+  histFilter = null;
+  if (selected && selected.type === "call") deselect();
+  document.getElementById("dial-suggestions").innerHTML = "";
+  if (tab !== "calls") dialKeypadOpen = false;
+  updateDialBottomVisibility();
+  if (tab === "emails") loadHistEmails(); else loadHistory();
 }
+function histSearch() {
+  var q = document.getElementById("dial-input").value.trim();
+  if (histTab === "emails") { loadHistEmails(); return; }
+  if (histTab === "transcripts") { loadHistory(); return; }
+  if (q) setPickedNumber(q, /[a-zA-Z]/.test(q) ? q : ""); else setPickedNumber("");
+}
+// Emails tab: the last days' emails, or a Gmail search for what's in the box.
+var histEmailsSeq = 0;
+function loadHistEmails() {
+  var el = document.getElementById("hist-emails");
+  var q = document.getElementById("dial-input").value.trim();
+  var seq = ++histEmailsSeq;
+  el.innerHTML = '<div class="empty">' + (q ? "Searching emails…" : "Downloading recent emails…") + '</div>';
+  fetch(API + "/messages/recent?days=" + PV.recentMessagesDays + "&limit=" + PV.recentMessagesLimit + (q ? "&q=" + encodeURIComponent(q) : "")).then(function(r) { return r.json(); }).then(function(d) {
+    if (seq !== histEmailsSeq) return;
+    var msgs = d.messages || [];
+    if (!msgs.length) { el.innerHTML = '<div class="empty">' + (q ? "No emails match" : d.gmailOk === false ? "Gmail isn't connected (Settings)" : "No emails in the last " + PV.recentMessagesDays + " days") + '</div>'; return; }
+    el.innerHTML = msgs.map(function(m) { return renderMessageRow(m); }).join("");
+  }).catch(function() { if (seq === histEmailsSeq) el.innerHTML = '<div class="empty">Error loading emails</div>'; });
+}
+document.getElementById("hist-emails").addEventListener("click", function(e) {
+  var row = e.target.closest(".msg-row");
+  if (!row) return;
+  var m = messagesCache[row.getAttribute("data-key")];
+  if (m) rowClick(row.getAttribute("data-key"), "message", m, function() { openMessageFull(m); });
+});
 function historyQuery() { return historyTxSearch ? document.getElementById("dial-input").value.trim() : histFilter ? histFilter.q : ""; }
 function loadHistory() {
   var q = historyQuery();
@@ -5477,20 +5757,13 @@ function histSelectedCall() { return (selected && selected.type === "call") ? se
 function histNumber(c) { return (c.phone_number && c.phone_number !== "unknown") ? c.phone_number : (c.did || ""); }
 function updateHistToolbar() {
   var c = histSelectedCall();
-  var can = { email: !!(c && c.partner_email), details: !!c, contact: !!(c && c.partner_id), mobile: true };
-  var btns = document.querySelectorAll("#hist-toolbar button");
-  for (var i = 0; i < btns.length; i++) btns[i].disabled = !can[btns[i].getAttribute("data-action")];
   var row = histSelectedRow();
   var bar = document.getElementById("hist-call-actions");
   bar.classList.toggle("hidden", !row || !!currentCall);
   if (!row) return;
-  var vn = bar.querySelector('[data-action="voicenote"]');
-  if (!vn.innerHTML) vn.innerHTML = NOTE_ADD_ICON + ' Note';
   var tx = bar.querySelector('[data-action="transcript"]');
   tx.innerHTML = c.has_transcript || !c.has_recording ? "💬 Transcript" : "💬 Transcribe";
-  var play = bar.querySelector('[data-action="play"]');
-  play.innerHTML = row.querySelector(".hist-player") ? "■ Stop" : "▶ Play";
-  var ok = { voicenote: !!c.call_id, notes: !!c.has_notes, transcript: !!(c.has_transcript || c.has_recording), play: !!c.has_recording };
+  var ok = { email: !!c.partner_email, details: true, contact: !!c.partner_id, notes: !!c.has_notes, transcript: !!(c.has_transcript || c.has_recording) };
   var cb = bar.querySelectorAll("button");
   for (var j = 0; j < cb.length; j++) cb[j].disabled = !ok[cb[j].getAttribute("data-action")];
 }
@@ -5502,10 +5775,8 @@ function histSelectedRow() {
 function histCallAction(action) {
   var c = histSelectedCall(), row = histSelectedRow();
   if (!c || !row) return;
-  if (action === "voicenote") openNoteSheet(c.call_id, (c.partner_name || "").trim() || c.phone_number || "", false);
-  else if (action === "notes") openCallDetailView(c, { tab: "notes" });
+  if (action === "notes") openCallDetailView(c, { tab: "notes" });
   else if (action === "transcript") openCallDetailView(c, { tab: "transcript" });
-  else if (action === "play") { toggleRecording(row, c); updateHistToolbar(); }
 }
 function histAction(action) {
   var c = histSelectedCall();
@@ -6171,7 +6442,7 @@ function loadCallDetailNotes(callId) {
     // If the Jot tab was already opened/mounted before this fetch resolved
     // (fast tap right after opening the call), backfill it now instead of
     // leaving — or letting a later Save persist — a blank scene.
-    if (cdJot && cdJotData) cdJot.loadJSON(cdJotData);
+    noteCaret["cd-notes"] = false;
   }).catch(function() { renderCallDetailNotesPane(); });
 }
 
@@ -6203,6 +6474,7 @@ function initCallDetailNotesEditor(html) {
     setup: function(editor) {
       editor.on("init", function() { editor.setContent(cdLoadedNotes.notes_html || html || ""); });
       editor.on("input change undo redo", scheduleCallDetailSave);
+      watchNoteEditor(editor);
     }
   });
 }
@@ -6210,12 +6482,11 @@ function initCallDetailNotesEditor(html) {
 function initCallDetailJot() {
   var host = document.getElementById("cd-jot-canvas");
   if (!host) return;
-  cdJot = createJot(host, scheduleCallDetailSave, null, {
-    onLine: function(text) { cdAppendNoteLine(text); },
-    alreadyInNotes: function() { return !!getJotTextFromNotes("cd-notes", cdLoadedNotes.notes_html || ""); }
+  cdJot = createHwPad(host, {
+    onText: function(text) { cdAppendNoteLine(text); },
+    status: function(m) { setNbStatus("cd", m); }
   });
   mountJotToolbar("cd", host);
-  if (cdJotData) cdJot.loadJSON(cdJotData);
 }
 
 function destroyCallDetailEditors() {
@@ -6262,13 +6533,8 @@ function saveCallDetailEdits() {
   // only holds notes when TinyMCE failed to load).
   var notesHtml = (ed && ed.initialized) ? ed.getContent() : (ta && ta.getAttribute("data-plain") ? ta.value : (cdLoadedNotes.notes_html || ""));
 
-  if (cdJot) {
-    var jotSvg = cdJot.isEmpty() ? "" : cdJot.getSVG();
-    var jotJson = JSON.stringify(cdJot.getJSON());
-    postCallDetailSave(notesHtml, jotSvg, jotJson);
-  } else {
-    postCallDetailSave(notesHtml, cdLoadedNotes.jot_svg || "", cdLoadedNotes.jot_json || "");
-  }
+  // Drawings saved by the old Jot page stay as they were.
+  postCallDetailSave(notesHtml, cdLoadedNotes.jot_svg || "", cdLoadedNotes.jot_json || "");
 }
 
 function postCallDetailSave(notesHtml, jotSvg, jotJson) {

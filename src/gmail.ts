@@ -203,11 +203,12 @@ export async function searchGmailMessages(env: Env, userId: number, email: strin
 }
 
 /** Search Gmail for recent messages across all senders (last N days). */
-export async function searchRecentGmailMessages(env: Env, userId: number, days = 7, limit = 30): Promise<Message[]> {
+export async function searchRecentGmailMessages(env: Env, userId: number, days = 7, limit = 30, query = ""): Promise<Message[]> {
   const token = await getAccessToken(env, userId);
   if (!token) return [];
   const listUrl = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
-  listUrl.searchParams.set("q", `newer_than:${days}d`);
+  // A search looks through all mail, not only the last few days.
+  listUrl.searchParams.set("q", query.trim() ? query.trim() : `newer_than:${days}d`);
   listUrl.searchParams.set("maxResults", String(Math.min(limit, 20, 100)));
   const listRes = await fetch(listUrl.toString(), { headers: { Authorization: `Bearer ${token}` } });
   if (!listRes.ok) {
