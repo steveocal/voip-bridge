@@ -44,22 +44,46 @@ export async function summarizeCall(env: Env, callId: string, force = false): Pr
   const parsed = parseSummary(out?.response);
   if (!parsed.summary) return "";
 
-  const list = (title: string, items?: string[]) => items?.length
-    ? `<p><b>${title}</b></p><ul>${items.map(i => `<li>${esc(String(i))}</li>`).join("")}</ul>` : "";
-  const html = `${MARKER}<p>${esc(parsed.summary)}</p>${list("Key points", parsed.points)}${list("Follow-ups", parsed.actions)}<hr>`;
+  const html = summaryHtml(parsed);
   await env.DB.prepare("UPDATE call_log SET notes_html = ?1, write_date = ?2 WHERE call_id = ?3")
     .bind(html + stripSummary(notes), Date.now(), target.call_id).run();
   return html;
 }
 
 // The model's response arrives as a string, or already parsed when it was
-// valid JSON; either way take the outermost {...} in case it adds prose.
-function parseSummary(response: unknown): Summary {
+// valid JSON. As a string it may come in ```json fences, with prose around
+// it, or cut short (missing its closing "]}"), so close it off; failing
+// that, pick the fields out one by one. Never show the raw JSON.
+export function parseSummary(response: unknown): Summary {
   if (response && typeof response === "object") return response as Summary;
-  const text = String(response ?? "");
-  const m = text.match(/\{[\s\S]*\}/);
-  if (!m) return { summary: text.trim() };
-  try { return JSON.parse(m[0]) as Summary; } catch { return { summary: text.trim() }; }
+  const text = String(response ?? "").replace(/```(?:json)?/gi, "").trim();
+  const at = text.indexOf("{");
+  if (at < 0) return { summary: text };
+  const body = text.slice(at);
+  const end = body.lastIndexOf("}");
+  for (const tail of [end >= 0 ? body.slice(0, end + 1) : "", body, `${body}}`, `${body}]}`, `${body}"]}`, `${body}"}`]) {
+    if (!tail) continue;
+    try {
+      const j = JSON.parse(tail) as Summary;
+      if (j && typeof j === "object") return j;
+    } catch { /* try the next ending */ }
+  }
+  const str = (s: string) => { try { return JSON.parse(`"${s}"`) as string; } catch { return s; } };
+  const field = (name: string) => new RegExp(`"${name}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`).exec(body)?.[1];
+  const list = (name: string) => {
+    const m = new RegExp(`"${name}"\\s*:\\s*\\[([^\\]]*)`).exec(body);
+    return m ? [...m[1].matchAll(/"((?:[^"\\]|\\.)*)"/g)].map(x => str(x[1])) : [];
+  };
+  const summary = field("summary");
+  if (!summary) return { summary: text.slice(0, at).trim() || text };
+  return { summary: str(summary), points: list("points"), actions: list("actions") };
+}
+
+/** The summary block's html, built from the parsed fields. */
+export function summaryHtml(parsed: Summary): string {
+  const list = (title: string, items?: string[]) => Array.isArray(items) && items.length
+    ? `<p><b>${title}</b></p><ul>${items.map(i => `<li>${esc(String(i))}</li>`).join("")}</ul>` : "";
+  return `${MARKER}<p>${esc(String(parsed.summary))}</p>${list("Key points", parsed.points)}${list("Follow-ups", parsed.actions)}<hr>`;
 }
 
 /** The notes to store for a save of `callId`: a save that never showed the

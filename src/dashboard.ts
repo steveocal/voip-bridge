@@ -506,13 +506,15 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 /* handwriting strip under the notes: two white lines and a dotted one,
    read a word or two at a time straight into the text (like Gboard) */
 .hw-wrap{display:flex;flex-direction:column}
-.hw-pad{position:relative;height:96px;border-radius:12px;background:#1e1e1e;border:1px solid #2c2c2c;overflow:hidden;touch-action:none}
+.hw-box{display:flex;border-radius:12px;background:#1e1e1e;border:1px solid #2c2c2c;overflow:hidden}
+.hw-pad{position:relative;flex:1;min-width:0;overflow:hidden;touch-action:none}
 .hw-pad canvas{display:block;touch-action:none;cursor:crosshair}
-/* keys under the strip: ⌫, word ⌫, undo, tab, return */
-.hw-keys{display:flex;gap:6px;margin-top:6px}
-.hw-keys button{flex:1 1 0;min-width:0;height:40px;border:none;border-radius:10px;background:#2c2c2c;color:#ececec;font-size:13px;cursor:pointer;white-space:nowrap;padding:0 4px;touch-action:manipulation}
+/* keys beside the strip: ⌫ ⌫word / ↶ ⇥ / ✓ ↵ */
+.hw-keys{display:grid;grid-template-columns:repeat(2,40px);grid-auto-rows:1fr;gap:3px;padding:3px;border-left:1px solid #2c2c2c}
+.hw-keys button{min-width:0;border:none;border-radius:8px;background:#2c2c2c;color:#ececec;font-size:15px;cursor:pointer;white-space:nowrap;padding:0;touch-action:manipulation}
 .hw-keys button:active{background:#3a3a3a}
 .hw-keys button[data-key="ret"]{background:#1e3a5f}
+.hw-keys button[data-key="read"]{background:#14532d}
 /* in a call, Notes fills the panel so the strip sits at the bottom */
 #view-dial .call-panel:has(#cp-pane-notes.nb-write:not(.hidden)){display:flex;flex-direction:column;margin-bottom:54px}
 /* (the margin keeps the keys clear of the hang-up and note buttons that stand up out of the bottom bar) */
@@ -2098,14 +2100,14 @@ function appendNoteLine(editorId, text, getHtml, setHtml) {
   if (ed) {
     var body = ed.getBody(), last = body.lastElementChild;
     if (last && last.nodeName === "P" && !last.querySelector("img")) {
-      var cur = last.textContent.trim();
-      if (!cur) last.textContent = text;
+      var cur = last.textContent.split(NBSP).join(" ").trim();
+      if (!cur) last.textContent = NBSP + text;
       else {
         var br = last.lastChild;   // drop a trailing <br> so the words follow on
         if (br && br.nodeName === "BR") br.remove();
-        last.appendChild(ed.getDoc().createTextNode((/[ ]$/.test(last.textContent) ? "" : " ") + text));
+        last.appendChild(ed.getDoc().createTextNode(leadSpace(last.textContent) + text));
       }
-    } else ed.dom.add(body, "p", {}, ed.dom.encode(text));
+    } else ed.dom.add(body, "p", {}, ed.dom.encode(NBSP + text));
     ed.undoManager.add();
     try { ed.getWin().scrollTo(0, ed.getDoc().documentElement.scrollHeight); } catch (e) {}
     return;
@@ -2113,10 +2115,10 @@ function appendNoteLine(editorId, text, getHtml, setHtml) {
   if (setHtml) {
     var h = (getHtml() || "").trimEnd();
     if (/<[/]p>$/i.test(h) && !/<p[^>]*>[ ]*<[/]p>$/i.test(h)) setHtml(h.slice(0, -4) + " " + esc(text) + "</p>");
-    else setHtml(h + "<p>" + esc(text) + "</p>");
+    else setHtml(h + "<p>&nbsp;" + esc(text) + "</p>");
   }
   var ta = document.getElementById(editorId);
-  if (ta) ta.value = ta.value.trim() ? ta.value.trimEnd() + " " + text : text;
+  if (ta) ta.value = (ta.value.trim() ? ta.value.trimEnd() : "") + " " + text;
 }
 function cdAppendNoteLine(text) {
   insertNoteText("cd-notes", text, function() { return cdLoadedNotes.notes_html || ""; }, function(h) { cdLoadedNotes.notes_html = h; });
@@ -3293,34 +3295,32 @@ var JOT_OCR_MAX_W = 1000, JOT_OCR_MAX_H = 4000;
 // (PV.hwPauseMs) the ink slides off to the left and is read
 // (POST /jot-to-text), and the words go into the notes: at the end, or
 // where you tapped in the text. Writing carries on while it reads; the
-// strip also slides left as you near its right edge. ↶ takes back a
-// stroke, 🗑 clears the ink, ✓ reads it now. Keys under the strip act on
-// the text, after any ink still being read: ⌫, word ⌫, undo, tab, return
-// (with ink still on the strip, ⌫ takes back a stroke and word ⌫ clears
-// it). opts: onText(text), status(msg), key(op).
+// strip also slides left as you near its right edge. The keys beside the
+// strip (same box) act on the text, after any ink still being read: ⌫,
+// word ⌫, undo, tab, return, and ✓ reads the ink now. With ink still on
+// the strip, ⌫ takes back a stroke and word ⌫ clears it. opts: onText(text), status(msg), key(op).
 function createHwPad(host, opts) {
   host.innerHTML = "";
   host.classList.add("hw-wrap");
-  var toolbar = document.createElement("div");
-  toolbar.className = "jt-toolbar";
-  toolbar.innerHTML = '<button class="jt-btn" data-act="undo" title="Undo the last stroke">↶</button>'
-    + '<button class="jt-btn ghost" data-act="clear" title="Clear the ink">🗑</button>'
-    + '<button class="jt-btn jt-totext" data-act="commit" title="Read the ink now">✓</button>';
-  host.appendChild(toolbar);
+  // One box: the strip, with its keys in a small grid on the right.
+  var box = document.createElement("div");
+  box.className = "hw-box";
   var wrap = document.createElement("div");
   wrap.className = "hw-pad";
   var cv = document.createElement("canvas");
   wrap.appendChild(cv);
-  wrap.style.height = Math.round(PV.hwLineGap * 1.85) + "px";
-  host.appendChild(wrap);
+  box.style.height = Math.max(96, Math.round(PV.hwLineGap * 1.85)) + "px";
+  box.appendChild(wrap);
   var keys = document.createElement("div");
   keys.className = "hw-keys";
-  keys.innerHTML = '<button data-key="bs" title="Backspace">⌫</button>'
-    + '<button data-key="wbs" title="Delete the last word">⌫ Word</button>'
-    + '<button data-key="undo" title="Undo the last change to the text">↶ Undo</button>'
-    + '<button data-key="tab" title="Tab">⇥ Tab</button>'
-    + '<button data-key="ret" title="New line">↵ Return</button>';
-  host.appendChild(keys);
+  keys.innerHTML = '<button data-key="bs" title="Backspace (with ink on the strip: take back a stroke)">⌫</button>'
+    + '<button data-key="wbs" title="Delete the last word (with ink on the strip: clear it)">⌫w</button>'
+    + '<button data-key="undo" title="Undo the last change to the text">↶</button>'
+    + '<button data-key="tab" title="Tab">⇥</button>'
+    + '<button data-key="read" title="Read the ink now">✓</button>'
+    + '<button data-key="ret" title="New line">↵</button>';
+  box.appendChild(keys);
+  host.appendChild(box);
   var g = cv.getContext("2d");
   var W = 0, H = 0, dpr = 1, strokes = [], cur = null, curId = null, timer = null, reading = 0, dead = false, anim = null;
   var chain = Promise.resolve();
@@ -3463,22 +3463,16 @@ function createHwPad(host, opts) {
   }
   cv.addEventListener("pointerup", up);
   cv.addEventListener("pointercancel", up);
-  toolbar.addEventListener("click", function(e) {
-    var b = e.target.closest("[data-act]");
-    if (!b) return;
-    var a = b.getAttribute("data-act");
-    if (a === "undo") { strokes.pop(); clearTimeout(timer); timer = strokes.length ? setTimeout(read, PV.hwPauseMs) : null; draw(); }
-    else if (a === "clear") { strokes = []; clearTimeout(timer); timer = null; draw(); }
-    else if (a === "commit") read();
-  });
   // Keep the text box's caret: a tap on a key mustn't take the focus.
   keys.addEventListener("pointerdown", function(e) { if (e.target.closest("[data-key]")) e.preventDefault(); });
   keys.addEventListener("click", function(e) {
     var b = e.target.closest("[data-key]");
-    if (!b || !opts.key) return;
+    if (!b) return;
     var k = b.getAttribute("data-key"), inked = strokes.length && !cur;
+    if (k === "read") { read(); return; }
     if (k === "bs" && inked) { strokes.pop(); clearTimeout(timer); timer = strokes.length ? setTimeout(read, PV.hwPauseMs) : null; draw(); return; }
     if (k === "wbs" && inked) { strokes = []; clearTimeout(timer); timer = null; draw(); return; }
+    if (!opts.key) return;
     if (k !== "undo") read();
     // After the words still being read, so they land in order.
     chain = chain.then(function() { if (!dead) opts.key(k); });
@@ -3496,24 +3490,37 @@ function createHwPad(host, opts) {
 // the text, else onto the end. noteCaret[id] is set by a tap in the box.
 var noteCaret = {};
 function isWs(ch) { return ch === " " || ch === NL || ch === String.fromCharCode(160) || ch === String.fromCharCode(9); }
+// Each piece of handwriting or speech starts with a space, unless the
+// text before it already ends with one. At the start of a line it's a
+// no-break space, which html doesn't swallow.
+var NBSP = String.fromCharCode(160);
+function isSp(ch) { return ch === " " || ch === NBSP || ch === String.fromCharCode(9); }
+function leadSpace(before) { return isSp(before.slice(-1)) ? "" : (before && before.slice(-1) !== NL ? " " : NBSP); }
 function insertAtCaret(editorId, text) {
   var ed = (typeof tinymce !== "undefined") ? tinymce.get(editorId) : null;
   if (ed && !ed.initialized) ed = null;
   if (ed) {
     var rng = ed.selection.getRng();
     if (!rng || !ed.getBody().contains(rng.startContainer)) return false;
-    var sc = rng.startContainer, ec = rng.endContainer;
-    var before = sc.nodeType === 3 ? sc.data.slice(0, rng.startOffset) : "";
-    var after = ec.nodeType === 3 ? ec.data.slice(rng.endOffset) : "";
-    var t = (before && !isWs(before.slice(-1)) ? " " : "") + text + (after && !isWs(after.charAt(0)) ? " " : "");
-    ed.selection.setContent(ed.dom.encode(t));
+    var doc = ed.getDoc();
+    var blk = ed.dom.getParent(rng.startContainer, ed.dom.isBlock) || ed.getBody();
+    var pre = doc.createRange(); pre.setStart(blk, 0); pre.setEnd(rng.startContainer, rng.startOffset);
+    var post = doc.createRange(); post.setStart(rng.endContainer, rng.endOffset); post.setEnd(blk, blk.childNodes.length);
+    var before = pre.toString(), after = post.toString();
+    var t = leadSpace(before) + text + (after && !isWs(after.charAt(0)) ? " " : "");
+    rng.deleteContents();
+    var node = doc.createTextNode(t);
+    rng.insertNode(node);
+    rng.setStartAfter(node); rng.collapse(true);
+    ed.selection.setRng(rng);
+    ed.nodeChanged();
     ed.undoManager.add();
     return true;
   }
   var ta = document.getElementById(editorId);
   if (!ta || ta.selectionStart == null) return false;
   var a = ta.selectionStart, z = ta.selectionEnd, v = ta.value;
-  var t2 = (a > 0 && !isWs(v.charAt(a - 1)) ? " " : "") + text + (z < v.length && !isWs(v.charAt(z)) ? " " : "");
+  var t2 = (isSp(v.charAt(a - 1)) ? "" : " ") + text + (z < v.length && !isWs(v.charAt(z)) ? " " : "");
   ta.setRangeText(t2, a, z, "end");
   return true;
 }
@@ -3521,7 +3528,7 @@ function insertNoteText(editorId, text, getHtml, setHtml) {
   if (noteCaret[editorId] && insertAtCaret(editorId, text)) return;
   appendNoteLine(editorId, text, getHtml, setHtml);
 }
-// Keys under the handwriting strip (⌫, word ⌫, undo, tab, return) on a
+// Keys beside the handwriting strip (⌫, word ⌫, undo, tab, return) on a
 // notes box: where you tapped in the text, else at the end. In the editor
 // undo is its own; on a plain textarea noteSnap() keeps the text as it was
 // before each change from the strip or the keys, and undo goes back one.
