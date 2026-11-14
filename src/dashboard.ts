@@ -1876,6 +1876,8 @@ function backspace() {
 // ✕ clears the box (and what it was searching).
 document.getElementById("dial-bksp").addEventListener("click", function() {
   var inp = document.getElementById("dial-input");
+  // Empty box on Transcripts: ✕ drops the person they were narrowed to.
+  if (!inp.value && histTab === "transcripts" && histTxPerson) { histTxPerson = null; inp.placeholder = txPlaceholder(); loadHistory(); return; }
   if (!inp.value) return;
   inp.value = "";
   onDialInput();
@@ -3943,6 +3945,8 @@ function onDialInput() {
   updateDialBottomVisibility();
   if (histTab === "emails") return;
   if (historyTxSearch) {
+    // Typing leaves one person's transcripts for a search of them all.
+    if (histTxPerson && document.getElementById("dial-input").value.trim()) { histTxPerson = null; document.getElementById("dial-input").placeholder = txPlaceholder(); }
     if (historyTimer) clearTimeout(historyTimer);
     historyTimer = setTimeout(loadHistory, PV.historyDebounceMs);
     return;
@@ -5602,14 +5606,28 @@ var historyTxSearch = false;
 // Calls it's also the dial box, with T9 matches as you type.
 var histTab = "calls";
 var HIST_PLACEHOLDER = { calls: "Number or name (T9)", transcripts: "Search transcripts", emails: "Search emails" };
+// With a call selected, 💬 Transcripts opens that call's transcript. With a
+// contact picked (or a call that has none), it lists that person's calls
+// that have transcripts; typing in the box searches all transcripts again.
+var histTxPerson = null;   // { q, label }
 function setHistTab(tab) {
+  var inp = document.getElementById("dial-input");
+  if (tab === "transcripts") {
+    var sc = histSelectedCall();
+    if (sc && !sc.meeting && (sc.has_transcript || sc.has_recording)) { openCallDetailView(sc, { tab: "transcript" }); return; }
+    var sn = sc ? histNumber(sc) : "", sname = sc ? (sc.partner_name || "").trim() : "";
+    var sel = selected && selected.type === "contact" ? selected.data : null;
+    histTxPerson = sc && !sc.meeting && (sname || sn) ? { q: pickedQuery(sn, sname), label: sname || sn }
+      : histFilter ? { q: histFilter.q, label: histFilter.q === histFilter.num || /^[0-9]+$/.test(histFilter.q) ? histFilter.num : histFilter.q }
+      : sel && sel.name ? { q: sel.name, label: sel.name } : null;
+    if (tab === histTab) { inp.value = ""; inp.placeholder = txPlaceholder(); loadHistory(); return; }
+  } else histTxPerson = null;
   if (tab === histTab) { if (tab === "emails") loadHistEmails(); return; }
   histTab = tab;
   historyTxSearch = tab === "transcripts";
   var b = document.querySelectorAll("#hist-toolbar [data-src]");
   for (var i = 0; i < b.length; i++) b[i].classList.toggle("on", b[i].getAttribute("data-src") === tab);
-  var inp = document.getElementById("dial-input");
-  inp.placeholder = HIST_PLACEHOLDER[tab];
+  inp.placeholder = tab === "transcripts" ? txPlaceholder() : HIST_PLACEHOLDER[tab];
   inp.value = "";
   histFilter = null;
   if (selected && selected.type === "call") deselect();
@@ -5644,20 +5662,29 @@ document.getElementById("hist-emails").addEventListener("click", function(e) {
   var m = messagesCache[row.getAttribute("data-key")];
   if (m) rowClick(row.getAttribute("data-key"), "message", m, function() { openMessageFull(m); });
 });
-function historyQuery() { return historyTxSearch ? document.getElementById("dial-input").value.trim() : histFilter ? histFilter.q : ""; }
+function txPlaceholder() { return histTxPerson ? "💬 " + histTxPerson.label + " · type to search all" : HIST_PLACEHOLDER.transcripts; }
+// Words typed on the Transcripts tab (searched in the transcripts).
+function txWords() { return historyTxSearch ? document.getElementById("dial-input").value.trim() : ""; }
+function historyQuery() {
+  if (historyTxSearch) return txWords() || (histTxPerson ? histTxPerson.q : "");
+  return histFilter ? histFilter.q : "";
+}
 function loadHistory() {
   var q = historyQuery();
   var el = document.getElementById("history-list");
+  // One person's transcripts: their calls, keeping those with a transcript.
+  var personTx = historyTxSearch && !txWords() && !!histTxPerson;
   if (historyTxSearch && !q) { el.innerHTML = '<div class="empty">Type words to find in call transcripts</div>'; return; }
   if (!el.querySelector(".hist-row")) el.innerHTML = '<div class="empty">Loading…</div>';
   // Meetings (🎙) go in among the calls, but not into searches.
   var meetsP = q ? Promise.resolve([]) : fetch(API + "/meetings?limit=50").then(function(r) { return r.json(); }).then(function(d) { return d.meetings || []; }).catch(function() { return []; });
-  fetch(API + "/call-history?limit=" + PV.historyLimit + "&q=" + encodeURIComponent(q) + (historyTxSearch ? "&in=transcript" : "") + "&ext=" + encodeURIComponent(myExtension())).then(function(r){return r.json();}).then(function(d){
+  fetch(API + "/call-history?limit=" + PV.historyLimit + "&q=" + encodeURIComponent(q) + (historyTxSearch && !personTx ? "&in=transcript" : "") + "&ext=" + encodeURIComponent(myExtension())).then(function(r){return r.json();}).then(function(d){
     return meetsP.then(function(meets) { return { calls: mergeMeetings(d.calls || [], meets) }; });
   }).then(function(d){
     if (q !== historyQuery()) return;
     var calls = d.calls || [];
-    if (!calls.length) { el.innerHTML = '<div class="empty">' + (historyTxSearch ? "No transcripts mention that" : q ? "No matching calls" : "No calls yet") + '</div>'; return; }
+    if (personTx) calls = calls.filter(function(c) { return !c.meeting && c.has_transcript; });
+    if (!calls.length) { el.innerHTML = '<div class="empty">' + (personTx ? "No transcripts of calls with " + esc(histTxPerson.label) : historyTxSearch ? "No transcripts mention that" : q ? "No matching calls" : "No calls yet") + '</div>'; return; }
     // A picked caller stays selected while History narrows to them.
     var keep = histFilter && selected && selected.type === "call" ? "h-" + selected.data.id : "";
     if (selected && selected.type === "call" && !keep) deselect();

@@ -748,7 +748,9 @@ async function handlePushCalls(request: Request, env: Env): Promise<Response> {
   const params = new URL(request.url).searchParams;
   const callId = params.get("call_id");
   if (callId) {
-    try { return Response.json({ odoo_id: await pushCallToOdoo(env, callId, true) }); }
+    // recording=0: just the call and its notes (a big recording can take
+    // the request past the Worker's limits, and it's already in Odoo).
+    try { return Response.json({ odoo_id: await pushCallToOdoo(env, callId, params.get("recording") !== "0") }); }
     catch (e) { return Response.json({ error: String((e as Error).message || e) }, { status: 502 }); }
   }
   const limit = Math.min(parseInt(params.get("limit") ?? "10", 10) || 10, 50);
