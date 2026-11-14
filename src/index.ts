@@ -5,7 +5,7 @@ import { ariRequest, ariParkedCalls } from "./asterisk";
 import { playbackResponse } from "./recording";
 import { transcribeCall } from "./transcribe";
 import { handleMeetingStart, handleMeetingBlock, handleMeetingFinish, handleMeetings, handleMeeting, handleMeetingAudio } from "./meetings";
-import { summarizeCall, keepSummary } from "./summarize";
+import { summarizeCall, keepSummary, callTitle } from "./summarize";
 import { serveDashboard } from "./dashboard";
 import { handlePushRegister, handlePushStatus, handlePushWake } from "./push";
 import { emailVoicemail } from "./vmemail";
@@ -222,7 +222,7 @@ const CALL_HISTORY_SELECT = `SELECT c.id, c.call_id, c.phone_number, c.did, c.di
      c.partner_id AS partner_id,
      COALESCE(p.name, '') AS partner_name,
      COALESCE(p.email, '') AS partner_email,
-     CASE WHEN COALESCE(c.notes_html, '') != '' THEN 1 ELSE 0 END AS has_notes,
+     CASE WHEN COALESCE(c.notes_html, '') != '' OR COALESCE(c.jot_svg, '') != '' THEN 1 ELSE 0 END AS has_notes,
      CASE WHEN COALESCE(c.recording, '') != '' THEN 1 ELSE 0 END AS has_recording,
      CASE WHEN c.transcript IS NOT NULL THEN 1 ELSE 0 END AS has_transcript,
      c.voicemail, c.extension, c.user_id
@@ -950,6 +950,10 @@ export default {
       else if (request.method === "POST" && url.pathname === "/call-history/resolve-names") response = await handleResolveHistoryNames(env);
       else if (request.method === "POST" && url.pathname === "/call-history/create-missing-contacts") response = await handleCreateMissingContacts(env);
       else if (request.method === "GET" && url.pathname === "/call-notes") response = await handleGetCallNotes(request, env, user);
+      else if (m === "GET" && p === "/call-title") {
+        const id = url.searchParams.get("call_id") ?? "";
+        response = await mayOpenCall(env, user, id) ? Response.json({ title: await callTitle(env, id) }) : notYours();
+      }
       else if (request.method === "POST" && url.pathname === "/call-notes") response = await handleSaveCallNotes(request, env, ctx, user);
       else if (m === "POST" && p === "/call-notes/voice") response = await mayOpenCall(env, user, url.searchParams.get("call_id") ?? "") ? await handleVoiceNote(request, env) : notYours();
       else if (m === "POST" && p === "/dictate") response = await handleDictate(request, env);

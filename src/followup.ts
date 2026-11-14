@@ -117,7 +117,7 @@ async function scheduleTodo(env: Env, userId: number, model: string, resId: numb
 /** POST /call-notes/add { call_id, text, follow_up?, summary? }: append to the
  *  call's Notes and, with follow_up, schedule the To-Do. */
 export async function handleAddCallNote(request: Request, env: Env, ctx: ExecutionContext, user: User): Promise<Response> {
-  let body: { call_id?: string; text?: string; follow_up?: string | null; summary?: string };
+  let body: { call_id?: string; text?: string; follow_up?: string | null; summary?: string; append?: boolean };
   try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
   const callId = String(body.call_id ?? "").trim();
   const text = String(body.text ?? "").trim().slice(0, 4000);
@@ -131,9 +131,13 @@ export async function handleAddCallNote(request: Request, env: Env, ctx: Executi
   const when = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date());
   const due = followUp ? new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", weekday: "short", day: "numeric", month: "short" }).format(new Date(followUp + "T12:00:00Z")) : "";
   const who = user.name ? ` · ${esc(user.name)}` : "";
-  const para = `<p><strong>${esc(when)}${who}</strong> — ${esc(text || "Follow up")}${due ? ` <em>(follow up ${esc(due)})</em>` : ""}</p>`;
-  await env.DB.prepare("UPDATE call_log SET notes_html = COALESCE(notes_html, '') || ?1, write_date = ?2 WHERE call_id = ?3")
-    .bind(para, Date.now(), target.call_id).run();
+  const para = `<p><strong>${esc(when)}${who}</strong> — ${esc(text || "Follow up").replace(/\n/g, "<br>")}${due ? ` <em>(follow up ${esc(due)})</em>` : ""}</p>`;
+  // append: false (a call still going, whose live notes autosave over the
+  // stored ones): the dashboard puts the line into those notes itself.
+  if (body.append !== false) {
+    await env.DB.prepare("UPDATE call_log SET notes_html = COALESCE(notes_html, '') || ?1, write_date = ?2 WHERE call_id = ?3")
+      .bind(para, Date.now(), target.call_id).run();
+  }
 
   let activity: number | null = null, activityError = "";
   if (followUp) {
@@ -156,5 +160,5 @@ export async function handleAddCallNote(request: Request, env: Env, ctx: Executi
     }
   }
   ctx.waitUntil(pushCallToOdoo(env, target.call_id).catch((e) => console.error("pushCallToOdoo failed:", e)));
-  return Response.json({ ok: true, activity, activity_error: activityError || undefined });
+  return Response.json({ ok: true, note_html: para, activity, activity_error: activityError || undefined });
 }

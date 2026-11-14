@@ -98,3 +98,30 @@ function stripSummary(notes: string): string {
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
+
+/** A short title for a call, from its AI summary (the first paragraph under
+ *  the heading), for the dashboard's Follow-up. "" when it has no summary. */
+export async function callTitle(env: Env, callId: string): Promise<string> {
+  const legs = await callLegs(env, callId);
+  const notes = legs.map(l => l.notes_html ?? "").find(n => HEADING.test(n)) ?? "";
+  const m = HEADING.exec(notes);
+  if (!m) return "";
+  const p = /<p[^>]*>([\s\S]*?)<\/p>/.exec(notes.slice(m.index + m[0].length));
+  const text = (p?.[1] ?? "").replace(/<[^>]*>/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  try {
+    const out = await env.AI.run(MODEL, {
+      messages: [
+        { role: "system", content: "Give a short title, at most 8 words, for this phone call summary, like a diary entry (e.g. \"Quote for 6 panels, Leeds office\"). Reply with the title only, no quotes." },
+        { role: "user", content: text },
+      ],
+      max_tokens: 40,
+      temperature: 0.2,
+    }) as { response?: unknown };
+    const t = String(out?.response ?? "").split("\n")[0].replace(/^["'\s]+|["'.\s]+$/g, "").slice(0, 80);
+    if (t) return t;
+  } catch (e) {
+    console.error("callTitle failed:", e);
+  }
+  return text.split(/(?<=[.!?])\s/)[0].slice(0, 80);
+}

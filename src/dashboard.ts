@@ -506,7 +506,20 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 /* call detail view: in-screen (not a dialog), Details/Notes/Jot tabs, sized for phones */
 .cd-head{display:flex;align-items:center;gap:8px;padding:2px 0 10px}
 .cd-back{background:none;border:none;color:#4db8ff;font-size:24px;line-height:1;cursor:pointer;padding:4px 8px;flex-shrink:0}
+.cd-back .back-ic{width:28px;height:28px;display:block;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
 .cd-title{flex:1;min-width:0}
+/* notes / transcript of a call fill the screen: no bottom menu */
+.bottom-menu.auto-hide{display:none}
+/* Follow-up: the Notes way of writing (Write / Type / Speak) for a to-do */
+.fu-view{position:fixed;inset:0;z-index:55;background:#0a0a0a;display:flex;flex-direction:column;padding:calc(env(safe-area-inset-top) + 6px) 16px calc(env(safe-area-inset-bottom) + 10px);max-width:430px;margin:0 auto}
+.fu-pane{flex:1;min-height:0;display:flex;flex-direction:column}
+#fu-notes{flex:0 0 30%;width:100%;padding:12px 14px;border:1px solid #2c2c2c;border-radius:10px;background:#111;color:#ececec;font:inherit;font-size:15px;line-height:1.5;outline:none;resize:none}
+.fu-pane.nb-type #fu-notes{flex:1}
+#fu-jot-canvas{flex:1;min-height:0}
+#fu-jot-canvas .jt-canvas-wrap,#fu-jot-canvas .jt-text{flex:1;min-height:180px;height:auto}
+.fu-view .ns-fu{margin-top:8px}
+.fu-view .set-actions{margin-top:10px}
+.nb-bar button[data-nbm="followup"]{background:#14532d;color:#d1fae5}
 .cd-name{font-size:17px;font-weight:700;color:#ececec;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cd-sub{font-size:12px;color:#999}
 .cd-callback{background:linear-gradient(135deg,#34d399,#10b981);border:none;color:#04210f;width:40px;height:40px;border-radius:50%;font-size:17px;cursor:pointer;flex-shrink:0}
@@ -647,7 +660,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
           <div class="cp-pane hidden" id="cp-pane-history"><div class="empty">—</div></div>
           <div class="cp-pane hidden" id="cp-pane-emails"><div class="empty">—</div></div>
           <div class="cp-pane nb-write" id="cp-pane-notes">
-            <div class="nb-bar" data-nb="call"><button data-nbm="write" title="Write by hand: Return (↵) reads the line into the notes">🖊 Write</button><button data-nbm="type" title="Type into the notes">⌨ Type</button><button data-nbm="speak" title="Speak: what you say is added to the notes">🎙 Speak</button><span class="nb-status" id="jot-status"></span></div>
+            <div class="nb-bar" data-nb="call"><button data-nbm="write" title="Write by hand: Return (↵) reads the line into the notes">🖊 Write</button><button data-nbm="type" title="Type into the notes">⌨ Type</button><button data-nbm="speak" title="Speak: what you say is added to the notes">🎙 Speak</button><button data-nbm="followup" title="Follow-up: a to-do for this call, written like a note">📅 Follow-up</button><span class="nb-status" id="jot-status"></span></div>
             <textarea id="call-notes" placeholder="Call notes… (press # for quick text)" autocomplete="off"></textarea>
             <div class="qt-panel hidden" id="qt-panel">
               <div class="qt-head">Quick text — tap to insert</div>
@@ -704,7 +717,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <!-- PARAMETERS VIEW (opened from the menu) -->
     <div class="view hidden" id="view-voicemail">
       <div class="p-head">
-        <button class="cd-back" onclick="closeVoicemail()" aria-label="Back">←</button>
+        <button class="cd-back" onclick="closeVoicemail()" aria-label="Back"><svg class="back-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4.5L7.5 12l7.5 7.5"/></svg></button>
         <div class="cd-title"><strong>Voicemail</strong></div>
         <span class="jot-status" id="vm-status"></span>
       </div>
@@ -729,7 +742,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 
     <div class="view hidden" id="view-params">
       <div class="p-head">
-        <button class="cd-back" onclick="closeParams()" aria-label="Back">←</button>
+        <button class="cd-back" onclick="closeParams()" aria-label="Back"><svg class="back-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4.5L7.5 12l7.5 7.5"/></svg></button>
         <div class="cd-title"><strong>Parameters</strong></div>
         <span class="jot-status" id="params-status"></span>
       </div>
@@ -744,7 +757,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <!-- CALL DETAIL VIEW (drill-down from History — in-screen, not a dialog) -->
     <div class="view hidden" id="view-call-detail">
       <div class="cd-head">
-        <button class="cd-back" onclick="closeCallDetailView()">←</button>
+        <button class="cd-back" onclick="closeCallDetailView()" aria-label="Back"><svg class="back-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4.5L7.5 12l7.5 7.5"/></svg></button>
         <div class="cd-title">
           <div class="cd-name" id="cd-caller-name">Call</div>
           <div class="cd-sub" id="cd-caller-sub"></div>
@@ -759,7 +772,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       <div class="cd-body">
         <div class="cp-pane hidden" id="cd-pane-details"></div>
         <div class="cp-pane hidden nb-write" id="cd-pane-notes">
-          <div class="nb-bar" data-nb="cd"><button data-nbm="write" title="Write by hand: Return (↵) reads the line into the notes">🖊 Write</button><button data-nbm="type" title="Type into the notes">⌨ Type</button><button data-nbm="speak" title="Speak: what you say is added to the notes">🎙 Speak</button><span class="nb-status" id="cd-jot-status"></span></div>
+          <div class="nb-bar" data-nb="cd"><button data-nbm="write" title="Write by hand: Return (↵) reads the line into the notes">🖊 Write</button><button data-nbm="type" title="Type into the notes">⌨ Type</button><button data-nbm="speak" title="Speak: what you say is added to the notes">🎙 Speak</button><button data-nbm="followup" title="Follow-up: a to-do for this call, written like a note">📅 Follow-up</button><span class="nb-status" id="cd-jot-status"></span></div>
           <div id="cd-notes-host"><div class="empty">Loading…</div></div>
           <div class="nb-pad" id="cd-jot-canvas"></div>
         </div>
@@ -773,7 +786,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <!-- CONTACT DETAIL VIEW (drill-down from Contacts / History) -->
     <div class="view hidden" id="view-contact-detail">
       <div class="cd-head">
-        <button class="cd-back" onclick="closeContactView()" aria-label="Back">←</button>
+        <button class="cd-back" onclick="closeContactView()" aria-label="Back"><svg class="back-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4.5L7.5 12l7.5 7.5"/></svg></button>
         <div class="cd-title">
           <div class="cd-name" id="ct-name">Contact</div>
           <div class="cd-sub" id="ct-sub"></div>
@@ -847,6 +860,25 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 
 <div class="route-sheet hidden" id="route-sheet" onclick="if (event.target === this) closeRouteSheet()">
   <div class="rs-card" id="route-sheet-card"></div>
+</div>
+<div class="fu-view hidden" id="fu-view">
+  <div class="cd-head">
+    <button class="cd-back" onclick="closeFollowUp()" aria-label="Back"><svg class="back-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4.5L7.5 12l7.5 7.5"/></svg></button>
+    <div class="cd-title"><div class="cd-name">📅 Follow-up</div><div class="cd-sub" id="fu-sub"></div></div>
+  </div>
+  <div class="fu-pane nb-write" id="fu-pane">
+    <div class="nb-bar" data-nb="fu"><button data-nbm="write" title="Write by hand: Return (↵) reads the line into the text">🖊 Write</button><button data-nbm="type" title="Type">⌨ Type</button><button data-nbm="speak" title="Speak: what you say is added">🎙 Speak</button><span class="nb-status" id="fu-status"></span></div>
+    <textarea id="fu-notes" placeholder="What to follow up" autocomplete="off"></textarea>
+    <div class="nb-pad" id="fu-jot-canvas"></div>
+  </div>
+  <div class="ns-fu" id="fu-when">Due:
+    <button data-days="1">Tomorrow</button><button data-days="3">3 days</button><button data-days="7">1 week</button><button data-days="14">2 weeks</button>
+    <input type="date" id="fu-date" aria-label="Follow-up date">
+  </div>
+  <div class="set-actions">
+    <button class="set-cancel" onclick="closeFollowUp()">Cancel</button>
+    <button class="acc-save" id="fu-save" onclick="saveFollowUp()">Add follow-up</button>
+  </div>
 </div>
 <div class="route-sheet hidden" id="note-sheet" onclick="if (event.target === this) closeNoteSheet()">
   <div class="rs-card">
@@ -1790,6 +1822,13 @@ function switchView(name) {
   if (name === "activities") loadActivities();
   if (name === "contacts") loadContacts(document.getElementById("contact-search").value);
   if (name === "messages") loadMessages();
+  updateBottomMenuHide();
+}
+// A call's Notes or Transcript gets the whole screen: the bottom menu goes
+// (and comes back on Details, on leaving, or when a call starts).
+function updateBottomMenuHide() {
+  var hide = !currentCall && currentViewName() === "call-detail" && (activeCdTab === "notes" || activeCdTab === "transcript");
+  document.getElementById("bottom-menu").classList.toggle("auto-hide", hide);
 }
 
 // ── dialpad input ──────────────────────────────────────────────
@@ -2001,7 +2040,11 @@ var NB = {
   cd: { pane: "cd-pane-notes", editor: "cd-notes", status: "cd-jot-status",
     jot: function() { return cdJot; }, initJot: function() { if (!cdJot) initCallDetailJot(); },
     key: function() { return cdOpenCallId; },
-    add: function(text) { cdAppendNoteLine(text); } }
+    add: function(text) { cdAppendNoteLine(text); } },
+  fu: { pane: "fu-pane", editor: "fu-notes", status: "fu-status",
+    jot: function() { return fuJot; }, initJot: function() { initFollowUpJot(); },
+    key: function() { return fu ? fu.callId : null; },
+    add: function(text) { fuAppend(text); } }
 };
 function noteMode() { try { return localStorage.getItem("vb_noteMode") === "type" ? "type" : "write"; } catch (e) { return "write"; } }
 function applyNoteMode(which) {
@@ -2128,7 +2171,9 @@ document.addEventListener("click", function(e) {
   var b = e.target.closest(".nb-bar [data-nbm]");
   if (!b) return;
   var which = b.closest(".nb-bar").getAttribute("data-nb"), m = b.getAttribute("data-nbm");
-  if (m === "speak") toggleDictation(which); else setNoteMode(which, m);
+  if (m === "speak") toggleDictation(which);
+  else if (m === "followup") openFollowUp(which);
+  else setNoteMode(which, m);
 });
 
 // ── in-call panel: caller name + tabs ───────────────────────────
@@ -3328,6 +3373,7 @@ function postCallSave(callId, notesHtml, jotSvg, jotJson) {
     body: JSON.stringify({ call_id: callId, notes_html: notesHtml, jot_svg: jotSvg, jot_json: jotJson })
   }).then(function(r) { return r.json(); }).then(function(d) {
     setCallSaveStatus(d.ok ? "Saved \u2713" : "Save failed");
+    if (d.ok) markCallNotes(callId, !!(notesHtml || jotSvg));
   }).catch(function() { setCallSaveStatus("Save failed"); });
 }
 
@@ -4354,6 +4400,7 @@ function saveNoteSheet() {
     body: JSON.stringify({ call_id: sheet.callId, text: text, follow_up: followUp, summary: sheet.summary })
   }).then(function(r) { return r.json(); }).then(function(d) {
     if (d.error) throw new Error(d.error);
+    markCallNotes(sheet.callId, true);
     if (cdOpenCallId === sheet.callId) loadCallDetailNotes(sheet.callId);
     if (onDialView()) loadHistory();
     if (followUp && d.activity) loadActivities();
@@ -4367,6 +4414,180 @@ function saveNoteSheet() {
     noteStatus("Not added: " + err.message, true);
   });
 }
+
+// ── 📅 Follow-up (after 🎙 Speak in a call's Notes) ──────────────
+// Like adding a note, but written the Notes way (Write / Type / Speak) on
+// a screen of its own. It starts with who, when and the call's title (from
+// its AI summary, GET /call-title), and "Add follow-up" puts it on the
+// call's notes and gives you an Odoo To-Do due that day (POST
+// /call-notes/add). During a call the line goes into the live notes
+// instead, so their autosave doesn't write over it.
+var fu = null;     // { which, callId, head, title, busy }
+var fuJot = null;
+function openFollowUp(which) {
+  var callId, name, when;
+  if (which === "call") {
+    if (!currentCall) return;
+    flushCallSave();
+    callId = currentCall.id; name = callerLabel(); when = new Date();
+  } else {
+    if (!cdCall || !cdOpenCallId) return;
+    flushCallDetailSave();
+    callId = cdOpenCallId;
+    name = (cdCall.partner_name || "").trim() || cdCall.phone_number || cdCall.did || "Unknown";
+    when = cdCall.start_date ? new Date(cdCall.start_date) : new Date();
+  }
+  if (dictation) stopDictation(true);
+  var day = when.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" }) + " " + hhmm(when);
+  fu = { which: which, callId: callId, head: name + " · " + day, title: "", busy: false };
+  var ta = document.getElementById("fu-notes");
+  ta.value = fu.head + NL;
+  document.getElementById("fu-sub").textContent = name;
+  setNbStatus("fu", "");
+  var t = new Date(); t.setDate(t.getDate() + 1);
+  fuSetDay(ymd(t));
+  document.getElementById("fu-save").disabled = false;
+  document.getElementById("fu-view").classList.remove("hidden");
+  applyNoteMode("fu");
+  if (which === "call" && !(currentCall && currentCall.state === "active")) return;
+  var mine = fu;
+  setNbStatus("fu", "Getting the call's title…");
+  fetch(API + "/call-title?call_id=" + encodeURIComponent(callId)).then(function(r) { return r.json(); }).then(function(d) {
+    if (fu !== mine) return;
+    setNbStatus("fu", "");
+    if (!d.title) return;
+    mine.title = d.title;
+    // Into the first line, unless it's been changed meanwhile.
+    var v = ta.value;
+    if (v.indexOf(mine.head) === 0) ta.value = mine.head + " · " + d.title + v.slice(mine.head.length);
+  }).catch(function() { if (fu === mine) setNbStatus("fu", ""); });
+}
+function closeFollowUp() {
+  if (dictation && dictation.which === "fu") stopDictation(true);
+  fu = null;
+  try { if (fuJot) fuJot.destroy(); } catch (e) {}
+  fuJot = null;
+  var tb = document.querySelector('.nb-bar[data-nb="fu"] .jt-toolbar');
+  if (tb) tb.remove();
+  document.getElementById("fu-view").classList.add("hidden");
+}
+function initFollowUpJot() {
+  if (fuJot || !fu) return;
+  var host = document.getElementById("fu-jot-canvas");
+  fuJot = createJot(host, function() {}, null, {
+    onLine: function(text) { fuAppend(text); },
+    alreadyInNotes: function() { return false; }
+  });
+  mountJotToolbar("fu", host);
+}
+// Written / spoken words carry on the last line (a new line after the heading).
+function fuAppend(text) {
+  var ta = document.getElementById("fu-notes"), v = ta.value;
+  ta.value = !v.trim() ? text : v.slice(-1) === NL ? v + text : v.trimEnd() + " " + text;
+  ta.scrollTop = ta.scrollHeight;
+}
+function fuSetDay(day) {
+  document.getElementById("fu-date").value = day || "";
+  var today = new Date(), btns = document.querySelectorAll("#fu-when button");
+  for (var i = 0; i < btns.length; i++) {
+    var d = new Date(today); d.setDate(today.getDate() + Number(btns[i].getAttribute("data-days")));
+    btns[i].classList.toggle("on", ymd(d) === day);
+  }
+}
+document.getElementById("fu-when").addEventListener("click", function(e) {
+  var b = e.target.closest("button");
+  if (!b) return;
+  var d = new Date(); d.setDate(d.getDate() + Number(b.getAttribute("data-days")));
+  fuSetDay(ymd(d));
+});
+document.getElementById("fu-date").addEventListener("change", function(e) { fuSetDay(e.target.value); });
+function saveFollowUp() {
+  var f = fu;
+  if (!f || f.busy) return;
+  // Ink still on the pad is read in first; check it, then Add again.
+  if (fuJot && !fuJot.isEmpty() && !f.inkRead) { f.inkRead = true; fuJot.commit(); setNbStatus("fu", "Reading your writing: check it, then Add"); return; }
+  if (dictation && dictation.which === "fu") { setNbStatus("fu", "Tap Stop first"); return; }
+  var text = document.getElementById("fu-notes").value.trim();
+  var day = document.getElementById("fu-date").value;
+  if (!day) { setNbStatus("fu", "Pick a day"); return; }
+  f.busy = true;
+  document.getElementById("fu-save").disabled = true;
+  setNbStatus("fu", "Adding…");
+  var live = f.which === "call" && currentCall && currentCall.id === f.callId;
+  fetch(API + "/call-notes/add", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ call_id: f.callId, text: text, follow_up: day, summary: f.title || "Follow up", append: !live })
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.error) throw new Error(d.error);
+    if (live && d.note_html) {
+      var ed = (typeof tinymce !== "undefined") ? tinymce.get("call-notes") : null;
+      if (ed && ed.initialized) { ed.setContent(ed.getContent() + d.note_html); ed.undoManager.add(); }
+      else { var cta = document.getElementById("call-notes"); cta.value = (cta.value.trim() ? cta.value.trimEnd() + NL : "") + stripHtml(d.note_html); }
+      scheduleCallSave();
+    }
+    markCallNotes(f.callId, true);
+    if (!live && cdOpenCallId === f.callId) loadCallDetailNotes(f.callId);
+    if (d.activity) loadActivities();
+    if (!d.activity) { setNbStatus("fu", "Added to the notes, but no To-Do: " + (d.activity_error || "unknown error")); f.busy = false; return; }
+    closeFollowUp();
+    setStatus("✅ Follow-up " + fmtNoteDate(day), false);
+  }).catch(function(err) {
+    if (fu !== f) return;
+    f.busy = false;
+    document.getElementById("fu-save").disabled = false;
+    setNbStatus("fu", "Not added: " + err.message);
+  });
+}
+
+// ── swipe right to go back ───────────────────────────────────
+// On a screen with a back arrow (a call, a contact, Voicemail, Parameters,
+// Follow-up), dragging it to the right goes back, as the arrow does. Not
+// from the handwriting pad, text boxes or rows with swipes of their own.
+function backTarget() {
+  var fv = document.getElementById("fu-view");
+  if (!fv.classList.contains("hidden")) return { el: fv, back: closeFollowUp };
+  if (!document.getElementById("note-sheet").classList.contains("hidden")) return null;
+  var v = document.querySelector(".view:not(.hidden)");
+  var btn = v && v.querySelector(".cd-back");
+  return btn ? { el: v, back: function() { btn.click(); } } : null;
+}
+(function() {
+  var sw = null;
+  var NO_SWIPE = "canvas, textarea, input, select, iframe, audio, .nb-pad, .tox, .jt-toolbar, .cp-tabs, .ct-filter, .hist-row, .hist-player, .ptable";
+  document.addEventListener("touchstart", function(e) {
+    sw = null;
+    if (e.touches.length !== 1 || e.target.closest(NO_SWIPE)) return;
+    var t = backTarget();
+    if (!t) return;
+    sw = { t: t, x: e.touches[0].clientX, y: e.touches[0].clientY, dx: 0, on: false };
+  }, { passive: true });
+  document.addEventListener("touchmove", function(e) {
+    if (!sw) return;
+    var dx = e.touches[0].clientX - sw.x, dy = e.touches[0].clientY - sw.y;
+    if (!sw.on) {
+      if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { sw = null; return; }
+      if (dx > 14 && dx > Math.abs(dy) * 1.5) { sw.on = true; sw.t.el.style.transition = "none"; }
+      else return;
+    }
+    sw.dx = Math.max(0, dx);
+    sw.t.el.style.transform = "translateX(" + sw.dx + "px)";
+  }, { passive: true });
+  function end() {
+    if (!sw || !sw.on) { sw = null; return; }
+    var s = sw, el = s.t.el;
+    sw = null;
+    el.style.transition = "transform .18s ease-out";
+    if (s.dx > Math.min(110, window.innerWidth * 0.3)) {
+      el.style.transform = "translateX(100%)";
+      setTimeout(function() { s.t.back(); el.style.transition = ""; el.style.transform = ""; }, 170);
+    } else {
+      el.style.transform = "";
+      setTimeout(function() { el.style.transition = ""; }, 200);
+    }
+  }
+  document.addEventListener("touchend", end);
+  document.addEventListener("touchcancel", end);
+})();
 
 function answerCall() {
   if (!sipSession || !currentCall || currentCall.dir !== "in" || currentCall.state !== "ringing") return;
@@ -4490,6 +4711,8 @@ function renderCallBar() {
   var menu = document.getElementById("nav-callmenu");
   menu.classList.toggle("active", callMenuOpen);
   menu.disabled = !active || !!consultSession;
+  // Dialling out: no "hang up and add a note" yet, there's nothing to note.
+  document.getElementById("nav-hangplus").classList.toggle("hidden", !!(currentCall && currentCall.state === "calling"));
 }
 function toggleHold() {
   if (!sipSession || !inCall() || consultSession) return;
@@ -4934,6 +5157,7 @@ function updateDialBottomVisibility() {
   fab.setAttribute("aria-label", inAnyCall ? "Hang up" : pad ? "Keypad" : "Dial");
   fab.querySelector(".fab").innerHTML = pad ? DIALPAD_ICON : PHONE_ICON;
   document.getElementById("bottom-menu").classList.toggle("in-call", inAnyCall);
+  updateBottomMenuHide();
   renderCallBar();
   document.getElementById("dialpad").classList.toggle("hidden", inAnyCall || !dialKeypadOpen);
   document.getElementById("dial-entry").classList.toggle("hidden", inAnyCall || !(dialKeypadOpen || hasNum || historyTxSearch));
@@ -4968,6 +5192,9 @@ function renderCallUI() {
   document.getElementById("banner-answer").classList.toggle("hidden", !(currentCall.state === "ringing" && currentCall.dir === "in"));
   btnCall.classList.add("hidden");
   btnEnd.classList.remove("hidden");
+  // The red button in the bottom bar hangs up; the banner's own 📴 is only
+  // for turning down an incoming call, next to 📞 answer.
+  banner.querySelector(".end").classList.toggle("hidden", !(currentCall.state === "ringing" && currentCall.dir === "in"));
   var active = currentCall.state === "active";
   if (conf) document.getElementById("banner-state").textContent = !sipSession ? "👥 Merging…" : onHold ? "👥 Conference · you're muted" : "👥 Conference";
   else if (onHold && !consultSession) document.getElementById("banner-state").textContent = "⏸ On hold";
@@ -5035,7 +5262,8 @@ function loadHistory() {
     if (selected && selected.type === "call" && !keep) deselect();
     el.innerHTML = renderHistory(calls);
     var row = keep && el.querySelector('[data-key="' + keep + '"]');
-    if (row) row.classList.add("selected");
+    if (row) { row.classList.add("selected"); selected.data = callsCache[keep]; }
+    updateHistToolbar();
   }).catch(function(){ el.innerHTML = '<div class="empty">Error loading history</div>'; });
 }
 // Meetings slotted into the call list by start time. With a full page of
@@ -5234,6 +5462,15 @@ function closeRecording(box) {
   var btn = box.parentNode.querySelector(".hist-play");
   if (btn) btn.textContent = "▶";
   box.parentNode.removeChild(box);
+  updateHistToolbar();
+}
+// A call's notes were saved (or added to): the History rows holding it, and
+// the open call, know straight away so the Notes button isn't left greyed
+// out until History next reloads.
+function markCallNotes(callId, has) {
+  if (!callId) return;
+  for (var k in callsCache) { var c = callsCache[k]; if (c && (c.call_id === callId || c.rec_call_id === callId)) c.has_notes = has ? 1 : 0; }
+  if (cdCall && cdCall.call_id === callId) cdCall.has_notes = has ? 1 : 0;
   updateHistToolbar();
 }
 function histSelectedCall() { return (selected && selected.type === "call") ? selected.data : null; }
@@ -5914,6 +6151,7 @@ function switchCallDetailTab(tab) {
   var panes = document.querySelectorAll("#view-call-detail .cp-pane");
   for (var j = 0; j < panes.length; j++) panes[j].classList.toggle("hidden", panes[j].id !== "cd-pane-" + tab);
   if (tab === "notes") applyNoteMode("cd");
+  updateBottomMenuHide();
   if (tab === "transcript" && !cdTranscriptLoaded && cdCall) {
     cdTranscriptLoaded = true;
     fillRecordingPlayer(document.getElementById("cd-pane-transcript"), cdCall, false, cdHighlight);
@@ -6042,6 +6280,7 @@ function postCallDetailSave(notesHtml, jotSvg, jotJson) {
   }).then(function(r) { return r.json(); }).then(function(d) {
     if (d.ok) {
       if (cdOpenCallId === callId) cdLoadedNotes = { notes_html: notesHtml, jot_svg: jotSvg, jot_json: jotJson };
+      markCallNotes(callId, !!(notesHtml || jotSvg));
       setCallDetailSaveStatus("Saved ✓");
     } else {
       setCallDetailSaveStatus("Save failed");
