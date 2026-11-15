@@ -50,7 +50,7 @@ class PhoneBridgeInstallation(models.Model):
     provision_log = fields.Text(readonly=True)
 
     # ── Odoo access for the worker ──
-    odoo_url = fields.Char("Odoo URL", default=lambda self: self.env["ir.config_parameter"].sudo().get_param("web.base.url"),
+    odoo_url = fields.Char("Odoo URL", default=lambda self: self.env["ir.config_parameter"].sudo().get_str("web.base.url"),
                            help="Where the worker reaches this Odoo. Must be reachable from the internet.")
     odoo_user_id = fields.Many2one("res.users", "Worker signs in as", default=lambda self: self.env.user,
                                    domain=[("share", "=", False)],
@@ -169,7 +169,7 @@ class PhoneBridgeInstallation(models.Model):
         if not self.odoo_api_key:
             user = self._worker_user()
             vals["odoo_api_key"] = self.env["res.users.apikeys"].with_user(user).sudo()._generate(
-                None, f"Phone Bridge worker ({self.worker_name})", None)
+                "rpc", f"Phone Bridge worker ({self.worker_name})", None)  # Odoo 20 needs a scope
         if vals:
             self.sudo().write(vals)
 
@@ -318,7 +318,11 @@ class PhoneBridgeInstallation(models.Model):
         only sent when send_greeting, as it's the big part."""
         payload = {"enabled": bool(enabled)}
         if send_greeting:
-            payload["greeting"] = greeting.decode() if isinstance(greeting, bytes) else (greeting or None)
+            if isinstance(greeting, bytes):
+                greeting = greeting.decode()
+            elif greeting and hasattr(greeting, "to_base64"):  # Odoo 20 BinaryValue
+                greeting = greeting.to_base64()
+            payload["greeting"] = greeting or None
         if direct is not None:
             payload["direct"] = bool(direct)
         result = self._worker_request("PUT", f"/voicemail/boxes/{box}", payload)

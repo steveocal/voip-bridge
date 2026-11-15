@@ -5,7 +5,7 @@ from odoo.tests import TransactionCase, tagged
 
 from ..models.phone_bridge_installation import PhoneBridgeInstallation
 
-WAV = base64.b64encode(b"RIFF$\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00@\x1f\x00\x00\x80>\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00")
+WAV = base64.b64encode(b"RIFF$\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00@\x1f\x00\x00\x80>\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00").decode()
 
 
 @tagged("post_install", "-at_install")
@@ -46,7 +46,7 @@ class TestVoicemail(TransactionCase):
     def test_greeting_is_sent_only_when_it_changes(self):
         self.sent.clear()
         self.ext.write({"greeting": WAV, "greeting_filename": "hello.wav"})
-        self.assertEqual(self._vm_sent()[-1][2]["greeting"], WAV.decode())
+        self.assertEqual(self._vm_sent()[-1][2]["greeting"], WAV)
         self.sent.clear()
         self.ext.write({"name": "Desk phone"})
         self.assertEqual(self._vm_sent(), [])

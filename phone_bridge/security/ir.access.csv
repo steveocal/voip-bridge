@@ -1,0 +1,12 @@
+id,name,model_id,group_id/id,operation,domain
+access_phone_bridge_call_user,Phone calls: own and unanswered,phone_bridge.call,base.group_user,cru,"['|', ('user_id', '=', user.id), ('user_id', '=', False)]"
+access_phone_bridge_call_admin,Phone calls: administrators see all,phone_bridge.call,base.group_system,crud,
+access_phone_bridge_installation_admin,phone_bridge.installation admin,phone_bridge.installation,base.group_system,cru,
+access_phone_bridge_extension_user,phone_bridge.extension user,phone_bridge.extension,base.group_user,r,
+access_phone_bridge_extension_admin,phone_bridge.extension admin,phone_bridge.extension,base.group_system,crud,
+access_phone_bridge_number_user,phone_bridge.number user,phone_bridge.number,base.group_user,r,
+access_phone_bridge_number_admin,phone_bridge.number admin,phone_bridge.number,base.group_system,crud,
+access_phone_bridge_menu_user,phone_bridge.menu user,phone_bridge.menu,base.group_user,r,
+access_phone_bridge_menu_admin,phone_bridge.menu admin,phone_bridge.menu,base.group_system,crud,
+access_phone_bridge_menu_option_user,phone_bridge.menu.option user,phone_bridge.menu.option,base.group_user,r,
+access_phone_bridge_menu_option_admin,phone_bridge.menu.option admin,phone_bridge.menu.option,base.group_system,crud,

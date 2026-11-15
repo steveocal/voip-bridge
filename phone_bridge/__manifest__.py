@@ -1,6 +1,6 @@
 {
     "name": "Phone Bridge",
-    "version": "19.0.0.13.2",
+    "version": "20.0.0.13.2",
     "category": "Productivity/VoIP",
     "summary": "Phone system for Odoo: softphone, call history, recordings and transcripts, run on your own Cloudflare account",
     "description": """
@@ -13,8 +13,7 @@ widget; Odoo holds the call history and is where you make and take calls.
     "depends": ["base_setup", "mail", "contacts", "resource"],
     "external_dependencies": {"python": ["requests"]},
     "data": [
-        "security/ir.model.access.csv",
-        "security/phone_bridge_rules.xml",
+        "security/ir.access.csv",
         "data/mail_template.xml",
         "views/phone_bridge_call_views.xml",
         "views/res_partner_views.xml",

@@ -152,7 +152,7 @@ class TestMenusAndHours(TransactionCase):
 
     def test_number_menu_and_hours(self):
         menu = self.Menu.create({"name": "Night", "prompt": "We're closed."})
-        cal = self.env["resource.calendar"].create({"name": "Office", "tz": "Europe/London"})
+        cal = self.env["resource.calendar"].create({"name": "Office"})
         with self.assertRaises(ValidationError):
             self.Num.create({"number": "+441283246481", "answer": "menu"})
         num = self.Num.create({"number": "+441283246481", "answer": "menu", "menu_id": menu.id})

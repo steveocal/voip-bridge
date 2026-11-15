@@ -193,6 +193,8 @@ class PhoneBridgeController(http.Controller):
         ], order="date_deadline, id", limit=limit)
         out = []
         for act in acts:
+            if not act.res_model:  # Odoo 20 allows activities without a document
+                continue
             record = request.env[act.res_model].browse(act.res_id).exists()
             if not record:
                 continue
