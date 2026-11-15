@@ -180,3 +180,17 @@ CREATE TABLE IF NOT EXISTS user_google (
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_call_log_user ON call_log(user_id);
+
+-- Every wake-up push and what FCM said (migration 0021).
+CREATE TABLE IF NOT EXISTS push_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at INTEGER NOT NULL,
+  extension TEXT NOT NULL,
+  type TEXT NOT NULL,
+  caller TEXT,
+  devices INTEGER NOT NULL,
+  sent INTEGER NOT NULL,
+  detail TEXT,
+  ms INTEGER
+);
+CREATE INDEX IF NOT EXISTS push_log_at ON push_log (at);

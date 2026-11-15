@@ -48,17 +48,22 @@ async function accessToken(sa: ServiceAccount): Promise<string> {
   return cachedToken.value;
 }
 
-async function sendData(env: Env, token: string, data: Record<string, string>): Promise<"ok" | "gone" | "error"> {
-  const sa = JSON.parse(env.FCM_SERVICE_ACCOUNT) as ServiceAccount;
-  const res = await fetch(`https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${await accessToken(sa)}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ message: { token, data, android: { priority: "HIGH", ttl: "30s" } } }),
-  });
-  if (res.ok) return "ok";
-  const body = await res.text();
-  console.log(`fcm send failed ${res.status}: ${body}`);
-  return res.status === 404 || body.includes("UNREGISTERED") ? "gone" : "error";
+async function sendData(env: Env, token: string, data: Record<string, string>): Promise<{ result: "ok" | "gone" | "error"; detail: string }> {
+  try {
+    const sa = JSON.parse(env.FCM_SERVICE_ACCOUNT) as ServiceAccount;
+    const res = await fetch(`https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${await accessToken(sa)}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ message: { token, data, android: { priority: "HIGH", ttl: "30s" } } }),
+    });
+    if (res.ok) return { result: "ok", detail: "ok" };
+    const body = await res.text();
+    console.log(`fcm send failed ${res.status}: ${body}`);
+    const result = res.status === 404 || body.includes("UNREGISTERED") ? "gone" : "error";
+    return { result, detail: `${result} ${res.status} ${body.replace(/\s+/g, " ").slice(0, 200)}` };
+  } catch (e) {
+    return { result: "error", detail: `error ${String((e as Error).message || e).slice(0, 200)}` };
+  }
 }
 
 // Called by the Android app on launch: { token, extension }, or
@@ -107,6 +112,7 @@ async function callerName(env: Env, number: string): Promise<string> {
 // only do a plain GET/form POST, so query params keep the dialplan simple.)
 // type "incoming_call" (default) rings the device; "call_cancelled" dismisses it.
 export async function handlePushWake(request: Request, env: Env): Promise<Response> {
+  const started = Date.now();
   const q = new URL(request.url).searchParams;
   const secret = request.headers.get("X-Push-Secret") || q.get("secret");
   if (!env.PUSH_SECRET || secret !== env.PUSH_SECRET) {
@@ -123,13 +129,21 @@ export async function handlePushWake(request: Request, env: Env): Promise<Respon
   const rows = await env.DB.prepare("SELECT token FROM push_tokens WHERE extension = ?").bind(extension).all<{ token: string }>();
   const tokens = (rows.results || []).map((r) => r.token);
   let sent = 0;
+  const details: string[] = [];
   for (const t of tokens) {
     // caller is "Name — number" so apps before 1.8 (which show it as-is) get
     // the name too; 1.8+ use name/number and fall back to the phone's own
     // contacts when name is empty.
     const r = await sendData(env, t, { type, caller: name ? `${name} — ${caller}` : caller, name, number: caller });
-    if (r === "ok") sent++;
-    else if (r === "gone") await env.DB.prepare("DELETE FROM push_tokens WHERE token = ?").bind(t).run();
+    details.push(`${t.slice(0, 8)} ${r.detail}`);
+    if (r.result === "ok") sent++;
+    else if (r.result === "gone") await env.DB.prepare("DELETE FROM push_tokens WHERE token = ?").bind(t).run();
   }
+  // push_log (migration 0021): best effort, never holds up the ring on failure.
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO push_log (at, extension, type, caller, devices, sent, detail, ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)")
+      .bind(started, extension, type, caller, tokens.length, sent, details.join("; ") || "no devices registered", Date.now() - started),
+    env.DB.prepare("DELETE FROM push_log WHERE at < ?1").bind(started - 60 * 86400_000),
+  ]).catch(e => console.error("push_log:", e));
   return Response.json({ ok: true, devices: tokens.length, sent });
 }

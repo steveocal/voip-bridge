@@ -163,7 +163,7 @@ async function handleClick2Call(request: Request, _env: Env): Promise<Response> 
 
   try {
     // Call VPS AMI bridge — uses proper AMI Originate with post-answer routing
-    const res = await fetch("http://64.176.181.195.nip.io/click2call-ami", {
+    const res = await fetch("http://64.176.184.11.nip.io/click2call-ami", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ destination, callerId }),

@@ -949,7 +949,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
             <option value="tls">TLS</option>
           </select>
         </div>
-        <div class="set-field"><label>Domain</label><input id="acc-domain" type="text" placeholder="64.176.181.195" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+        <div class="set-field"><label>Domain</label><input id="acc-domain" type="text" placeholder="64.176.184.11" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
       </div>
     </div>
 
@@ -1165,8 +1165,8 @@ defParam(G_CALL, "reconnectMaxMs", "Reconnect max retry", 60000, { unit: "ms", m
 defParam(G_CALL, "reconnectCheckMs", "Connection check interval", 30000, { unit: "ms", min: 5000, max: 600000, step: 1000, note: "How often to check the softphone is still registered (change applies after reload)" });
 defParam(G_CALL, "regTimeoutMs", "SIP registration timeout", 8000, { unit: "ms", min: 1000, max: 120000, step: 500, note: "Give up if the server never answers REGISTER" }, function(v) { REG_TIMEOUT_MS = v; });
 defParam(G_CALL, "sipLoadTimeoutMs", "SIP.js load timeout", 15000, { unit: "ms", min: 1000, max: 120000, step: 1000 });
-defParam(G_CALL, "defaultWs", "Default SIP WebSocket", "wss://64.176.181.195.nip.io/ws", { note: "Used for new accounts and a blank Proxy field" }, function(v) { DEFAULT_WS = v; });
-defParam(G_CALL, "defaultDomain", "Default SIP domain", "64.176.181.195", { note: "Used when an account has no domain" });
+defParam(G_CALL, "defaultWs", "Default SIP WebSocket", "wss://64.176.184.11.nip.io/ws", { note: "Used for new accounts and a blank Proxy field" }, function(v) { DEFAULT_WS = v; });
+defParam(G_CALL, "defaultDomain", "Default SIP domain", "64.176.184.11", { note: "Used when an account has no domain" });
 defParam(G_CALL, "autoAnswerWindowMs", "Answer-tap window", 30000, { unit: "ms", min: 1000, max: 300000, step: 1000, note: "After tapping the call notification, a call arriving within this time auto-answers" });
 defParam(G_CALL, "autoAnswerDelayMs", "Auto-answer delay", 400, { unit: "ms", min: 0, max: 5000, step: 50, note: "Pause between the call ringing in and answering it" });
 defParam(G_CALL, "ringIntervalMs", "Incoming ring repeat", 3000, { unit: "ms", min: 1000, max: 15000, step: 250 });
@@ -1243,8 +1243,17 @@ defParam(J_BOX, "jotHitPad", "Touch tolerance (erase)", 10, { unit: "px", min: 0
 defParam(J_BOX, "jotViewportMinW", "Canvas minimum width", 280, { unit: "px", min: 100, max: 2000, step: 10 });
 defParam(J_BOX, "jotViewportMinH", "Canvas minimum height", 200, { unit: "px", min: 100, max: 2000, step: 10 });
 
+// Asterisk moved from the old VPS to the odoo20 server (Nov 2026): SIP
+// accounts and parameter overrides saved on a device with the old address
+// are moved to the new one when they're loaded, and saved back.
+var OLD_PBX_HOST = "64.176.181.195", PBX_HOST = "64.176.184.11";
+function movePbxHost(v) { return typeof v === "string" ? v.split(OLD_PBX_HOST).join(PBX_HOST) : v; }
 function paramOverrides() {
-  try { var o = JSON.parse(localStorage.getItem("vb_params") || "{}"); return (o && typeof o === "object") ? o : {}; } catch (e) { return {}; }
+  try {
+    var raw = localStorage.getItem("vb_params") || "{}";
+    if (raw.indexOf(OLD_PBX_HOST) >= 0) { raw = movePbxHost(raw); localStorage.setItem("vb_params", raw); }
+    var o = JSON.parse(raw); return (o && typeof o === "object") ? o : {};
+  } catch (e) { return {}; }
 }
 function saveParamOverrides(o) { try { localStorage.setItem("vb_params", JSON.stringify(o)); } catch (e) {} }
 function hasOverride(o, id) { return Object.prototype.hasOwnProperty.call(o, id); }
@@ -1396,7 +1405,7 @@ document.getElementById("params-table").addEventListener("click", function(e) {
   var b = e.target.closest(".p-reset");
   if (b) resetParam(b.getAttribute("data-id"));
 });
-var DEFAULT_WS = "wss://64.176.181.195.nip.io/ws";
+var DEFAULT_WS = "wss://64.176.184.11.nip.io/ws";
 var settings = loadSettings();
 var accounts = loadAccounts();
 var activeAccountId = localStorage.getItem("vb_activeAccount") || "";
@@ -1435,7 +1444,7 @@ var OUTBOUND_CLI = "+44 7520 658657";
 function defaultCallerId(ext) { return String(ext) === "201" ? "+44 1283 246491" : OUTBOUND_CLI; }
 function defaultAccounts() {
   return [
-    { id: "asterisk", name: "Asterisk (WebPhone 201)", username: "201", password: "webphone201", server: DEFAULT_WS, transport: "wss", domain: "64.176.181.195", callerId: defaultCallerId("201") }
+    { id: "asterisk", name: "Asterisk (WebPhone 201)", username: "201", password: "webphone201", server: DEFAULT_WS, transport: "wss", domain: "64.176.184.11", callerId: defaultCallerId("201") }
   ];
 }
 function loadAccounts() {
@@ -1444,6 +1453,11 @@ function loadAccounts() {
     if (raw) {
       var a = JSON.parse(raw);
       if (Array.isArray(a) && a.length) {
+        // Accounts saved for the old PBX address point at the new one.
+        if (raw.indexOf(OLD_PBX_HOST) >= 0) {
+          a.forEach(function(x) { x.server = movePbxHost(x.server); x.domain = movePbxHost(x.domain); });
+          try { localStorage.setItem("vb_accounts", JSON.stringify(a)); } catch (e) {}
+        }
         // Accounts saved before the switch still carry the Twilio number.
         a.forEach(function(x) { if (!x.callerId || x.callerId.replace(/ /g, "") === "+447898117226") x.callerId = defaultCallerId(x.username); });
         return a;
