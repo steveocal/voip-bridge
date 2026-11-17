@@ -33,7 +33,16 @@ umask 027   # the file holds SIP passwords
 # The voip.ms trunk's registration (Registered, Unregistered, Rejected, …)
 # goes along with the request: the worker shows a warning in the dashboard
 # when it isn't Registered, or when these calls stop (GET /pbx/health).
+# With IP authentication (no registration section) the trunk counts as
+# Registered while voip.ms answers our OPTIONS qualify (contact Avail), and
+# Unreachable when it doesn't.
 trunk=$($AST "pjsip show registration voipms" 2>/dev/null | grep -o -m1 -E 'Registered|Unregistered|Rejected|Stopped|Failed' | head -n1)
+if [ -z "$trunk" ]; then
+  case "$($AST "pjsip show aor voipms" 2>/dev/null | grep -m1 -E '^ *Contact: +voipms/')" in
+    *" Avail "*) trunk=Registered ;;
+    *" Unavail "*) trunk=Unreachable ;;
+  esac
+fi
 cfg=$(curl -sf --max-time 15 -G -H "X-Pbx-Secret: $PBX_SECRET" --data-urlencode "trunk=${trunk:-unknown}" "$WORKER/pbx/sync") || exit 1
 case "$cfg" in "version 1"*) ;; *) exit 1 ;; esac
 

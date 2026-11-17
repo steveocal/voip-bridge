@@ -22,7 +22,7 @@ new_sqlite_classes = ["CallState"]
 [vars]
 ODOO_URL = "https://www.infraredheaterpanels.co.uk"
 ODOO_DB = "www.infraredheaterpanels.co.uk"
-ASTERISK_URL = "http://64.176.184.11.nip.io:8088"
+ASTERISK_URL = "https://64.176.184.11.nip.io"
 
 [[d1_databases]]
 binding = "DB"
