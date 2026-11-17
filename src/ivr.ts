@@ -29,7 +29,17 @@ export interface Menu {
   ringPrompt?: string;
 }
 interface Hours { tz: string; open: string[]; shut: string[] }
-interface NumberIvr { number: string; answer: "ring" | "menu"; menu: number | null; hours: Hours | null; closed: Action; closedPrompt: string | null; voice: string }
+/** A number's call queue (phone_bridge 0.14): callers wait with hold music
+ *  and their place in line while the extensions ring, instead of going to
+ *  voicemail after Ring For. */
+export interface Queue {
+  strategy: "ringall" | "rrmemory" | "leastrecent";
+  maxWait: number;        // seconds, then the number's "When Nobody Answers"
+  position: boolean;      // tell callers their place in the queue
+  options: boolean;       // 1 = leave a message, 2 = call me back
+  message: string;        // spoken every so often while they wait
+}
+interface NumberIvr { number: string; answer: "ring" | "menu"; menu: number | null; hours: Hours | null; closed: Action; closedPrompt: string | null; voice: string; queue?: Queue | null }
 export interface Ivr { numbers: NumberIvr[]; menus: Menu[] }
 
 const str = (v: unknown) => (typeof v === "string" ? v : null);
@@ -67,6 +77,17 @@ export async function storedMenu(env: Env, menuId: number): Promise<Menu | null>
   if (!raw) return null;
   try { return (JSON.parse(raw) as Ivr).menus.find((m) => m.id === menuId) ?? null; } catch { return null; }
 }
+
+// ── Call queues: what callers hear while they wait ──
+const QUEUE_STRATEGIES = new Set(["ringall", "rrmemory", "leastrecent"]);
+/** Said every so often in the queue: the number's own Queue Message, or this. */
+export function queueText(q: Queue): string {
+  if (q.message) return q.message;
+  const hold = "Thank you for holding. We'll be with you as soon as we can.";
+  return q.options ? `${hold} To leave a message, press 1. Or press 2, and we'll call you back.` : hold;
+}
+/** Said after a caller presses 2 for a callback. */
+export const QUEUE_THANKS = "Thank you. We'll call you back as soon as we can on the number you're calling from. Goodbye.";
 
 // A "while ringing" prompt is stored with voice "<voice>:ring": its WAV is the
 // speech followed by RING_SECS of UK ringing tone, played on a loop by the
@@ -164,6 +185,23 @@ export async function syncIvr(env: Env, uid: number, numberOfExt: Map<number, st
     console.warn("Odoo phone menus / hours not read; left as they were:", String(nr.fault || mr.fault || or.fault).slice(-300));
     return null;
   }
+  // Queues (phone_bridge 0.14), read on their own: an older addon without
+  // them just has none.
+  const qr = await sr("phone_bridge.number", [], ["number", "queue_calls", "queue_strategy", "queue_max_wait", "queue_announce_position", "queue_options", "queue_message"]);
+  if (qr.fault) console.warn("Odoo phone numbers: no queue fields (phone_bridge before 0.14), so no queues:", String(qr.fault).slice(-200));
+  const queues = new Map<string, Queue>();
+  for (const q of qr.fault ? [] : (qr.parsed ?? []) as Rec[]) {
+    const num = digits(q.number);
+    if (!num || q.queue_calls !== true) continue;
+    const strategy = str(q.queue_strategy) ?? "ringall";
+    queues.set(num, {
+      strategy: (QUEUE_STRATEGIES.has(strategy) ? strategy : "ringall") as Queue["strategy"],
+      maxWait: int(q.queue_max_wait, 30, 3600, 300),
+      position: q.queue_announce_position !== false,
+      options: q.queue_options !== false,
+      message: clean(q.queue_message, 500),
+    });
+  }
   const exts = (v: unknown) => (Array.isArray(v) ? v as number[] : []).map((i) => numberOfExt.get(i)).filter((x): x is string => !!x).sort();
   const nums = (nr.parsed ?? []) as Rec[];
   const calIds = [...new Set(nums.map((n) => id(n.calendar_id)).filter((x): x is number => !!x))];
@@ -221,6 +259,7 @@ export async function syncIvr(env: Env, uid: number, numberOfExt: Map<number, st
       closed: action(n.closed_action, n.closed_number, n.closed_menu_id, [], 0),
       closedPrompt: cal ? (str(n.closed_message) ?? "").trim().slice(0, 1000) || null : null,
       voice: voice(n.voice),
+      queue: queues.get(num) ?? null,
     });
   }
   const ivr: Ivr = { numbers, menus };
@@ -232,6 +271,12 @@ export async function syncIvr(env: Env, uid: number, numberOfExt: Map<number, st
     if (m.ringPrompt) prompts.set(await promptHash(ringVoice(m.voice), m.ringPrompt), [ringVoice(m.voice), m.ringPrompt]);
   }
   for (const n of numbers) if (n.closedPrompt) prompts.set(await promptHash(n.voice, n.closedPrompt), [n.voice, n.closedPrompt]);
+  for (const n of numbers) {
+    if (!n.queue) continue;
+    const t = queueText(n.queue);
+    prompts.set(await promptHash(n.voice, t), [n.voice, t]);
+    if (n.queue.options) prompts.set(await promptHash(n.voice, QUEUE_THANKS), [n.voice, QUEUE_THANKS]);
+  }
   const now = Date.now();
   const stmts = [
     env.DB.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('pbx_ivr', ?1, ?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at")
@@ -249,7 +294,10 @@ export async function syncIvr(env: Env, uid: number, numberOfExt: Map<number, st
  *    hours <our number> <time zone> <open|shut> <IFTIME spec>
  *    menu <id> <prompt|-> <key timeout> <retries> <direct dial 0|1> <spoken 0|1> <sorry prompt|-> <while ringing prompt|->
  *    key <menu id> <0-9, s (*), h (#), t (no key)> <action> <spoken confirmation prompt|->
+ *    queue <our number> <ringall|rrmemory|leastrecent> <ring secs> <max wait> <position 0|1> <options 0|1> <message prompt> <thanks prompt|-> <legs|->
  *    prompt <hash>
+ *  A queue line replaces the route's ringing (same legs and ring time, each
+ *  ring attempt) for a number that answers by ringing.
  *  Actions: vm, hangup, repeat, fwd<number>, menu<id>, ring<secs>:<legs|->,
  *  owner<secs>:<all|each>:<team legs|-> (keys only: the caller's salesperson,
  *  found by GET /pbx/owner at call time, then the team)
@@ -257,7 +305,7 @@ export async function syncIvr(env: Env, uid: number, numberOfExt: Map<number, st
  *  with no open hours is always open. legsOf turns extensions into legs
  *  (📼, forwarding and the app as for a route). Only numbers with a route
  *  line (routed) get one: [pb-route] reads the route first. */
-export async function ivrSyncLines(env: Env, routed: Set<string>, legsOf: (exts: string[]) => string[]): Promise<string[]> {
+export async function ivrSyncLines(env: Env, routed: Map<string, { secs: number; legs: string[] }>, legsOf: (exts: string[]) => string[]): Promise<string[]> {
   const raw = (await env.DB.prepare("SELECT value FROM settings WHERE key = 'pbx_ivr'").first<{ value: string }>())?.value;
   if (!raw) return [];
   let ivr: Ivr;
@@ -285,6 +333,16 @@ export async function ivrSyncLines(env: Env, routed: Set<string>, legsOf: (exts:
       for (const s of n.hours.open) lines.push(`hours ${n.number} ${n.hours.tz} open ${s}`);
       for (const s of n.hours.shut) lines.push(`hours ${n.number} ${n.hours.tz} shut ${s}`);
     }
+  }
+  for (const n of ivr.numbers) {
+    const route = routed.get(n.number);
+    if (!route || !n.queue || n.answer !== "ring") continue;
+    const q = n.queue;
+    const msg = await promptHash(n.voice, queueText(q));
+    prompts.add(msg);
+    let thanks = "-";
+    if (q.options) { thanks = await promptHash(n.voice, QUEUE_THANKS); prompts.add(thanks); }
+    lines.push(`queue ${n.number} ${q.strategy} ${route.secs} ${q.maxWait} ${q.position ? 1 : 0} ${q.options ? 1 : 0} ${msg} ${thanks} ${route.legs.join(",") || "-"}`);
   }
   const KEY: Record<string, string> = { "*": "s", "#": "h" };
   for (const m of ivr.menus) {

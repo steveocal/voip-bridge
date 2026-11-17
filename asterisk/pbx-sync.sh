@@ -10,6 +10,8 @@
 #   fwd <extension> <always|busy|noanswer|busynoanswer|vm> <ring seconds> <number|->
 #   route <our number> <ring seconds> <record 0|1> <vm|hangup|fwd<number>> <legs|->
 #   when / hours / menu / key / prompt: menus and opening hours (below)
+#   queue <our number> <strategy> <ring secs> <max wait> <position 0|1> <options 0|1> <prompt> <thanks|-> <legs|->
+#   block <last 9 digits> / blockwithheld: blocked callers (below)
 # Each extension becomes an endpoint, auth and aor in $OUT, on the templates
 # in pjsip-phone-bridge.conf. An extension that is already defined by hand in
 # another pjsip*.conf is skipped (and logged), so hand-made ones can be moved
@@ -219,9 +221,14 @@ MOH=${MOH:-/var/spool/asterisk/phone-bridge-moh}
 MOHCONF="$ETC/musiconhold-phone-bridge.conf"
 mkdir -p "$MOH"
 rings=$(echo "$ivr" | awk '$1 == "ring" { print $2 }' | sort -u)
+# Hold music for the queues: class pbhold, from $HOLD when it has any WAV
+# files (vps-setup-queue-block.sh puts Asterisk's own CC-BY-SA music there).
+HOLD=${HOLD:-/var/spool/asterisk/phone-bridge-hold}
+hold=""; for f in "$HOLD"/*.wav; do [ -s "$f" ] && hold=pbhold && break; done
 tmp="$MOHCONF.tmp.$$"
 {
   echo "; Written by pbx-sync.sh from the phone menus in Odoo. Don't edit: the next sync overwrites it."
+  [ -n "$hold" ] && printf '\n[pbhold]\nmode = files\ndirectory = %s\nsort = random\n' "$HOLD"
   for h in $rings; do
     [ -s "$PROMPTS/$h.wav" ] || continue
     mkdir -p "$MOH/$h"
@@ -236,6 +243,59 @@ for d in "$MOH"/*/; do
   h=$(basename "$d")
   echo "$rings" | grep -q -x -F "$h" || rm -rf "$d"
 done
+
+# Call queues (src/ivr.ts queue lines): a number set to "Queue Callers" in
+# Odoo becomes queue pbq-<number> in $QCONF (#included from queues.conf by
+# vps-setup-queue-block.sh), its legs the members, and astdb
+#   pbqueue/<our number> = <max wait>|<options 0|1>|<message prompt>|<thanks prompt|->
+# which [pb-route] checks before it rings. Members: e<ext> → PJSIP/<ext>,
+# a<ext> → the app, woken first, m<delay>x<number> → a mobile (no head start
+# when the queue rings one phone at a time). app_queue is reloaded only when
+# the file changed, and before the astdb keys point calls at a new queue.
+QCONF="$ETC/queues-phone-bridge.conf"
+queues=$(echo "$cfg" | awk '
+  function phone(n) { return n ~ /^[1-9][0-9]*$/ && length(n) >= 7 && length(n) <= 15 }
+  function hash(h) { return h ~ /^[0-9a-f]+$/ && length(h) == 16 }
+  $1 == "queue" && phone($2) && ($3 == "ringall" || $3 == "rrmemory" || $3 == "leastrecent") &&
+  $4 ~ /^[0-9]+$/ && $4 >= 5 && $4 <= 300 && $5 ~ /^[0-9]+$/ && $5 >= 30 && $5 <= 3600 &&
+  ($6 == "0" || $6 == "1") && ($7 == "0" || $7 == "1") && hash($8) && ($9 == "-" || hash($9)) {
+    print $2, $3, $4, $5, $6, $7, $8, $9, ($10 == "" ? "-" : $10)
+  }')
+tmp="$QCONF.tmp.$$"
+{
+  echo "; Written by pbx-sync.sh from the phone numbers in Odoo. Don't edit: the next sync overwrites it."
+  echo "$queues" | while read -r num strat ring wait pos opts msg thanks legs; do
+    [ -n "$num" ] || continue
+    printf '\n[pbq-%s]\nstrategy = %s\ntimeout = %s\nretry = 2\nwrapuptime = 5\nringinuse = no\nautofill = yes\n' "$num" "$strat" "$ring"
+    printf 'joinempty = unavailable,invalid\nleavewhenempty = unavailable,invalid\nsetinterfacevar = yes\nsetqueueentryvar = yes\n'
+    [ -n "$hold" ] && echo "musicclass = $hold"
+    if [ "$pos" = 1 ]; then printf 'announce-position = yes\nannounce-holdtime = no\nannounce-frequency = 60\nmin-announce-frequency = 30\n'
+    else printf 'announce-position = no\nannounce-frequency = 0\n'; fi
+    [ -s "$PROMPTS/$msg.wav" ] && printf 'periodic-announce = %s/%s\nperiodic-announce-frequency = 45\nperiodic-announce-startdelay = 20\n' "$PROMPTS" "$msg"
+    [ "$opts" = 1 ] && echo "context = pb-queue-exit"
+    echo "$legs" | awk -v strat="$strat" '{
+      n = split($0, legs, ",")
+      for (i = 1; i <= n; i++) {
+        t = substr(legs[i], 1, 1); v = substr(legs[i], 2)
+        if (t == "e" && v ~ /^[0-9]+$/) print "member => PJSIP/" v ",0," v ",PJSIP/" v
+        else if (t == "a" && v ~ /^[0-9]+$/) print "member => Local/" v "@pb-ring-app/n,0," v
+        else if (t == "m" && split(v, mv, "x") == 2 && mv[1] ~ /^[0-9]+$/ && mv[2] ~ /^[0-9]+$/)
+          print "member => Local/" (strat == "ringall" ? mv[1] : 0) "x" mv[2] "@pb-ring-mobile/n,0,mobile " substr(mv[2], length(mv[2]) - 3)
+      }
+    }'
+  done
+} > "$tmp" || { rm -f "$tmp"; exit 1; }
+if cmp -s "$tmp" "$QCONF"; then rm -f "$tmp"
+else mv "$tmp" "$QCONF"; chmod 644 "$QCONF"; $AST "module reload app_queue.so" >/dev/null; fi
+sync_family pbqueue "$(echo "$queues" | awk 'NF { print $1, $4 "|" $6 "|" $7 "|" $8 }')"
+
+# Blocked callers (src/blocked.ts): astdb pbblock/<last 9 digits of their
+# number> = 1, and pbx/block_withheld = 1 to reject withheld numbers too.
+# [pb-route] rejects them before anything rings.
+blocks=$(echo "$cfg" | awk '$1 == "block" && $2 ~ /^[0-9]+$/ && length($2) >= 7 && length($2) <= 9 { print $2, 1 }')
+sync_family pbblock "$blocks"
+if echo "$cfg" | grep -q -x 'blockwithheld'; then $AST "database put pbx block_withheld 1" >/dev/null
+else $AST "database del pbx block_withheld" >/dev/null 2>&1; fi
 
 # Only report what was applied, so the worker can tell it's in step.
 applied=$(printf '%s\n' "$cfg" | sha256sum | cut -d' ' -f1)

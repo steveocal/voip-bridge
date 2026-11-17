@@ -186,6 +186,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .set-note{font-size:12px;color:#9ca3af;margin:6px 0 2px}
 .set-note.err{color:#f87171}
 .set-google{display:flex;align-items:center;gap:8px;margin:4px 0}
+.set-tabs{display:flex;gap:4px;margin:0 0 12px;overflow-x:auto;scrollbar-width:none}
+.set-tabs button{flex:1 0 auto;padding:7px 10px;border:0;border-radius:8px;background:#222;color:#999;font-size:13px;white-space:nowrap}
+.set-tabs button.active{background:#1e3a5f;color:#ececec}
+.set-pane > .loc-box:first-child{border-top:0;margin-top:0;padding-top:0}
 .set-google .set-note{flex:1;margin:0}
 .set-google .acc-mini{width:auto;height:30px;padding:0 10px;font-size:13px}
 .contact-row .mini-call{width:38px;height:38px;border-radius:50%;border:none;background:#10b981;color:#fff;font-size:16px;cursor:pointer;flex-shrink:0}
@@ -296,6 +300,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .loc-box button{padding:6px 10px;border-radius:6px;border:1px solid #444;background:#2a2a2a;color:inherit;font-size:13px}
 .loc-box .loc-status{font-size:12px;color:#999;line-height:1.5}
 .loc-box .loc-warn{color:#e0a030}
+.blk-list{max-height:180px;overflow-y:auto;margin-bottom:6px}
+.blk-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #222;font-size:13px}
+.blk-row .blk-who{flex:1;min-width:0}
+.blk-row .blk-sub{display:block;font-size:11px;color:#888;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .switch{position:relative;width:48px;height:28px;flex-shrink:0}
 .switch input{opacity:0;width:0;height:0}
 .switch .track{position:absolute;inset:0;background:#444;border-radius:28px;cursor:pointer;transition:background .15s}
@@ -662,6 +670,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
         <button data-action="contact" onclick="histAction('contact')" title="Contact">👤 Contact</button>
         <button data-action="notes" onclick="histCallAction('notes')" title="Notes">📝 Notes</button>
         <button data-action="transcript" onclick="histCallAction('transcript')" title="Transcript">💬</button>
+        <button data-action="block" onclick="histAction('block')" title="Block this number: its calls are rejected">🚫</button>
       </div>
       <div class="dial-scroll" id="history-list"><div class="empty">Loading…</div></div>
       <div class="dial-scroll suggestions hidden" id="dial-suggestions"></div>
@@ -923,6 +932,15 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 <div class="modal hidden" id="settings-modal">
   <div class="modal-card compact">
     <div class="modal-head"><span>⚙️ Settings</span><button onclick="cancelSettings()" aria-label="Cancel">✕</button></div>
+    <div class="set-tabs" id="set-tabs" role="tablist">
+      <button data-tab="account" onclick="setSettingsTab('account')">Account</button>
+      <button data-tab="calls" onclick="setSettingsTab('calls')">Calls</button>
+      <button data-tab="blocked" onclick="setSettingsTab('blocked')">Blocked</button>
+      <button data-tab="device" onclick="setSettingsTab('device')">Device</button>
+      <button data-tab="text" onclick="setSettingsTab('text')">Quick text</button>
+    </div>
+
+    <div class="set-pane" data-pane="account">
 
     <div class="acc-row">
       <select id="set-account" class="acc-select" onchange="onAccountSelect()"></select>
@@ -958,6 +976,9 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       <label class="switch"><input type="checkbox" id="set-dev"><span class="track"></span></label>
     </div>
 
+    </div>
+
+    <div class="set-pane" data-pane="device">
     <div class="loc-box hidden" id="loc-box">
       <div class="loc-title">📍 Location tracking</div>
       <div id="loc-signed-out">
@@ -978,11 +999,6 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       <div class="loc-status" id="loc-status"></div>
     </div>
 
-    <div class="switch-row hidden" id="sim-auto-row">
-      <span>Phone contacts call from the SIM</span>
-      <label class="switch"><input type="checkbox" id="set-sim-auto" onchange="setSimAuto(this.checked)"><span class="track"></span></label>
-    </div>
-
     <div id="sink-box" class="hidden">
       <div class="set-field">
         <label>Ringing plays on</label>
@@ -994,14 +1010,44 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       </div>
     </div>
 
+    </div>
+
+    <div class="set-pane" data-pane="blocked">
+    <div class="loc-box" id="blk-box">
+      <div class="loc-title">🚫 Blocked numbers</div>
+      <div class="set-note" style="margin:0 0 6px">Calls from these numbers are rejected before any phone rings, and never reach History or Odoo.</div>
+      <div class="blk-list" id="blk-list"><div class="set-note">Loading…</div></div>
+      <div class="loc-row">
+        <input id="blk-number" type="tel" placeholder="Number to block" autocomplete="off">
+        <input id="blk-label" type="text" placeholder="Why (optional)" autocomplete="off">
+        <button onclick="addBlockedFromSettings()">Block</button>
+      </div>
+      <div class="switch-row" style="margin-bottom:4px">
+        <span style="font-size:13px">Block withheld numbers <span id="blk-withheld-hits" class="set-note"></span></span>
+        <label class="switch"><input type="checkbox" id="blk-withheld" onchange="setBlockWithheld(this.checked)"><span class="track"></span></label>
+      </div>
+    </div>
+
+    </div>
+
+    <div class="set-pane" data-pane="calls">
     <div class="set-field">
       <label>My mobile — during a call, Mobile moves the caller here; otherwise the mobile button rings it, then calls the number</label>
       <input id="set-mobile" type="tel" placeholder="+66…" autocomplete="off">
     </div>
 
+    <div class="switch-row hidden" id="sim-auto-row">
+      <span>Phone contacts call from the SIM</span>
+      <label class="switch"><input type="checkbox" id="set-sim-auto" onchange="setSimAuto(this.checked)"><span class="track"></span></label>
+    </div>
+    </div>
+
+    <div class="set-pane" data-pane="text">
     <div class="set-field">
       <label>Quick Text — one per line: #nn **text** (e.g. #1 **Order received**)</label>
       <textarea id="set-quicktext" placeholder="#1 **Order received**&#10;#2 **Call back later**"></textarea>
+    </div>
+
     </div>
 
     <div class="set-actions">
@@ -5749,7 +5795,7 @@ function renderHistoryRow(c) {
     : c.has_recording ? '<button class="h-ic h-tx dim" title="Transcribe">💬</button>' : '<span class="h-ic"></span>';
   return '<div class="hist-row" data-key="' + esc(key) + '">'
     + '<div class="hist-main">' + dirIcon(dir, missed) + '<span class="h-time">' + when + '</span>'
-    + '<span class="who">' + esc(name || num) + (c.did === "SIM" ? ' <span class="h-sim" title="Called from the SIM">📱</span>' : '') + (c.voicemail ? ' <span title="Voicemail">📼</span>' : '') + '</span>'
+    + '<span class="who">' + esc(name || num) + (c.did === "SIM" ? ' <span class="h-sim" title="Called from the SIM">📱</span>' : '') + (c.voicemail ? ' <span title="Voicemail">📼</span>' : '') + (c.callback ? ' <span title="Asked to be called back (pressed 2 in the queue)">↩️</span>' : '') + '</span>'
     + tx + '</div>'
     + (c.match ? '<div class="hist-match">' + markMatch(c.match, historyQuery()) + '</div>' : '')
     + '</div>';
@@ -5925,7 +5971,7 @@ function updateHistToolbar() {
   if (!row) return;
   var tx = bar.querySelector('[data-action="transcript"]');
   tx.innerHTML = c.has_transcript || !c.has_recording ? "💬 Transcript" : "💬 Transcribe";
-  var ok = { email: !!c.partner_email, details: true, contact: !!c.partner_id, notes: !!c.has_notes, transcript: !!(c.has_transcript || c.has_recording) };
+  var ok = { email: !!c.partner_email, details: true, contact: !!c.partner_id, notes: !!c.has_notes, transcript: !!(c.has_transcript || c.has_recording), block: c.direction !== "outgoing" && blockableNumber(c.phone_number) };
   var cb = bar.querySelectorAll("button");
   for (var j = 0; j < cb.length; j++) cb[j].disabled = !ok[cb[j].getAttribute("data-action")];
 }
@@ -5946,6 +5992,57 @@ function histAction(action) {
   if (action === "email") openCompose(c.partner_email, "", "");
   else if (action === "details") openCallDetailView(c);
   else if (action === "contact") openContactById(c.partner_id);
+  else if (action === "block") confirmBlock(c);
+}
+
+// ── Blocked numbers (src/blocked.ts) ─────────────────────────
+// A call's 🚫 asks once (a toast with a Block button, no dialog), then the
+// worker adds the number and the PBX rejects its calls within a minute.
+// Settings lists them with how many calls were rejected since.
+function blockableNumber(n) { return String(n || "").replace(/[^0-9]/g, "").length >= 7; }
+function confirmBlock(c) {
+  var who = (c.partner_name || "").trim() || c.phone_number;
+  showToast("Block " + who + "? Their calls will be rejected.", { label: "Block", run: function() { blockNumber(c.phone_number, (c.partner_name || "").trim()); } }, 8000);
+}
+function blockNumber(number, label, done) {
+  fetch(API + "/blocked", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ number: number, label: label || "" }) })
+    .then(function(r) { return r.json().then(function(d) { if (!r.ok) throw new Error(d.error || ("HTTP " + r.status)); return d; }); })
+    .then(function(d) {
+      showToast("🚫 Blocked " + number, { label: "Undo", run: function() { unblockNumber(d.key); } });
+      if (done) done();
+    })
+    .catch(function(e) { showToast("❌ Couldn't block: " + e.message); });
+}
+function unblockNumber(key, done) {
+  fetch(API + "/blocked/" + encodeURIComponent(key), { method: "DELETE" })
+    .then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); showToast("Unblocked"); if (done) done(); })
+    .catch(function(e) { showToast("❌ Couldn't unblock: " + e.message); });
+}
+function loadBlocked() {
+  var list = document.getElementById("blk-list");
+  fetch(API + "/blocked").then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(function(d) {
+    var h = "";
+    for (var i = 0; i < d.numbers.length; i++) {
+      var b = d.numbers[i];
+      var sub = (b.label ? b.label + " · " : "") + (b.user_name ? "by " + b.user_name + " · " : "") + new Date(b.created_at).toLocaleDateString()
+        + (b.hits ? " · " + b.hits + " rejected, last " + fmtTime(b.last_at) : "");
+      h += '<div class="blk-row"><span class="blk-who">' + esc(b.number) + '<span class="blk-sub">' + esc(sub) + '</span></span>'
+        + '<button class="acc-mini del" onclick="unblockNumber(' + "'" + esc(b.key) + "'" + ', loadBlocked)" title="Unblock">✕</button></div>';
+    }
+    list.innerHTML = h || '<div class="set-note">None yet. Select a call in History and tap 🚫 to block its number.</div>';
+    document.getElementById("blk-withheld").checked = !!d.withheld;
+    document.getElementById("blk-withheld-hits").textContent = d.withheld_hits ? "(" + d.withheld_hits + " rejected)" : "";
+  }).catch(function() { list.innerHTML = '<div class="set-note err">Could not load the list.</div>'; });
+}
+function addBlockedFromSettings() {
+  var n = document.getElementById("blk-number"), l = document.getElementById("blk-label");
+  if (!blockableNumber(n.value)) { showToast("Enter a number with at least 7 digits"); return; }
+  blockNumber(n.value.trim(), l.value.trim(), function() { n.value = ""; l.value = ""; loadBlocked(); });
+}
+function setBlockWithheld(on) {
+  fetch(API + "/blocked/withheld", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ on: on }) })
+    .then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); showToast(on ? "🚫 Withheld numbers blocked" : "Withheld numbers allowed"); })
+    .catch(function(e) { showToast("❌ Couldn't save: " + e.message); document.getElementById("blk-withheld").checked = !on; });
 }
 function openContactById(id) {
   if (!id) return;
@@ -7239,7 +7336,25 @@ function openSettings() {
   renderStaffLocation();
   renderSessionState();
   loadGoogleState();
+  loadBlocked();
+  // Device only has something to show in the Android app (location) or a
+  // browser that can pick audio outputs.
+  var devTab = document.querySelector('#set-tabs [data-tab="device"]');
+  devTab.classList.toggle("hidden", document.getElementById("loc-box").classList.contains("hidden") && document.getElementById("sink-box").classList.contains("hidden"));
+  var tab = "account";
+  try { tab = localStorage.getItem("vb_settings_tab") || "account"; } catch (e) {}
+  setSettingsTab(tab);
   document.getElementById("settings-modal").classList.remove("hidden");
+}
+
+// Settings is split into tabs (Account, Calls, Blocked, Device, Quick text);
+// the last one used opens next time.
+function setSettingsTab(tab) {
+  var btn = document.querySelector('#set-tabs [data-tab="' + tab + '"]');
+  if (!btn || btn.classList.contains("hidden")) tab = "account";
+  document.querySelectorAll("#set-tabs button").forEach(function(b) { b.classList.toggle("active", b.getAttribute("data-tab") === tab); });
+  document.querySelectorAll("#settings-modal .set-pane").forEach(function(p) { p.classList.toggle("hidden", p.getAttribute("data-pane") !== tab); });
+  try { localStorage.setItem("vb_settings_tab", tab); } catch (e) {}
 }
 
 // ── Staff location tracking (Android app only) ─────────────────

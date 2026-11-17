@@ -2,6 +2,7 @@ import type { Env } from "./types";
 import { ariPing, ariSyncExtensions } from "./asterisk";
 import { same, syncExtensions } from "./users";
 import { ivrSyncLines } from "./ivr";
+import { blockSyncLines } from "./blocked";
 
 // ── PBX extensions from Odoo ──────────────────────────────────
 // Odoo's phone_bridge.extension records are the extensions: nobody adds them
@@ -98,8 +99,9 @@ export async function userLegs(env: Env, userId: number): Promise<string[]> {
  *  ring at once: e<ext> an extension, a<ext> one woken on the Android app
  *  first, m<delay>x<number> a mobile or forward after <delay> seconds; "-"
  *  is none, straight to the no-answer action. Numbers are digits only. A
- *  number with no route line keeps the PBX's own routing. Then the menus and
- *  opening hours (ivr.ts: when / hours / menu / key / prompt lines). */
+ *  number with no route line keeps the PBX's own routing. Then the menus,
+ *  opening hours and queues (ivr.ts: when / hours / menu / key / queue /
+ *  prompt lines), and the blocked numbers (blocked.ts: block lines). */
 export async function pbxSyncText(env: Env): Promise<string> {
   const [rows, nums, sw] = await Promise.all([
     env.DB.prepare(`SELECT ${EXT_COLUMNS} FROM extensions ORDER BY number`).all<ExtRow>().then(r => r.results ?? []),
@@ -125,7 +127,7 @@ export async function pbxSyncText(env: Env): Promise<string> {
     if (vmUser(r, sw)) lines.push(`fwd ${r.number} vm 0 -`);
     else if (forwardTo(r)) lines.push(`fwd ${r.number} ${FWD_MODES[r.forward_mode!]} ${clamp(r.forward_seconds, 5, 120, 20)} ${r.forward_number}`);
   }
-  const routed = new Set<string>();
+  const routed = new Map<string, { secs: number; legs: string[] }>();
   for (const n of nums) {
     if (n.active === 0 || !PHONE.test(n.number)) continue;
     const legs: string[] = [];
@@ -146,10 +148,12 @@ export async function pbxSyncText(env: Env): Promise<string> {
     }
     const noAnswer = n.no_answer === "hangup" ? "hangup"
       : n.no_answer === "forward" && PHONE.test(n.no_answer_number ?? "") ? `fwd${n.no_answer_number}` : "vm";
-    lines.push(`route ${n.number} ${clamp(n.ring_seconds, 5, 300, 45)} ${n.record ? 1 : 0} ${noAnswer} ${legs.join(",") || "-"}`);
-    routed.add(n.number);
+    const secs = clamp(n.ring_seconds, 5, 300, 45);
+    lines.push(`route ${n.number} ${secs} ${n.record ? 1 : 0} ${noAnswer} ${legs.join(",") || "-"}`);
+    routed.set(n.number, { secs, legs });
   }
   lines.push(...await ivrSyncLines(env, routed, (exts) => [...new Set(exts.map(legOf).filter((l): l is string => !!l))]));
+  lines.push(...await blockSyncLines(env));
   return lines.join("\n") + "\n";
 }
 

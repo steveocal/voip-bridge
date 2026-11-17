@@ -35,7 +35,7 @@ What the phone system does today (main branch, November 2026). It has four parts
 ## History
 
 - History and the dial pad share one screen. Each call is one row, with duplicate call legs merged. Day headers stay at the top while you scroll.
-- **Each row shows**: direction triangles (coloured, missed calls marked), the time, the name or number, 📱 for SIM calls, 📼 for voicemail, ＋ voice note, 📝 notes, 💬 transcript and ▶ play recording.
+- **Each row shows**: direction triangles (coloured, missed calls marked), the time, the name or number, 📱 for SIM calls, 📼 for voicemail, ↩️ for a callback asked for from the queue, ＋ voice note, 📝 notes, 💬 transcript and ▶ play recording.
 - Search the history. Picking a contact or call narrows the list to that person.
 - 💬 searches call transcripts, newest first. A match opens the call at that line.
 - Swipe a row to archive or delete it.
@@ -97,6 +97,8 @@ What the phone system does today (main branch, November 2026). It has four parts
 
 - **Extensions**: defined in Odoo and written to Asterisk by `pbx-sync.sh`. It runs every minute, and the worker can trigger it as well. Changes reach the PBX within about two minutes. Hand-made extensions are left alone.
 - **Inbound routing per number**: ring time, recording on or off, and which extensions or mobiles ring. If nobody answers: voicemail, hang up, or forward.
+- **Call queue per number** (Odoo: Phone Number → Queue Callers): callers hold with music, hear their place in line and a spoken message every 45 s, while the extensions ring all at once, one at a time in turn, or whoever answered least recently. They wait up to a set time, then get the number's "When Nobody Answers". They can press 1 to leave a voicemail or 2 to be called back; a callback shows in History as a missed call with ↩️. Nobody signed in: straight to "When Nobody Answers".
+- **Blocked numbers**: 🚫 on a selected call in History, or Settings → Blocked numbers (with how many calls each has had rejected), plus a switch for withheld numbers. The PBX rejects their calls before anything rings, and they never reach History or Odoo.
 - **Forwarding per extension**: always, busy, no answer, busy or no answer, or straight to voicemail.
 - **Quick switches per user** in the top bar: 📼 sends everything straight to voicemail; 📱 rings your mobile first.
 - **Opening hours** from an Odoo working schedule, including public holidays and closures. Out of hours there's a message, then voicemail, hang up, forward or a menu.

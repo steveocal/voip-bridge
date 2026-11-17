@@ -54,7 +54,8 @@ CREATE TABLE IF NOT EXISTS call_log (
   voicemail INTEGER NOT NULL DEFAULT 0,  -- local-only: 1 = went to voicemail; the message is in recording (see migrations/0008_voicemail.sql)
   vm_emailed TEXT,                       -- local-only: who the voicemail was emailed to, or why not (migrations/0020_voicemail_email.sql)
   odoo_synced_at INTEGER,                -- local-only: when pushCallToOdoo last sent this leg's call (see migrations/0009_odoo_push.sql)
-  extension TEXT                         -- local-only: the softphone extension that logged this leg (see migrations/0012_call_extension.sql)
+  extension TEXT,                        -- local-only: the softphone extension that logged this leg (see migrations/0012_call_extension.sql)
+  callback INTEGER NOT NULL DEFAULT 0    -- local-only: 1 = the caller pressed 2 in the queue for a callback (migrations/0022_blocked_numbers_queue.sql)
 );
 CREATE INDEX IF NOT EXISTS idx_call_log_phone ON call_log(phone_number);
 CREATE INDEX IF NOT EXISTS idx_call_log_start ON call_log(start_date);
@@ -194,3 +195,16 @@ CREATE TABLE IF NOT EXISTS push_log (
   ms INTEGER
 );
 CREATE INDEX IF NOT EXISTS push_log_at ON push_log (at);
+
+-- Numbers the PBX rejects (migration 0022, src/blocked.ts): matched on the
+-- last 9 digits.
+CREATE TABLE IF NOT EXISTS blocked_numbers (
+  key TEXT PRIMARY KEY,
+  number TEXT NOT NULL,
+  label TEXT,
+  user_id INTEGER,
+  user_name TEXT,
+  created_at INTEGER NOT NULL,
+  hits INTEGER NOT NULL DEFAULT 0,
+  last_at INTEGER
+);

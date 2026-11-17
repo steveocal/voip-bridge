@@ -195,3 +195,65 @@ key <menu> <k> owner<secs>:<all|each>:<team legs> ──▶ pbkey owner|secs|mod
 The worker logs each lookup (`salesperson for 441283…: Jo Bloggs (Acme) →
 Steve → a201`). Set up with `bash scripts/vps-setup-pbx-ivr.sh` (installs
 pb-owner.sh) after deploying the worker and upgrading the addon.
+
+# Call queues from Odoo
+
+**Phone Number → Queue Callers** (phone_bridge 19.0.0.14.0, numbers that
+answer by ringing): instead of ringing for Ring For seconds and then going to
+"When Nobody Answers", callers wait in a queue while the same extensions and
+mobiles ring.
+
+- **Ring**: everyone at once, one at a time taking turns, or whoever answered
+  least recently. Each attempt lasts Ring For, with 2 s between rounds and
+  5 s of wrap-up after a call. Phones already on a call aren't rung.
+  Mobiles get their head start only when everyone rings at once.
+- **Longest Wait**: then "When Nobody Answers" (voicemail, forward, hang up).
+- **Tell Callers Their Place in Line**: every 60 s.
+- **Queue Message**: spoken every 45 s, from 20 s in, in the number's voice.
+- **Offer a Message or a Callback**: 1 leaves a voicemail; 2 flags the call
+  for a callback (↩️ in History), says thank you and hangs up. A withheld
+  caller's 2 leaves a message instead.
+- No phone signed in (every member unavailable): no queue, straight to
+  "When Nobody Answers".
+
+```
+Odoo ──▶ worker (pbx_ivr: numbers[].queue; the prompts in pbx_prompts)
+worker GET /pbx/sync: queue <number> <strategy> <ring> <wait> <pos> <opts> <msg> <thanks> <legs>
+pbx-sync.sh ──▶ queues-phone-bridge.conf [pbq-<number>] (app_queue reload on change)
+             ──▶ astdb pbqueue/<number> = <wait>|<opts>|<msg>|<thanks>
+[pb-route] ──pbqueue?──▶ [pb-queue] Answer, Queue() ──1/2──▶ [pb-queue-exit]
+```
+
+The queued call is answered when it joins (for the hold music), so
+`[pb-route-hangup]` sends the talk time (time since joining less
+`QEHOLDTIME`), 0 when nobody took it, rather than `billsec`. Hold music is
+class `pbhold`: Asterisk's opsound music (CC-BY-SA) in
+`/var/spool/asterisk/phone-bridge-hold`, defined by pbx-sync.sh in
+`musiconhold-phone-bridge.conf`. The image has no other music on hold.
+
+# Blocked numbers
+
+Set in the dashboard, not Odoo (🚫 on a call in History; Settings → Blocked
+numbers; "Block withheld numbers"). D1 `blocked_numbers`, matched on the last
+9 digits; withheld = fewer than 7 digits.
+
+```
+dashboard POST /blocked ──▶ D1 ──nudge──▶ pbx-sync.sh ──▶ astdb pbblock/<9 digits>, pbx/block_withheld
+[voipms-inbound], [default] ──Gosub──▶ [pb-route]: blocked ──▶ Hangup(21)
+```
+
+The check is the first thing in `[pb-route]`, so it covers every number,
+routed from Odoo or not. The inbound contexts post the ring event before
+`[pb-route]`, so the worker drops events from blocked callers itself (and
+counts them as rejected), which also covers the minute before the PBX has
+the list.
+
+Setting both up (once):
+
+1. `npx wrangler d1 execute voip-bridge-d1 --remote --yes --file=./migrations/0022_blocked_numbers_queue.sql`
+2. `npm run deploy`.
+3. For queues: push the 19.0 branch and upgrade phone_bridge to 19.0.0.14.0.
+4. `bash scripts/vps-setup-queue-block.sh` (creates `queues.conf`, loads
+   app_queue, fetches the hold music, installs pbx-sync.sh and the routing
+   dialplan).
+

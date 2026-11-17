@@ -22,6 +22,7 @@ import { handlePbxOwner } from "./owner";
 import { handleStaffEmployees, handleStaffLogin, handleStaffLocation } from "./staff";
 import { handleMobileCall, handleMobileCallEvent } from "./mobilecall";
 import { handleWebCallback, handleWebCallbackConfig, handleWebCallbackStatus, handleWebCallbackEvent } from "./webcallback";
+import { callerBlocked, noteBlockedCall, handleBlockedList, handleBlockNumber, handleUnblockNumber, handleBlockWithheld } from "./blocked";
 
 // Durable Object class must be exported from the entrypoint module.
 export { CallState } from "./callstate";
@@ -47,6 +48,25 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
 
   const doId = env.CALL_STATE.idFromName("global");
   const stub = env.CALL_STATE.get(doId);
+
+  // A blocked caller (blocked.ts) on the trunk: the PBX rejects the call
+  // itself once it has the list; until then, and for its events anyway,
+  // nothing is logged, so it never shows in History or reaches Odoo.
+  const trunkLeg = !session && direction === "incoming";
+  if (trunkLeg && (event === "ring" || event === "hangup") && await callerBlocked(env, caller)) {
+    const logged = event === "hangup" && await env.DB.prepare("SELECT 1 AS x FROM call_log WHERE call_id = ?1").bind(callId).first();
+    if (!logged) {
+      if (event === "ring" && did) await noteBlockedCall(env, caller);
+      return Response.json({ action: "blocked" });
+    }
+  }
+
+  // Posted by [pb-queue-exit] when a caller waiting in a queue presses 2:
+  // "call me back". The call stays a missed call, flagged for a callback.
+  if (event === "callback") {
+    await env.DB.prepare("UPDATE call_log SET callback=1 WHERE call_id=?1").bind(callId).run();
+    return Response.json({ action: "callback" });
+  }
 
   if (event === "ring") {
     const partner = await lookupCaller(env, caller);
@@ -225,7 +245,7 @@ const CALL_HISTORY_SELECT = `SELECT c.id, c.call_id, c.phone_number, c.did, c.di
      CASE WHEN COALESCE(c.notes_html, '') != '' OR COALESCE(c.jot_svg, '') != '' THEN 1 ELSE 0 END AS has_notes,
      CASE WHEN COALESCE(c.recording, '') != '' THEN 1 ELSE 0 END AS has_recording,
      CASE WHEN c.transcript IS NOT NULL THEN 1 ELSE 0 END AS has_transcript,
-     c.voicemail, c.extension, c.user_id
+     c.voicemail, c.callback, c.extension, c.user_id
    FROM call_log c
    LEFT JOIN contacts p ON p.id = c.partner_id`;
 
@@ -247,7 +267,7 @@ async function mergeCallLegs(env: Env, rows: CallRow[], viewer: User): Promise<C
     out.did = trunkLeg?.did ?? primary.did;
     if (answered) { out.state = answered.state; out.duration = answered.duration; out.end_date = answered.end_date; }
     else if (trunkLeg) { out.state = trunkLeg.state; out.duration = trunkLeg.duration; out.end_date = trunkLeg.end_date; }
-    for (const f of ["has_notes", "has_recording", "has_transcript", "voicemail"]) out[f] = legs.some(l => Number(l[f])) ? 1 : 0;
+    for (const f of ["has_notes", "has_recording", "has_transcript", "voicemail", "callback"]) out[f] = legs.some(l => Number(l[f])) ? 1 : 0;
     for (const f of ["partner_id", "partner_name", "partner_email", "match"]) out[f] = legs.find(l => l[f])?.[f] ?? primary[f];
     out.rec_call_id = rec.call_id;
     out.leg_ids = legs.map(l => l.id);
@@ -943,6 +963,10 @@ export default {
       else if (m === "POST" && p === "/odoo/deleted") response = await handleOdooDeleted(request, env, user);
       else if (request.method === "POST" && url.pathname === "/odoo/push-calls") response = await handlePushCalls(request, env);
       else if (request.method === "GET" && url.pathname === "/push/status") response = await handlePushStatus(env);
+      else if (m === "GET" && p === "/blocked") response = await handleBlockedList(env);
+      else if (m === "POST" && p === "/blocked") response = await handleBlockNumber(request, env, ctx, user);
+      else if (m === "POST" && p === "/blocked/withheld") response = await handleBlockWithheld(request, env, ctx);
+      else if (m === "DELETE" && /^\/blocked\/\d+$/.test(p)) response = await handleUnblockNumber(env, ctx, p.split("/")[2]);
       else if (request.method === "GET" && url.pathname === "/settings") response = await handleGetSettings(env, user);
       else if (request.method === "POST" && url.pathname === "/settings") response = await handleSetSettings(request, env, user);
       else if (request.method === "GET" && url.pathname === "/active-calls") response = await handleActiveCalls(request, env);
