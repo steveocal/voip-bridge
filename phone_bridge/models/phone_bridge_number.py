@@ -56,6 +56,24 @@ class PhoneBridgeNumber(models.Model):
                                      "Out of Hours", default="voicemail", required=True)
     closed_number = fields.Char("Forward To (Out of Hours)")
     closed_menu_id = fields.Many2one("phone_bridge.menu", "Menu (Out of Hours)")
+    queue_calls = fields.Boolean("Queue Callers",
+                                 help="Hold callers in a queue, with music and their place in line, while the "
+                                      "extensions ring, instead of going to \"When Nobody Answers\" after Ring For. "
+                                      "Each ring attempt lasts Ring For; callers wait up to Longest Wait.")
+    queue_strategy = fields.Selection([("ringall", "Ring everyone at once"),
+                                       ("rrmemory", "One at a time, taking turns"),
+                                       ("leastrecent", "One at a time, whoever answered least recently")],
+                                      "Ring", default="ringall", required=True)
+    queue_max_wait = fields.Integer("Longest Wait (Seconds)", default=300, required=True,
+                                    help="Then the caller gets \"When Nobody Answers\".")
+    queue_announce_position = fields.Boolean("Tell Callers Their Place in Line", default=True)
+    queue_options = fields.Boolean("Offer a Message or a Callback", default=True,
+                                   help="While waiting, callers can press 1 to leave a voicemail, or 2 to be called "
+                                        "back: the call shows in the call history as missed, asking for a callback.")
+    queue_message = fields.Text("Queue Message",
+                                help="Spoken every 45 seconds while callers wait. Empty: \"Thank you for holding. "
+                                     "We'll be with you as soon as we can.\" and, with the options on, how to "
+                                     "leave a message or ask for a callback.")
     active = fields.Boolean(default=True)
 
     @api.model
@@ -74,7 +92,8 @@ class PhoneBridgeNumber(models.Model):
             num.display_name = f"{num.number} {num.name}" if num.name else num.number
 
     @api.constrains("number", "no_answer", "no_answer_number", "ring_seconds", "answer", "menu_id",
-                    "calendar_id", "closed_action", "closed_number", "closed_menu_id", "closed_message")
+                    "calendar_id", "closed_action", "closed_number", "closed_menu_id", "closed_message",
+                    "queue_calls", "queue_max_wait", "queue_message")
     def _check_number(self):
         for num in self:
             if normalize_number(num.number) != num.number:
@@ -91,6 +110,10 @@ class PhoneBridgeNumber(models.Model):
                 raise ValidationError(_("Choose the out-of-hours menu."))
             if len(num.closed_message or "") > 1000:
                 raise ValidationError(_("Keep the out-of-hours message to 1000 characters."))
+            if num.queue_calls and not 30 <= num.queue_max_wait <= 3600:
+                raise ValidationError(_("Let callers wait 30 to 3600 seconds in the queue."))
+            if len(num.queue_message or "") > 500:
+                raise ValidationError(_("Keep the queue message to 500 characters."))
 
     @staticmethod
     def _clean(vals):

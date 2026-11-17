@@ -55,6 +55,18 @@ class TestNumberRouting(TransactionCase):
                                .replace("07700", "+44 7700")})
         self.assertEqual(num.no_answer_number, "+447700900123")
 
+    def test_queue(self):
+        num = self.Num.create({"number": "+441283246495"})
+        self.assertFalse(num.queue_calls)
+        self.assertEqual((num.queue_strategy, num.queue_max_wait), ("ringall", 300))
+        self.sent.clear()
+        num.write({"queue_calls": True, "queue_strategy": "rrmemory"})
+        self.assertIn(SYNC, self.sent)
+        with self.assertRaises(ValidationError):
+            num.write({"queue_max_wait": 10})
+        with self.assertRaises(ValidationError):
+            num.write({"queue_message": "x" * 501})
+
     def test_extension_forwarding(self):
         ext = self.Ext.create({"number": "9402"})
         with self.assertRaises(ValidationError):

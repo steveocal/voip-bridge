@@ -7,12 +7,22 @@
         <field name="arch" type="xml">
             <xpath expr="//notebook" position="inside">
                 <page string="Phone" name="phone_bridge" invisible="not phone_bridge_extension_ids">
-                    <group>
-                        <field name="phone_bridge_extension_ids" invisible="1"/>
-                        <field name="phone_bridge_extension_id" readonly="0" options="{'no_create': True, 'no_open': True}"/>
-                        <field name="phone_bridge_mobile" readonly="0" placeholder="+44 7700 900123"/>
-                        <field name="phone_bridge_mobile_delay" readonly="0" invisible="not phone_bridge_mobile"/>
-                    </group>
+                    <field name="phone_bridge_extension_ids" invisible="1"/>
+                    <!-- The same tabs as Settings in the phone app. Blocked numbers,
+                         audio and quick text are kept by the app, so they stay there. -->
+                    <notebook>
+                        <page string="Account" name="phone_bridge_account">
+                            <group>
+                                <field name="phone_bridge_extension_id" readonly="0" options="{'no_create': True, 'no_open': True}"/>
+                            </group>
+                        </page>
+                        <page string="Calls" name="phone_bridge_calls">
+                            <group>
+                                <field name="phone_bridge_mobile" readonly="0" placeholder="+44 7700 900123"/>
+                                <field name="phone_bridge_mobile_delay" readonly="0" invisible="not phone_bridge_mobile"/>
+                            </group>
+                        </page>
+                    </notebook>
                 </page>
             </xpath>
         </field>
@@ -25,23 +35,33 @@
         <field name="arch" type="xml">
             <xpath expr="//notebook" position="inside">
                 <page string="Phone" name="phone_bridge">
-                    <field name="phone_bridge_extension_ids" context="{'default_user_id': id}">
-                        <list editable="bottom">
-                            <field name="number"/>
-                            <field name="name"/>
-                            <field name="voicemail_enabled"/>
-                        </list>
-                    </field>
                     <field name="share" invisible="1"/>
-                    <group>
-                        <field name="phone_bridge_extension_id" options="{'no_create': True}" invisible="share"/>
-                        <field name="phone_bridge_mobile" placeholder="+44 7700 900123"/>
-                        <field name="phone_bridge_mobile_delay" invisible="not phone_bridge_mobile"/>
-                    </group>
-                    <div class="text-muted" invisible="not share">
-                        Portal and public users take calls in the phone app or dashboard, signing in with
-                        an extension number and its SIP password.
-                    </div>
+                    <!-- The same tabs as Settings in the phone app. Blocked numbers,
+                         audio and quick text are kept by the app, so they stay there. -->
+                    <notebook>
+                        <page string="Account" name="phone_bridge_account">
+                            <field name="phone_bridge_extension_ids" context="{'default_user_id': id}">
+                                <list editable="bottom">
+                                    <field name="number"/>
+                                    <field name="name"/>
+                                    <field name="voicemail_enabled"/>
+                                </list>
+                            </field>
+                            <group>
+                                <field name="phone_bridge_extension_id" options="{'no_create': True}" invisible="share"/>
+                            </group>
+                            <div class="text-muted" invisible="not share">
+                                Portal and public users take calls in the phone app or dashboard, signing in with
+                                an extension number and its SIP password.
+                            </div>
+                        </page>
+                        <page string="Calls" name="phone_bridge_calls">
+                            <group>
+                                <field name="phone_bridge_mobile" placeholder="+44 7700 900123"/>
+                                <field name="phone_bridge_mobile_delay" invisible="not phone_bridge_mobile"/>
+                            </group>
+                        </page>
+                    </notebook>
                 </page>
             </xpath>
         </field>

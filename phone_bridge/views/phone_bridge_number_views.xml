@@ -11,6 +11,7 @@
                 <field name="ring_mobiles" optional="show"/>
                 <field name="ring_seconds" optional="hide"/>
                 <field name="answer" optional="show"/>
+                <field name="queue_calls" optional="show"/>
                 <field name="calendar_id" optional="show"/>
                 <field name="no_answer"/>
                 <field name="record" optional="show"/>
@@ -38,6 +39,15 @@
                             <field name="ring_mobiles" invisible="answer != 'ring'"/>
                             <field name="ring_seconds" invisible="answer != 'ring'"/>
                             <field name="active" invisible="1"/>
+                        </group>
+                        <group string="Queue" invisible="answer != 'ring'">
+                            <field name="queue_calls"/>
+                            <field name="queue_strategy" invisible="not queue_calls"/>
+                            <field name="queue_max_wait" invisible="not queue_calls"/>
+                            <field name="queue_announce_position" invisible="not queue_calls"/>
+                            <field name="queue_options" invisible="not queue_calls"/>
+                            <field name="queue_message" invisible="not queue_calls"
+                                   placeholder="Thank you for holding. We'll be with you as soon as we can."/>
                         </group>
                         <group string="When Nobody Answers">
                             <field name="no_answer"/>
