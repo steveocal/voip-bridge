@@ -39,7 +39,7 @@ What the phone system does today (main branch, November 2026). It has four parts
 - **Missed calls have an owner**: each shows Call back (nobody yet), 🙋 name (someone is calling back) or ✓ name (done). Tap Call back to take it, 🙋 Me when done, someone else's to take over, ✓ to reopen. Calling back from a selected missed call takes it; a later answered call with that number marks it done. A banner counts the ones still to call back and shows just those; the History button counts the ones nobody has taken.
 - Search the history. Picking a contact or call narrows the list to that person.
 - 💬 searches call transcripts, newest first. A match opens the call at that line.
-- Swipe a row to archive or delete it.
+- Swipe a row either way (finger, mouse or pen) to archive it: it leaves your History but searches still find it. Long-press a row (Ctrl/⌘-click on desktop) to select several, then Archive them or Select all. Archiving a missed call also marks it done for everyone. Undo puts them back. Deleting calls is done in Odoo.
 - Calls are named from contacts. Contacts can be created automatically, or in bulk for numbers that have no name.
 - Ext 202's calls are kept out of the shared history. Users only see their own calls, plus unanswered ones.
 

@@ -379,8 +379,14 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 #hist-call-actions .hca-play:not(:disabled){color:#34d399}
 #ctl-mobile{display:flex;align-items:center;justify-content:center;gap:5px;padding:5px 6px}
 #ctl-mobile.hidden{display:none}
-/* History swipes: ← archive, → delete; undo toast */
+/* History swipes: either way archives; undo toast */
 #history-list{position:relative}
+#history-list .hist-row{touch-action:pan-y;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+/* selecting several calls (long-press / Ctrl-click) */
+#history-list.bulk .hist-main::before{content:"";flex-shrink:0;width:18px;height:18px;border-radius:50%;border:2px solid #555;box-sizing:border-box}
+#history-list.bulk .hist-row.bulk-on{background:#16263d;border-radius:10px}
+#history-list.bulk .hist-row.bulk-on .hist-main::before{border-color:#4db8ff;background:#4db8ff;box-shadow:inset 0 0 0 3px #16263d}
+.action-bar button:disabled{opacity:.4;cursor:default}
 .hist-row.swiping,.hist-row.swipe-back,.hist-row.swipe-go{position:relative;z-index:1;background:#000}
 .hist-row.swiping{transition:none}
 .hist-row.swipe-go{transition:transform .18s ease-out,opacity .18s ease-out;opacity:0}
@@ -1888,6 +1894,7 @@ document.addEventListener("DOMContentLoaded", function() { updateMobileBtn(); })
 
 function switchView(name) {
   if (name === "history") name = "dial"; // History and the dialpad are one screen now
+  if (histBulk && name !== "dial") endHistBulk();
   var views = document.querySelectorAll(".view");
   for (var i = 0; i < views.length; i++) views[i].classList.add("hidden");
   document.getElementById("view-" + name).classList.remove("hidden");
@@ -5437,26 +5444,29 @@ function showToast(text, action, ms) {
   toastTimer = setTimeout(function() { t.classList.add("hidden"); }, ms || 5000);
 }
 
-// History swipes: left archives the call (gone from History, still found
-// by a search), right deletes it (gone from searches too). Both are only for
-// this user, and Undo puts the row back.
+// History swipes: a row dragged left or right (finger, mouse or pen) is
+// archived: gone from History, still found by a search, for this user only.
+// Deleting is done in Odoo. Archiving a missed call also marks it done for
+// everyone (src/missed.ts). Undo puts it back.
 (function() {
   var list = document.getElementById("history-list");
-  var row = null, x0 = 0, y0 = 0, dx = 0, mode = "", bg = null;
+  var row = null, pid = null, x0 = 0, y0 = 0, dx = 0, mode = "", bg = null;
   var THRESH = 90;
-  list.addEventListener("touchstart", function(e) {
-    if (e.touches.length !== 1) return;
+  list.addEventListener("pointerdown", function(e) {
+    if (row || (e.pointerType === "mouse" && e.button !== 0) || histBulk) return;
     var r = e.target.closest(".hist-row");
-    if (!r || r.classList.contains("meet-row") || r.querySelector(".hist-player")) return;
-    row = r; x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; mode = "";
-  }, { passive: true });
-  list.addEventListener("touchmove", function(e) {
-    if (!row) return;
-    var mx = e.touches[0].clientX - x0, my = e.touches[0].clientY - y0;
+    if (!r || r.classList.contains("meet-row") || r.querySelector(".hist-player") || e.target.closest("button, audio, input")) return;
+    row = r; pid = e.pointerId; x0 = e.clientX; y0 = e.clientY; dx = 0; mode = "";
+  });
+  list.addEventListener("pointermove", function(e) {
+    if (!row || e.pointerId !== pid) return;
+    var mx = e.clientX - x0, my = e.clientY - y0;
     if (!mode) {
       if (Math.abs(mx) < 12 && Math.abs(my) < 12) return;
       mode = Math.abs(mx) > Math.abs(my) * 1.5 ? "swipe" : "scroll";
       if (mode === "scroll") { row = null; return; }
+      cancelHistLongPress();
+      try { row.setPointerCapture(pid); } catch (err) {}
       row.classList.add("swiping");
       bg = document.createElement("div");
       bg.className = "hist-swipe-bg";
@@ -5465,59 +5475,158 @@ function showToast(text, action, ms) {
     e.preventDefault();
     dx = mx;
     row.style.transform = "translateX(" + dx + "px)";
-    var del = dx > 0;
     bg.style.top = row.offsetTop + "px"; bg.style.height = row.offsetHeight + "px"; bg.style.bottom = "auto";
     bg.style.left = "0"; bg.style.right = "0";
-    bg.style.justifyContent = del ? "flex-start" : "flex-end";
-    var past = Math.abs(dx) > THRESH;
-    bg.style.background = del ? (past ? "#b91c1c" : "#4c1d1d") : (past ? "#1d4ed8" : "#1e2a4a");
+    bg.style.justifyContent = dx > 0 ? "flex-start" : "flex-end";
+    bg.style.background = Math.abs(dx) > THRESH ? "#1d4ed8" : "#1e2a4a";
     bg.style.color = "#fff";
-    bg.textContent = del ? "🗑 Delete" : "Archive 🗄";
-  }, { passive: false });
-  function end() {
-    if (!row || mode !== "swipe") { row = null; return; }
+    var c = callsCache[row.getAttribute("data-key")], ms = missedState(c);
+    var label = ms && ms.s !== "done" ? "Archive + done ✓" : "Archive 🗄";
+    bg.textContent = dx > 0 ? "🗄 " + label.replace(" 🗄", "") : label;
+  });
+  function end(e) {
+    if (!row || (e && e.pointerId !== pid)) return;
+    if (mode !== "swipe") { row = null; return; }
     var r = row, b = bg, d = dx;
     row = null; bg = null;
     r.classList.remove("swiping");
+    // A tap mustn't also fire once the finger lifts.
+    r.dataset.swiped = "1";
+    setTimeout(function() { delete r.dataset.swiped; }, 400);
     if (Math.abs(d) <= THRESH) {
       r.classList.add("swipe-back"); r.style.transform = "";
       setTimeout(function() { r.classList.remove("swipe-back"); if (b) b.remove(); }, 160);
       return;
     }
-    // A tap mustn't also fire once the finger lifts.
-    r.dataset.swiped = "1";
-    setTimeout(function() { delete r.dataset.swiped; }, 400);
     r.classList.add("swipe-go");
     r.style.transform = "translateX(" + (d > 0 ? "110%" : "-110%") + ")";
-    setTimeout(function() { if (b) b.remove(); hideHistoryRow(r, d > 0 ? "deleted" : "archived"); }, 180);
+    setTimeout(function() { if (b) b.remove(); archiveHistoryRows([r]); }, 180);
   }
-  list.addEventListener("touchend", end);
-  list.addEventListener("touchcancel", end);
+  list.addEventListener("pointerup", end);
+  list.addEventListener("pointercancel", end);
 })();
-function hideHistoryRow(row, kind) {
-  var c = callsCache[row.getAttribute("data-key")];
-  if (!c) return;
-  var ids = c.leg_ids || [c.id];
-  if (selected && selected.type === "call" && selected.data === c) { deselect(); setPickedNumber(""); }
-  var next = row.nextElementSibling, prev = row.previousElementSibling, parent = row.parentNode;
-  row.remove();
-  // Drop a day heading left with no calls under it.
-  var orphanHead = prev && prev.classList.contains("day-head") && (!next || next.classList.contains("day-head")) ? prev : null;
-  if (orphanHead) orphanHead.remove();
-  function post(k) {
-    return fetch(API + "/call-history/hide", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: ids, kind: k }) })
+// Archive rows (one swiped, or a selection): they go at once, the worker is
+// told, and missed calls among them are marked done for everyone.
+function archiveHistoryRows(rows) {
+  var ids = [], doneIds = [], n = 0;
+  rows.forEach(function(row) {
+    var c = callsCache[row.getAttribute("data-key")];
+    if (!c || c.meeting) return;
+    n++;
+    var legs = c.leg_ids || [c.id];
+    ids = ids.concat(legs);
+    var ms = missedState(c);
+    if (ms && ms.s !== "done") doneIds = doneIds.concat(legs);
+    if (selected && selected.type === "call" && selected.data === c) { deselect(); setPickedNumber(""); }
+    var prev = row.previousElementSibling, next = row.nextElementSibling;
+    row.remove();
+    // Drop a day heading left with no calls under it.
+    if (prev && prev.classList.contains("day-head") && (!next || next.classList.contains("day-head"))) prev.remove();
+  });
+  if (!n) return;
+  function post(path, body) {
+    return fetch(API + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       .then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); });
   }
-  post(kind).catch(function() { showToast("❌ Couldn't " + (kind === "deleted" ? "delete" : "archive") + " the call"); loadHistory(); });
-  showToast(kind === "deleted" ? "Call deleted" : "Call archived — search still finds it", {
+  var what = n === 1 ? "Call" : n + " calls";
+  Promise.all([
+    post("/call-history/hide", { ids: ids, kind: "archived" }),
+    doneIds.length ? post("/call-history/missed", { ids: doneIds, action: "done" }) : null
+  ]).then(function() { if (onDialView()) loadHistory(); })
+    .catch(function() { showToast("❌ Couldn't archive " + what.toLowerCase()); loadHistory(); });
+  showToast(what + " archived" + (doneIds.length ? ", missed marked done" : "") + " — search still finds " + (n === 1 ? "it" : "them"), {
     label: "Undo",
     run: function() {
-      row.classList.remove("swipe-go"); row.style.transform = "";
-      if (orphanHead) parent.insertBefore(orphanHead, next);
-      parent.insertBefore(row, next);
-      post("restore").catch(function() { showToast("❌ Couldn't undo"); }).then(loadHistory);
+      Promise.all([
+        post("/call-history/hide", { ids: ids, kind: "restore" }),
+        doneIds.length ? post("/call-history/missed", { ids: doneIds, action: "reopen" }) : null
+      ]).catch(function() { showToast("❌ Couldn't undo"); }).then(loadHistory);
     }
   }, 6000);
+}
+
+// ── Selecting several calls in History ────────────────────────
+// Long-press a row (or Ctrl/⌘-click it) to start; then taps tick rows, and
+// the bar at the bottom archives them (or selects them all).
+var histBulk = null, histLongTimer = null, histLongFired = false;
+function cancelHistLongPress() { clearTimeout(histLongTimer); histLongTimer = null; }
+(function() {
+  var list = document.getElementById("history-list"), x0 = 0, y0 = 0;
+  list.addEventListener("pointerdown", function(e) {
+    histLongFired = false;
+    // Mice use Ctrl/⌘-click instead: a slow click isn't a long-press.
+    if (histBulk || e.pointerType === "mouse") return;
+    var r = e.target.closest(".hist-row");
+    if (!r || r.classList.contains("meet-row") || e.target.closest("button, audio, input, .hist-player")) return;
+    x0 = e.clientX; y0 = e.clientY;
+    cancelHistLongPress();
+    histLongTimer = setTimeout(function() {
+      histLongTimer = null;
+      histLongFired = true;
+      if (navigator.vibrate) { try { navigator.vibrate(15); } catch (err) {} }
+      startHistBulk(r.getAttribute("data-key"));
+    }, 550);
+  });
+  list.addEventListener("pointermove", function(e) {
+    if (histLongTimer && (Math.abs(e.clientX - x0) > 10 || Math.abs(e.clientY - y0) > 10)) cancelHistLongPress();
+  });
+  list.addEventListener("pointerup", cancelHistLongPress);
+  list.addEventListener("pointercancel", cancelHistLongPress);
+  list.addEventListener("contextmenu", function(e) { if (e.target.closest(".hist-row")) e.preventDefault(); });
+})();
+function startHistBulk(key) {
+  if (selected) deselect();
+  histBulk = {};
+  document.getElementById("history-list").classList.add("bulk");
+  if (key) toggleHistBulk(key);
+  else renderBulkBar();
+}
+function endHistBulk() {
+  histBulk = null;
+  var list = document.getElementById("history-list");
+  list.classList.remove("bulk");
+  list.querySelectorAll(".hist-row.bulk-on").forEach(function(r) { r.classList.remove("bulk-on"); });
+  var bar = document.getElementById("action-bar");
+  bar.classList.add("hidden"); bar.innerHTML = "";
+}
+function toggleHistBulk(key) {
+  var c = callsCache[key];
+  if (!histBulk || !c || c.meeting) return;
+  if (histBulk[key]) delete histBulk[key]; else histBulk[key] = true;
+  var row = document.querySelector('#history-list [data-key="' + key + '"]');
+  if (row) row.classList.toggle("bulk-on", !!histBulk[key]);
+  renderBulkBar();
+}
+function histBulkRows() {
+  return Array.prototype.filter.call(document.querySelectorAll("#history-list .hist-row"), function(r) { return histBulk && histBulk[r.getAttribute("data-key")]; });
+}
+function renderBulkBar() {
+  var bar = document.getElementById("action-bar");
+  var n = histBulkRows().length;
+  bar.innerHTML = '<button onclick="selectAllHist()">Select all</button>'
+    + '<button class="primary" onclick="archiveHistBulk()"' + (n ? "" : " disabled") + '>🗄 Archive' + (n ? " " + n : "") + '</button>'
+    + '<button class="x" onclick="endHistBulk()" aria-label="Stop selecting">✕</button>';
+  bar.classList.remove("hidden");
+}
+function selectAllHist() {
+  if (!histBulk) return;
+  document.querySelectorAll("#history-list .hist-row").forEach(function(r) {
+    var k = r.getAttribute("data-key"), c = callsCache[k];
+    if (c && !c.meeting) { histBulk[k] = true; r.classList.add("bulk-on"); }
+  });
+  renderBulkBar();
+}
+function archiveHistBulk() {
+  var rows = histBulkRows();
+  endHistBulk();
+  if (rows.length) archiveHistoryRows(rows);
+}
+// After History redraws, keep the ticks on rows that are still there.
+function reapplyHistBulk() {
+  if (!histBulk) return;
+  document.getElementById("history-list").classList.add("bulk");
+  document.querySelectorAll("#history-list .hist-row").forEach(function(r) { if (histBulk[r.getAttribute("data-key")]) r.classList.add("bulk-on"); });
+  renderBulkBar();
 }
 // A line in the call notes saying where the call went.
 function noteTransfer(text) {
@@ -5676,6 +5785,7 @@ function setHistTab(tab) {
   } else histTxPerson = null;
   if (tab === histTab) { if (tab === "emails") loadHistEmails(); return; }
   histTab = tab;
+  if (histBulk) endHistBulk();
   historyTxSearch = tab === "transcripts";
   var b = document.querySelectorAll("#hist-toolbar [data-src]");
   for (var i = 0; i < b.length; i++) b[i].classList.toggle("on", b[i].getAttribute("data-src") === tab);
@@ -5746,6 +5856,7 @@ function loadHistory() {
     var keep = histFilter && selected && selected.type === "call" ? "h-" + selected.data.id : "";
     if (selected && selected.type === "call" && !keep) deselect();
     el.innerHTML = renderHistory(calls);
+    reapplyHistBulk();
     var row = keep && el.querySelector('[data-key="' + keep + '"]');
     if (row) { row.classList.add("selected"); selected.data = callsCache[keep]; }
     updateHistToolbar();
@@ -5836,6 +5947,10 @@ document.getElementById("history-list").addEventListener("click", function(e) {
   var key = row.getAttribute("data-key");
   var c = callsCache[key];
   if (!c) return;
+  // The long-press that started selecting mustn't also tick/untick the row.
+  if (histLongFired) { histLongFired = false; return; }
+  if (histBulk) { toggleHistBulk(key); return; }
+  if ((e.ctrlKey || e.metaKey) && !c.meeting) { startHistBulk(key); return; }
   if (e.target.closest(".hist-player")) return;
   if (c.meeting) { toggleMeeting(row, c); return; }
   if (histIconTap(e, row, c)) return;
@@ -6490,6 +6605,7 @@ function rowClick(key, type, data, openFn) {
   clickTimer = setTimeout(function() { clickTimer = null; pendingKey = null; }, PV.doubleTapMs);
 }
 function selectItem(type, data, key) {
+  if (histBulk) endHistBulk();
   selected = { type: type, data: data };
   var rows = document.querySelectorAll(".hist-row.selected,.contact-row.selected,.msg-row.selected");
   for (var i = 0; i < rows.length; i++) rows[i].classList.remove("selected");

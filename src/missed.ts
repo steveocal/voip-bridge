@@ -65,20 +65,22 @@ export async function attachOwners(env: Env, calls: Call[], viewer: User): Promi
 }
 
 /** POST /call-history/missed {ids: leg ids, action: claim|release|done|reopen, force?}
- *  claim on a call someone else has claimed needs force (Take over). */
-export async function handleMissedAction(request: Request, env: Env, user: User, mayOpen: (callId: string) => Promise<boolean>): Promise<Response> {
+ *  ids may span several calls (archiving a selection marks them all done).
+ *  claim on a call someone else has claimed needs force (Take over). Only
+ *  legs nobody answered are touched: everyone may see those (users.ts
+ *  canSee), and nobody else's answered calls. */
+export async function handleMissedAction(request: Request, env: Env, user: User): Promise<Response> {
   let body: { ids?: unknown; action?: unknown; force?: unknown };
   try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
-  const ids = (Array.isArray(body.ids) ? body.ids : []).map(Number).filter(n => Number.isInteger(n) && n > 0).slice(0, 20);
+  const ids = (Array.isArray(body.ids) ? body.ids : []).map(Number).filter(n => Number.isInteger(n) && n > 0).slice(0, 500);
   const action = String(body.action ?? "");
   if (!ids.length || !["claim", "release", "done", "reopen"].includes(action)) return Response.json({ error: "ids and action needed" }, { status: 400 });
   if (!user.id) return Response.json({ error: "sign in as a user" }, { status: 403 });
-  const legs = await env.DB.prepare("SELECT id, call_id FROM call_log WHERE id IN (SELECT value FROM json_each(?1))")
-    .bind(JSON.stringify(ids)).all<{ id: number; call_id: string }>();
-  const found = legs.results || [];
-  if (!found.length) return Response.json({ error: "no such call" }, { status: 404 });
-  if (!(await mayOpen(found[0].call_id))) return Response.json({ error: "not your call" }, { status: 403 });
-  const legIds = found.map(l => l.id);
+  const legs = await env.DB.prepare(
+    "SELECT id FROM call_log WHERE id IN (SELECT value FROM json_each(?1)) AND state NOT IN ('terminated', 'ongoing')"
+  ).bind(JSON.stringify(ids)).all<{ id: number }>();
+  const legIds = (legs.results || []).map(l => l.id);
+  if (!legIds.length) return Response.json({ error: "no missed call" }, { status: 404 });
   if (action === "claim" && !body.force) {
     const other = await env.DB.prepare(
       "SELECT own_name FROM missed_owner WHERE call_log_id IN (SELECT value FROM json_each(?1)) AND own_id IS NOT NULL AND own_id != ?2 AND done_at IS NULL LIMIT 1"
@@ -86,6 +88,7 @@ export async function handleMissedAction(request: Request, env: Env, user: User,
     if (other) return Response.json({ error: "taken", own_name: other.own_name }, { status: 409 });
   }
   const now = Date.now();
+  // ?1 is the leg ids as JSON; the values start at ?2.
   const upd: Record<string, [string, unknown[]]> = {
     claim: ["own_id=?2, own_name=?3, own_at=?4, done_id=NULL, done_name=NULL, done_at=NULL", [user.id, user.name, now]],
     release: ["own_id=NULL, own_name=NULL, own_at=NULL", []],
@@ -93,9 +96,10 @@ export async function handleMissedAction(request: Request, env: Env, user: User,
     reopen: ["done_id=NULL, done_name=NULL, done_at=NULL, reopened_at=?2", [now]],
   };
   const [set, args] = upd[action];
-  await env.DB.batch(legIds.flatMap(id => [
-    env.DB.prepare("INSERT INTO missed_owner (call_log_id) VALUES (?1) ON CONFLICT(call_log_id) DO NOTHING").bind(id),
-    env.DB.prepare(`UPDATE missed_owner SET ${set} WHERE call_log_id = ?1`).bind(id, ...args),
-  ]));
+  const json = JSON.stringify(legIds);
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO missed_owner (call_log_id) SELECT value FROM json_each(?1) WHERE true ON CONFLICT(call_log_id) DO NOTHING").bind(json),
+    env.DB.prepare(`UPDATE missed_owner SET ${set} WHERE call_log_id IN (SELECT value FROM json_each(?1))`).bind(json, ...args),
+  ]);
   return Response.json({ ok: true, action, at: now, name: user.name, user_id: user.id });
 }

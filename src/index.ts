@@ -299,7 +299,8 @@ async function dropHidden(env: Env, calls: CallRow[], viewer: User, archivedToo:
 async function handleHideCall(request: Request, env: Env, user: User): Promise<Response> {
   let body: { id?: unknown; ids?: unknown; kind?: unknown };
   try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
-  const ids = (Array.isArray(body.ids) ? body.ids : [body.id]).map(Number).filter(n => Number.isInteger(n) && n > 0).slice(0, 20);
+  // Several calls at once when archiving a selection in History.
+  const ids = (Array.isArray(body.ids) ? body.ids : [body.id]).map(Number).filter(n => Number.isInteger(n) && n > 0).slice(0, 500);
   const kind = String(body.kind ?? "");
   if (!ids.length || !["archived", "deleted", "restore"].includes(kind)) return Response.json({ error: "id and kind needed" }, { status: 400 });
   const now = Date.now();
@@ -978,7 +979,7 @@ export default {
       else if (request.method === "GET" && url.pathname === "/active-calls") response = await handleActiveCalls(request, env);
       else if (request.method === "GET" && url.pathname === "/call-history") response = await handleCallHistory(request, env, user);
       else if (m === "POST" && p === "/call-history/hide") response = await handleHideCall(request, env, user);
-      else if (m === "POST" && p === "/call-history/missed") response = await handleMissedAction(request, env, user, (id) => mayOpenCall(env, user, id));
+      else if (m === "POST" && p === "/call-history/missed") response = await handleMissedAction(request, env, user);
       else if (m === "POST" && p === "/mobile-call") response = await handleMobileCall(request, env, user);
       else if (request.method === "POST" && url.pathname === "/call-history/resolve-names") response = await handleResolveHistoryNames(env);
       else if (request.method === "POST" && url.pathname === "/call-history/create-missing-contacts") response = await handleCreateMissingContacts(env);
