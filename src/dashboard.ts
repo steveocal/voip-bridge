@@ -152,6 +152,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .h-own.open{background:#3f1d1d;color:#fca5a5}
 .h-own.mine{background:#1e3a5f;color:#93c5fd}
 .h-own.theirs{background:#2c2c2c;color:#d1d5db}
+.h-own.spam{background:#3a2a0a;color:#fbbf24}
 .h-own.done{background:none;color:#6b7280;padding:3px 2px}
 .missed-banner{flex-shrink:0;margin:0 0 6px;padding:8px 12px;border-radius:10px;background:#2a1414;color:#fca5a5;font-size:13px;cursor:pointer}
 .missed-banner b{color:#fff;font-weight:600}
@@ -392,9 +393,74 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 .hist-row.swipe-go{transition:transform .18s ease-out,opacity .18s ease-out;opacity:0}
 .hist-row.swipe-back{transition:transform .15s ease-out}
 .hist-swipe-bg{position:absolute;top:0;bottom:0;display:flex;align-items:center;font-size:13px;font-weight:600;padding:0 16px;pointer-events:none}
-.vb-toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:14px;max-width:92vw;padding:10px 14px;border-radius:12px;background:#2c2c2c;color:#ececec;font-size:14px;box-shadow:0 6px 24px rgba(0,0,0,.6)}
+.vb-toast{position:fixed;left:50%;width:max-content;box-sizing:border-box;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:14px;max-width:92vw;padding:10px 14px;border-radius:12px;background:#2c2c2c;color:#ececec;font-size:14px;box-shadow:0 6px 24px rgba(0,0,0,.6)}
 .vb-toast.hidden{display:none}
-.vb-toast button{background:none;border:none;color:#4db8ff;font-weight:700;font-size:14px;cursor:pointer;padding:4px}
+/* Reports (📊): dark chart chrome from the dataviz reference palette */
+#view-reports{max-width:900px;margin:0 auto;width:100%}
+.rp-csv{margin-left:auto;background:#1f1f1f;border:none;color:#c3c2b7;font-size:12px;padding:6px 10px;border-radius:8px;cursor:pointer;flex-shrink:0}
+.rp-filters{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px 0 8px}
+.rp-filters button{flex:0 0 auto;padding:7px 11px;border:none;border-radius:16px;background:#1f1f1f;color:#c3c2b7;font-size:13px;cursor:pointer}
+.rp-filters button.on{background:#1e3a5f;color:#f0efec;font-weight:600}
+.rp-filters button.on::before{content:"✓ ";font-weight:700}
+.rp-custom{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px;font-size:13px;color:#898781}
+.rp-custom input{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;color:#fff;font:inherit;font-size:13px;color-scheme:dark}
+.rp-custom button{padding:7px 12px;border:none;border-radius:8px;background:#2563eb;color:#fff;font-size:13px;cursor:pointer}
+#view-reports .cp-tabs{margin:0 0 10px;padding:0}
+#view-reports .cp-tab{font-size:13px;padding:10px 8px}
+#rp-body{transition:opacity .15s}
+#rp-body.rp-loading{opacity:.5}
+.rp-range{font-size:12px;color:#898781;margin:2px 0 10px}
+.rp-hero{margin:4px 0 14px}
+.rp-hv{font-size:48px;font-weight:600;line-height:1.05;color:#f0efec}
+.rp-hl{font-size:14px;color:#c3c2b7;margin:2px 0 4px}
+.rp-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:14px}
+.rp-tile{background:#111;border-radius:12px;padding:10px 12px}
+.rp-tl{font-size:12px;color:#c3c2b7}
+.rp-tv{font-size:22px;font-weight:600;color:#f0efec;margin:2px 0}
+.rp-tn{font-size:11px;color:#898781;margin-top:3px;line-height:1.3}
+.rp-delta{display:block;font-size:11px;color:#898781}
+.rp-delta.good{color:#0ca30c}
+.rp-delta.bad{color:#d03b3b}
+.rp-vs{color:#898781}
+.rp-h{font-size:13px;color:#c3c2b7;margin:6px 0;font-weight:600}
+.rp-note{font-size:12px;color:#898781;margin:0 0 8px}
+.rp-foot{font-size:11px;color:#898781;margin:12px 0 4px;line-height:1.4}
+.rp-tablewrap{overflow-x:auto;scrollbar-color:#333 transparent}
+.rp-nw{white-space:nowrap}
+.rp-table{width:100%;border-collapse:collapse;font-size:13px}
+.rp-table th{font-weight:600;color:#898781;font-size:11px;text-align:left;padding:6px;border-bottom:1px solid #2c2c2a;white-space:nowrap}
+.rp-table td{padding:7px 6px;border-bottom:1px solid #1c1c1b;color:#f0efec;vertical-align:top}
+.rp-table .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rp-sub{font-size:11px;color:#898781}
+.rp-bar,.rp-meter{height:4px;border-radius:2px;background:#1c2a3d;margin-top:4px;min-width:40px}
+.rp-bar i,.rp-meter i{display:block;height:100%;border-radius:2px;background:#3987e5}
+.rp-seg{display:flex;gap:2px;height:8px;margin:4px 0 6px}
+.rp-seg i{border-radius:4px}
+.rp-legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:#c3c2b7;margin:2px 0 6px}
+.rp-legend b{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.rp-go{width:100%;padding:11px;border:none;border-radius:10px;background:#2c2c2c;color:#ececec;font-size:14px;margin-top:10px;cursor:pointer}
+.rp-card{background:#111;border-radius:12px;padding:12px;margin-bottom:12px}
+.rp-ch{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px}
+.rp-ct{font-size:14px;font-weight:600;color:#f0efec}
+.rp-cs{font-size:11px;color:#898781}
+.rp-tbtn{background:#1f1f1f;border:none;color:#c3c2b7;font-size:12px;padding:5px 10px;border-radius:8px;cursor:pointer;flex-shrink:0}
+.rp-plot{position:relative}
+.rp-plot.hidden,.rp-tview.hidden,.rp-legend.hidden{display:none}
+.rp-svg{display:block;max-width:100%;height:auto}
+.rp-ax{fill:#898781;font-size:10px;font-variant-numeric:tabular-nums}
+.rp-val{fill:#c3c2b7;font-size:10px;font-weight:600}
+.rp-hit{outline:none}
+.rp-tip{position:absolute;z-index:3;background:#262626;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:7px 9px;font-size:12px;pointer-events:none;min-width:110px;box-shadow:0 6px 18px rgba(0,0,0,.5)}
+.rp-tiph{color:#c3c2b7;font-size:11px;margin-bottom:4px;white-space:nowrap}
+.rp-tipr{display:flex;align-items:center;gap:6px;white-space:nowrap;line-height:1.6}
+.rp-tipr i{width:10px;height:2px;border-radius:1px;flex-shrink:0}
+.rp-tipr i.none{background:transparent}
+.rp-tipr b{color:#f0efec;font-weight:600}
+.rp-tipr span{color:#898781}
+.rp-scale{display:flex;align-items:center;gap:2px;font-size:11px;color:#898781;margin-top:6px;flex-wrap:wrap}
+.rp-scale b{width:14px;height:8px;border-radius:2px}
+.rp-scale span{margin:0 6px}
+.vb-toast button{background:none;border:none;color:#4db8ff;font-weight:700;font-size:14px;cursor:pointer;padding:4px;white-space:nowrap;flex-shrink:0}
 .hist-toolbar button.green:not(:disabled){background:linear-gradient(135deg,#34d399,#10b981);color:#04210f;font-weight:600}
 /* action bar */
 .action-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:76px;background:#1a1a1a;border:1px solid #2c2c2c;border-radius:14px;padding:8px;display:flex;gap:8px;z-index:45;box-shadow:0 8px 30px rgba(0,0,0,.6);max-width:94vw}
@@ -617,6 +683,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <button class="install-btn hidden" id="install-btn" onclick="installApp()">⬇ Install</button>
     <button class="quick-btn" id="qb-vm" onclick="quickToggle('direct')" title="My calls straight to voicemail" aria-label="My calls straight to voicemail">📼</button>
     <button class="quick-btn" id="qb-mob" onclick="quickToggle('mobileFirst')" title="Ring my mobile straight away" aria-label="Ring my mobile straight away">📱</button>
+    <button class="menu-icon" onclick="openReports()" aria-label="Reports" title="Reports">📊</button>
     <button class="menu-icon" onclick="openSettings()" aria-label="Settings">☰</button>
   </header>
 
@@ -757,6 +824,37 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
           <button class="call-btn hangup hidden" id="btn-end" onclick="hangup()">📴</button>
         </div>
       </div>
+    </div>
+
+    <!-- REPORTS VIEW (📊): date range, then a tab per report -->
+    <div class="view hidden" id="view-reports">
+      <div class="p-head">
+        <button class="cd-back" onclick="closeReports()" aria-label="Back"><svg class="back-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4.5L7.5 12l7.5 7.5"/></svg></button>
+        <div class="cd-title"><strong>Reports</strong></div>
+        <span class="jot-status" id="rp-status"></span>
+        <button class="rp-csv" onclick="reportsCsv()" title="Download these figures as a spreadsheet (CSV)">⬇ CSV</button>
+      </div>
+      <div class="rp-filters" id="rp-ranges">
+        <button data-r="today" onclick="setReportRange('today')">Today</button>
+        <button data-r="7" onclick="setReportRange('7')">7 days</button>
+        <button data-r="30" class="on" onclick="setReportRange('30')">30 days</button>
+        <button data-r="90" onclick="setReportRange('90')">90 days</button>
+        <button data-r="month" onclick="setReportRange('month')">This month</button>
+        <button data-r="lastmonth" onclick="setReportRange('lastmonth')">Last month</button>
+        <button data-r="custom" onclick="setReportRange('custom')">Custom…</button>
+      </div>
+      <div class="rp-custom hidden" id="rp-custom">
+        <input type="date" id="rp-from" aria-label="From"> to <input type="date" id="rp-to" aria-label="To">
+        <button onclick="loadReports()">Show</button>
+      </div>
+      <div class="cp-tabs" id="rp-tabs" role="tablist">
+        <button class="cp-tab active" data-tab="overview" onclick="setReportTab('overview')">Overview</button>
+        <button class="cp-tab" data-tab="graphs" onclick="setReportTab('graphs')">Graphs</button>
+        <button class="cp-tab" data-tab="people" onclick="setReportTab('people')">People</button>
+        <button class="cp-tab" data-tab="numbers" onclick="setReportTab('numbers')">Numbers</button>
+        <button class="cp-tab" data-tab="missed" onclick="setReportTab('missed')">Missed calls</button>
+      </div>
+      <div id="rp-body"></div>
     </div>
 
     <!-- SETTINGS VIEW (the ☰ menu): one screen, a tab per section -->
@@ -2297,6 +2395,13 @@ function updateCallPanelCaller() {
       if (callNotif && currentCall.state === "ringing" && had !== d.name) showCallNotification(callerLabel());
       if (activeCpTab === "sales") loadQuotationsTab();
       if (activeCpTab === "emails") loadEmailsTab();
+    }
+    // Likely spam (src/spam.ts): say so in place of the auto-made name.
+    if (d.spam && (!d.found || /^[0-9][0-9][/][0-9][0-9][/][0-9][0-9] /.test(d.name || ""))) {
+      currentCall.name = "⚠️ Likely spam";
+      el.textContent = callerLabel();
+      if (!currentCall.conf) document.getElementById("banner-remote").textContent = callerLabel();
+      if (callNotif && currentCall.state === "ringing") showCallNotification(callerLabel());
     }
   }).catch(function(){});
 }
@@ -4983,7 +5088,7 @@ function backTarget() {
 }
 (function() {
   var sw = null;
-  var NO_SWIPE = "canvas, textarea, input, select, iframe, audio, .nb-pad, .tox, .jt-toolbar, .cp-tabs, .ct-filter, .hist-row, .hist-player, .ptable";
+  var NO_SWIPE = "canvas, textarea, input, select, iframe, audio, .nb-pad, .tox, .jt-toolbar, .cp-tabs, .ct-filter, .hist-row, .hist-player, .ptable, .rp-plot, .rp-tablewrap, .rp-filters";
   document.addEventListener("touchstart", function(e) {
     sw = null;
     if (e.touches.length !== 1 || e.target.closest(NO_SWIPE)) return;
@@ -5434,12 +5539,13 @@ function showToast(text, action, ms) {
   clearTimeout(toastTimer);
   t.innerHTML = "<span></span>";
   t.firstChild.textContent = text;
-  if (action) {
+  // One action, or a list of them.
+  (!action ? [] : action.length ? action : [action]).forEach(function(a) {
     var b = document.createElement("button");
-    b.textContent = action.label;
-    b.onclick = function() { t.classList.add("hidden"); action.run(); };
+    b.textContent = a.label;
+    b.onclick = function() { t.classList.add("hidden"); a.run(); };
     t.appendChild(b);
-  }
+  });
   t.classList.remove("hidden");
   toastTimer = setTimeout(function() { t.classList.add("hidden"); }, ms || 5000);
 }
@@ -6114,11 +6220,12 @@ function histAction(action) {
 // chip on the row. A later answered call with the same number marks it done
 // by itself; calling back from a selected missed call claims it. History's banner lists the ones still to
 // do, and the History button counts those nobody has claimed.
-var missedOnly = false, missedTodo = 0, missedUnclaimed = 0;
+var missedOnly = false, missedTodo = 0, missedUnclaimed = 0, missedSpam = 0;
 function missedState(c) {
   if (!c || c.meeting || c.direction !== "incoming" || !(c.state === "missed" || c.state === "rejected" || c.state === "aborted")) return null;
   if (c.done_at) return { s: "done", who: c.done_name || "", at: c.done_at };
   if (c.returned_at && (!c.reopened_at || c.returned_at > c.reopened_at)) return { s: "done", who: c.returned_name || "", at: c.returned_at, auto: true };
+  if (c.spam) return { s: "spam", why: c.spam };
   if (c.own_id) return { s: c.own_mine ? "mine" : "theirs", who: c.own_name || "", at: c.own_at };
   return { s: "open" };
 }
@@ -6126,6 +6233,7 @@ function firstName(n) { return String(n || "").trim().split(" ")[0]; }
 function missedChip(c) {
   var ms = missedState(c);
   if (!ms) return "";
+  if (ms.s === "spam") return '<button class="h-own spam" title="Likely spam: ' + esc(ms.why) + '">⚠️ Spam?</button>';
   if (ms.s === "open") return '<button class="h-own open" title="Nobody is calling back yet: tap to take it">Call back</button>';
   if (ms.s === "mine") return '<button class="h-own mine" title="You are calling back: tap when done">🙋 Me</button>';
   if (ms.s === "theirs") return '<button class="h-own theirs" title="' + esc(ms.who) + ' is calling back">🙋 ' + esc(firstName(ms.who)) + '</button>';
@@ -6168,8 +6276,20 @@ function missedButton(c) {
   else if (ms.s === "mine") missedAction(c, "done").then(function(d) {
     if (d) showToast("✓ " + who + " dealt with", { label: "Undo", run: function() { missedAction(c, "reopen"); } });
   });
+  else if (ms.s === "spam") showToast("⚠️ Likely spam: " + ms.why, [
+    { label: "Block", run: function() { blockNumber(c.phone_number, ""); } },
+    { label: "Not spam", run: function() { notSpam(c); } }
+  ], 9000);
   else if (ms.s === "theirs") showToast("🙋 " + ms.who + " is calling back " + who, { label: "Take over", run: function() { missedAction(c, "claim", true); } }, 8000);
   else showToast("✓ " + missedDoneText(ms), { label: "Reopen", run: function() { missedAction(c, "reopen"); } }, 8000);
+}
+// "Not spam": the number is never flagged again, and its calls get their
+// contact and go to Odoo after all (src/spam.ts).
+function notSpam(c) {
+  fetch(API + "/spam/ok", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ number: c.phone_number }) })
+    .then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); })
+    .then(function() { showToast("✓ " + c.phone_number + " isn't spam: its calls go to Odoo now"); if (onDialView()) loadHistory(); })
+    .catch(function(e) { showToast("❌ Couldn't update: " + e.message); });
 }
 // Calling back from a selected missed call nobody has claimed claims it.
 function claimOnDial(num) {
@@ -6179,10 +6299,11 @@ function claimOnDial(num) {
   if (ms && ms.s === "open" && k(num).length >= 7 && k(num) === k(c.phone_number)) missedAction(c, "claim", false, true);
 }
 function countMissed(calls) {
-  missedTodo = 0; missedUnclaimed = 0;
+  missedTodo = 0; missedUnclaimed = 0; missedSpam = 0;
   for (var i = 0; i < calls.length; i++) {
     var ms = missedState(calls[i]);
     if (!ms || ms.s === "done") continue;
+    if (ms.s === "spam") { missedSpam++; continue; }
     missedTodo++;
     if (ms.s === "open") missedUnclaimed++;
   }
@@ -6190,14 +6311,15 @@ function countMissed(calls) {
   b.textContent = missedUnclaimed > 99 ? "99+" : String(missedUnclaimed);
   b.classList.toggle("hidden", !missedUnclaimed);
 }
-function missedBannerWanted() { return histTab === "calls" && !historyQuery() && (missedOnly || missedTodo > 0); }
+function missedBannerWanted() { return histTab === "calls" && !historyQuery() && (missedOnly || missedTodo > 0 || missedSpam > 0); }
 function renderMissedBanner() {
   var el = document.getElementById("missed-banner");
   el.classList.toggle("on", missedOnly);
-  el.innerHTML = missedOnly ? "📵 Missed calls to call back · <b>Show all calls</b>"
-    : "📵 " + missedTodo + " missed call" + (missedTodo === 1 ? "" : "s") + " to call back"
-      + (missedUnclaimed && missedUnclaimed !== missedTodo ? " (" + missedUnclaimed + " unclaimed)" : missedUnclaimed ? ", nobody on " + (missedTodo === 1 ? "it" : "them") : "")
-      + " · <b>Show</b>";
+  var parts = [];
+  if (missedTodo) parts.push(missedTodo + " missed call" + (missedTodo === 1 ? "" : "s") + " to call back"
+    + (missedUnclaimed && missedUnclaimed !== missedTodo ? " (" + missedUnclaimed + " unclaimed)" : missedUnclaimed ? ", nobody on " + (missedTodo === 1 ? "it" : "them") : ""));
+  if (missedSpam) parts.push(missedSpam + " likely spam");
+  el.innerHTML = missedOnly ? "📵 Missed calls to call back · <b>Show all calls</b>" : "📵 " + parts.join(" · ") + " · <b>Show</b>";
   updateDialBottomVisibility();
 }
 function toggleMissedOnly() {
@@ -7516,6 +7638,396 @@ function stopVmRecording(discard) {
   if (!vmRec) return;
   vmRec.discard = discard;
   if (vmRec.rec.state !== "inactive") vmRec.rec.stop();
+}
+
+// ── Reports (src/reports.ts) ───────────────────────────────────
+// One screen from the 📊 button: a date range row, then tabs. Overview
+// (figures with the change on the period before), Graphs (calls per day,
+// time on calls, calls by hour, busy times), People, Numbers, Missed calls.
+// Charts are plain SVG; hover or focus a column or cell for its numbers, and
+// every chart has a Table view. Days are UK days. Internal calls (between
+// extensions) aren't counted. Colours: answered / missed / outgoing are the
+// validated dark categorical slots 1-3; busy times is a one-hue blue ramp.
+var rpData = null, rpTab = "overview", rpRange = "30", rpReturnView = "dial", rpSeq = 0, rpResizeTimer = null;
+var RP_C = { answered: "#3987e5", missed: "#d95926", outgoing: "#199e70" };
+var RP_HEAT = ["#104281", "#184f95", "#1c5cab", "#256abf", "#2a78d6", "#3987e5", "#5598e7", "#86b6ef"];
+var RP_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+var RP_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function ukToday() { return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()); }
+function rpAddDays(day, n) { var p = day.split("-"); return new Date(Date.UTC(+p[0], +p[1] - 1, +p[2] + n)).toISOString().slice(0, 10); }
+function rpRangeDays(key) {
+  var t = ukToday(), p = t.split("-");
+  if (key === "today") return [t, t];
+  if (key === "month") return [p[0] + "-" + p[1] + "-01", t];
+  if (key === "lastmonth") {
+    var first = new Date(Date.UTC(+p[0], +p[1] - 2, 1)).toISOString().slice(0, 10);
+    var last = new Date(Date.UTC(+p[0], +p[1] - 1, 0)).toISOString().slice(0, 10);
+    return [first, last];
+  }
+  if (key === "custom") {
+    var f = document.getElementById("rp-from").value, to = document.getElementById("rp-to").value;
+    if (f && to) return f <= to ? [f, to] : [to, f];
+    return rpRangeDays("30");
+  }
+  return [rpAddDays(t, -(parseInt(key, 10) - 1)), t];
+}
+function openReports() {
+  var from = currentViewName();
+  if (from !== "reports") rpReturnView = from;
+  switchView("reports");
+  document.querySelectorAll("#rp-tabs .cp-tab").forEach(function(b) { b.classList.toggle("active", b.getAttribute("data-tab") === rpTab); });
+  loadReports();
+}
+function closeReports() { switchView(rpReturnView || "dial"); }
+function setReportRange(key) {
+  rpRange = key;
+  document.querySelectorAll("#rp-ranges button").forEach(function(b) { b.classList.toggle("on", b.getAttribute("data-r") === key); });
+  var custom = document.getElementById("rp-custom");
+  if (key === "custom") {
+    custom.classList.remove("hidden");
+    var r = rpData ? [rpData.range.from, rpData.range.to] : rpRangeDays("30");
+    if (!document.getElementById("rp-from").value) document.getElementById("rp-from").value = r[0];
+    if (!document.getElementById("rp-to").value) document.getElementById("rp-to").value = r[1];
+    return;
+  }
+  custom.classList.add("hidden");
+  loadReports();
+}
+function setReportTab(tab) {
+  rpTab = tab;
+  document.querySelectorAll("#rp-tabs .cp-tab").forEach(function(b) { b.classList.toggle("active", b.getAttribute("data-tab") === tab); });
+  renderReports();
+}
+function loadReports() {
+  var r = rpRangeDays(rpRange), seq = ++rpSeq;
+  var body = document.getElementById("rp-body");
+  // Refetching keeps the last figures on screen, dimmed.
+  body.classList.add("rp-loading");
+  if (!rpData) body.innerHTML = '<div class="empty">Loading…</div>';
+  document.getElementById("rp-status").textContent = "";
+  fetch(API + "/reports?from=" + r[0] + "&to=" + r[1]).then(function(res) {
+    return res.json().then(function(d) { if (!res.ok) throw new Error(d.error || ("HTTP " + res.status)); return d; });
+  }).then(function(d) {
+    if (seq !== rpSeq) return;
+    rpData = d;
+    body.classList.remove("rp-loading");
+    renderReports();
+  }).catch(function(e) {
+    if (seq !== rpSeq) return;
+    body.classList.remove("rp-loading");
+    document.getElementById("rp-status").textContent = "❌ " + e.message;
+    if (!rpData) body.innerHTML = '<div class="empty">Couldn’t load the reports</div>';
+  });
+}
+window.addEventListener("resize", function() {
+  clearTimeout(rpResizeTimer);
+  rpResizeTimer = setTimeout(function() { if (rpData && currentViewName() === "reports" && rpTab === "graphs") renderReports(); }, 200);
+});
+
+// ── formatting
+function rpNum(n) { return n == null ? "—" : Number(n).toLocaleString("en-GB"); }
+function rpPct(x) { return x == null ? "—" : Math.round(x * 100) + "%"; }
+function rpDur(s) {
+  if (s == null) return "—";
+  s = Math.round(s);
+  if (s < 60) return s + "s";
+  var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  return h ? h + "h " + ("0" + m).slice(-2) + "m" : m + "m " + ("0" + sec).slice(-2) + "s";
+}
+function rpMins(m) { return m == null ? "—" : m < 60 ? m + " min" : rpDur(m * 60); }
+function rpDay(day, long) {
+  var p = day.split("-"), d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
+  var s = d.getUTCDate() + " " + RP_MONTHS[d.getUTCMonth()];
+  return long ? RP_DAYS[(d.getUTCDay() + 6) % 7] + " " + s + " " + p[0] : s;
+}
+// 441283246490 → 01283 246490
+function rpUkNumber(n) {
+  var d = String(n || "").replace(/[^0-9]/g, "");
+  if (d.indexOf("44") === 0 && d.length >= 11) d = "0" + d.slice(2);
+  return d.length === 11 && d.charAt(0) === "0" ? d.slice(0, 5) + " " + d.slice(5) : (n || "");
+}
+// Change against the period before: ▲/▼ and the amount; green when that's good.
+function rpDelta(cur, prev, upIsGood, asPoints) {
+  if (cur == null || prev == null || (!asPoints && !prev)) return '<span class="rp-delta">no earlier figure</span>';
+  var diff = asPoints ? Math.round((cur - prev) * 100) : Math.round(((cur - prev) / prev) * 100);
+  if (!diff) return '<span class="rp-delta">no change</span>';
+  var good = upIsGood == null ? null : (diff > 0) === upIsGood;
+  return '<span class="rp-delta ' + (good === null ? "" : good ? "good" : "bad") + '">' + (diff > 0 ? "▲ " : "▼ ") + Math.abs(diff) + (asPoints ? " pts" : "%") + ' <span class="rp-vs">vs ' + (rpData.range.days === 1 ? "day before" : "previous " + rpData.range.days + " days") + '</span></span>';
+}
+function rpTile(label, value, delta, note) {
+  return '<div class="rp-tile"><div class="rp-tl">' + esc(label) + '</div><div class="rp-tv">' + value + '</div>' + (delta || "") + (note ? '<div class="rp-tn">' + note + '</div>' : "") + '</div>';
+}
+function rpTable(head, rows, numericFrom) {
+  var h = '<div class="rp-tablewrap"><table class="rp-table"><thead><tr>';
+  head.forEach(function(x, i) { h += '<th' + (i >= numericFrom ? ' class="n"' : "") + '>' + esc(x) + '</th>'; });
+  h += '</tr></thead><tbody>';
+  rows.forEach(function(r) { h += '<tr>'; r.forEach(function(x, i) { h += '<td' + (i >= numericFrom ? ' class="n"' : "") + '>' + x + '</td>'; }); h += '</tr>'; });
+  return h + '</tbody></table></div>';
+}
+
+function renderReports() {
+  var d = rpData, body = document.getElementById("rp-body");
+  if (!d) return;
+  var r = d.range;
+  var head = '<div class="rp-range">' + esc(r.days === 1 ? rpDay(r.from, true) : rpDay(r.from) + " – " + rpDay(r.to, true)) + '</div>';
+  var html = "";
+  if (rpTab === "overview") html = rpOverview(d);
+  else if (rpTab === "graphs") html = '<div id="rp-graphs"></div>';
+  else if (rpTab === "people") html = rpPeople(d);
+  else if (rpTab === "numbers") html = rpNumbers(d);
+  else html = rpMissed(d);
+  body.innerHTML = head + html;
+  if (rpTab === "graphs") rpGraphs(d);
+}
+
+function rpOverview(d) {
+  var s = d.summary, p = d.previous, m = d.missed;
+  var open = m.claimedOpen + m.unclaimedOpen;
+  var h = '<div class="rp-hero"><div class="rp-hv">' + rpNum(s.calls) + '</div><div class="rp-hl">calls · ' + rpNum(s.incoming) + ' in, ' + rpNum(s.outgoing) + ' out</div>' + rpDelta(s.calls, p.calls, null) + '</div>';
+  h += '<div class="rp-tiles">'
+    + rpTile("Answer rate", rpPct(s.answerRate), rpDelta(s.answerRate, p.answerRate, true, true), rpNum(s.answered) + " of " + rpNum(s.incoming - s.spam) + " incoming answered")
+    + rpTile("Missed calls", rpNum(s.missed), rpDelta(s.missed, p.missed, false), rpNum(open) + " not called back yet")
+    + rpTile("Called back within an hour", m.total ? rpPct(m.returnedIn1h / m.total) : "—", "", "Typical wait " + rpMins(m.medianReturnMins))
+    + rpTile("Time on calls", rpDur(s.callSecs), rpDelta(s.callSecs, p.callSecs, null), "Average " + rpDur(s.avgCallSecs) + " a call")
+    + rpTile("Callers", rpNum(s.callers), rpDelta(s.callers, p.callers, null), rpNum(s.newCallers) + " new this period")
+    + rpTile("Outgoing answered", s.outgoing ? rpPct(s.outgoingConnected / s.outgoing) : "—", "", rpNum(s.outgoingConnected) + " of " + rpNum(s.outgoing) + " calls made")
+    + rpTile("Voicemails", rpNum(s.voicemail), rpDelta(s.voicemail, p.voicemail, null), rpNum(s.callbacks) + " callbacks asked for in the queue")
+    + rpTile("Time to answer", rpDur(s.avgAnswerSecs), "", s.answerTimed ? "Average over " + rpNum(s.answerTimed) + " calls" : "Not recorded for these calls: only calls from now on have it")
+    + '</div>';
+  if (d.callers.length) {
+    h += '<h3 class="rp-h">Who rang most</h3>' + rpTable(["Caller", "Calls", "Missed"], d.callers.map(function(c) {
+      return [esc(c.name || rpUkNumber(c.number) || "Withheld") + (c.name ? '<div class="rp-sub rp-nw">' + esc(rpUkNumber(c.number)) + '</div>' : ""), rpNum(c.calls), rpNum(c.missed)];
+    }), 1);
+  }
+  h += '<div class="rp-foot">' + rpNum(s.spam) + ' likely spam · ' + rpNum(d.blocked.hits) + ' rejected from ' + rpNum(d.blocked.numbers) + ' blocked numbers (all time) · ' + rpNum(s.internal) + ' internal calls not counted</div>';
+  return h;
+}
+
+function rpPeople(d) {
+  if (!d.people.length) return '<div class="empty">No calls taken or made</div>';
+  var max = Math.max.apply(null, d.people.map(function(p) { return p.answered + p.outgoing; })) || 1;
+  return '<p class="rp-note">Calls each person answered or made, and the missed calls they returned. "Not recorded" is calls on an extension with no Odoo user.</p>' + rpTable(["Person", "Answered", "Made", "Time on calls", "Missed returned"], d.people.map(function(p) {
+    var w = Math.round(((p.answered + p.outgoing) / max) * 100);
+    return [esc(p.name) + '<div class="rp-bar"><i style="width:' + w + '%"></i></div>', rpNum(p.answered),
+      rpNum(p.outgoing) + '<div class="rp-sub">' + rpNum(p.outgoingConnected) + ' answered</div>',
+      rpDur(p.callSecs) + '<div class="rp-sub">' + rpDur(p.talked ? p.callSecs / p.talked : null) + ' avg</div>',
+      rpNum(p.missedDealt) + (p.claimedOpen ? '<div class="rp-sub">' + rpNum(p.claimedOpen) + ' still claimed</div>' : "")];
+  }), 1);
+}
+
+function rpNumbers(d) {
+  if (!d.numbers.length) return '<div class="empty">No incoming calls</div>';
+  return '<p class="rp-note">Incoming calls by the number they rang. "Number not recorded" are calls only the phones that rang logged.</p>' + rpTable(["Number", "Calls", "Answered", "Missed", "Voicemail", "Answer rate"], d.numbers.map(function(n) {
+    var real = n.incoming - n.spam, rate = real ? n.answered / real : null;
+    return ['<span class="rp-nw">' + esc(n.did === "-" ? n.label : rpUkNumber(n.label)) + '</span>' + (n.spam ? '<div class="rp-sub">' + rpNum(n.spam) + ' likely spam</div>' : ""), rpNum(n.incoming), rpNum(n.answered), rpNum(n.missed), rpNum(n.voicemail), rpPct(rate) + (rate == null ? "" : '<div class="rp-meter"><i style="width:' + Math.round(rate * 100) + '%"></i></div>')];
+  }), 1);
+}
+
+function rpMissed(d) {
+  var m = d.missed;
+  if (!m.total) return '<div class="empty">No missed calls in this period</div>';
+  var h = '<div class="rp-tiles">'
+    + rpTile("Missed calls", rpNum(m.total), "", "Not counting likely spam")
+    + rpTile("Called back", rpNum(m.returned), "", rpPct(m.returned / m.total) + " · a later answered call with the number")
+    + rpTile("Within an hour", rpNum(m.returnedIn1h), "", rpNum(m.returnedSameDay) + " the same day")
+    + rpTile("Typical wait for a callback", rpMins(m.medianReturnMins), "", "Middle value, missed call to callback")
+    + rpTile("Marked done", rpNum(m.doneByHand), "", "By hand, or archived from History")
+    + rpTile("Still open", rpNum(m.claimedOpen + m.unclaimedOpen), "", rpNum(m.claimedOpen) + " claimed · " + rpNum(m.unclaimedOpen) + " nobody yet")
+    + '</div>';
+  // Thin segmented bar: what became of the missed calls.
+  var parts = [["Called back", m.returned, RP_C.answered], ["Marked done", m.doneByHand, RP_C.outgoing], ["Still open", m.claimedOpen + m.unclaimedOpen, RP_C.missed]];
+  h += '<div class="rp-seg" role="img" aria-label="' + esc(parts.map(function(p) { return p[0] + " " + p[1]; }).join(", ")) + '">';
+  parts.forEach(function(p) { if (p[1]) h += '<i style="flex:' + p[1] + ';background:' + p[2] + '" title="' + esc(p[0] + ": " + p[1]) + '"></i>'; });
+  h += '</div><div class="rp-legend">' + parts.map(function(p) { return '<span><b style="background:' + p[2] + '"></b>' + esc(p[0]) + '</span>'; }).join("") + '</div>';
+  if (m.claimedOpen + m.unclaimedOpen) h += '<button class="rp-go" onclick="rpShowOpenMissed()">📵 Show the open ones in History</button>';
+  return h;
+}
+function rpShowOpenMissed() {
+  switchView("dial");
+  if (histTab !== "calls") setHistTab("calls");
+  if (histFilter) setPickedNumber("");
+  missedOnly = true;
+  renderMissedBanner();
+  loadHistory();
+}
+
+// ── Graphs
+function rpGraphs(d) {
+  var el = document.getElementById("rp-graphs");
+  var days = d.daily, weekly = days.length > 62;
+  // Over two months, a column a week keeps the columns readable.
+  var buckets = [];
+  if (weekly) {
+    for (var i = 0; i < days.length; i += 7) {
+      var b = { day: days[i].day, end: days[Math.min(i + 6, days.length - 1)].day, answered: 0, missed: 0, outgoing: 0, callSecs: 0 };
+      for (var j = i; j < Math.min(i + 7, days.length); j++) { b.answered += days[j].answered; b.missed += days[j].missed; b.outgoing += days[j].outgoing; b.callSecs += days[j].callSecs; }
+      buckets.push(b);
+    }
+  } else buckets = days.map(function(x) { return { day: x.day, end: x.day, answered: x.answered, missed: x.missed, outgoing: x.outgoing, callSecs: x.callSecs }; });
+  var label = function(b) { return weekly ? "w/c " + rpDay(b.day) : rpDay(b.day); };
+  var longLabel = function(b) { return weekly ? rpDay(b.day) + " – " + rpDay(b.end, true) : rpDay(b.day, true); };
+  el.innerHTML = '<div class="rp-card" id="rp-c1"></div><div class="rp-card" id="rp-c2"></div><div class="rp-card" id="rp-c3"></div><div class="rp-card" id="rp-c4"></div>';
+  rpColumns(document.getElementById("rp-c1"), {
+    title: "Calls per " + (weekly ? "week" : "day"), sub: "Incoming answered and missed, and calls made",
+    cats: buckets.map(label), longCats: buckets.map(longLabel),
+    series: [{ name: "Answered", color: RP_C.answered, values: buckets.map(function(b) { return b.answered; }) },
+             { name: "Missed", color: RP_C.missed, values: buckets.map(function(b) { return b.missed; }) },
+             { name: "Outgoing", color: RP_C.outgoing, values: buckets.map(function(b) { return b.outgoing; }) }],
+    fmt: rpNum
+  });
+  rpColumns(document.getElementById("rp-c2"), {
+    title: "Time on calls per " + (weekly ? "week" : "day"), sub: "Minutes, incoming and outgoing together",
+    cats: buckets.map(label), longCats: buckets.map(longLabel),
+    series: [{ name: "Minutes", color: RP_C.answered, values: buckets.map(function(b) { return Math.round(b.callSecs / 60); }) }],
+    fmt: function(v) { return rpNum(v) + " min"; }
+  });
+  rpColumns(document.getElementById("rp-c3"), {
+    title: "Incoming calls by time of day", sub: "UK time, the hour the call came in",
+    cats: d.hourly.map(function(h) { return ("0" + h.hour).slice(-2); }),
+    longCats: d.hourly.map(function(h) { return ("0" + h.hour).slice(-2) + ":00–" + ("0" + ((h.hour + 1) % 24)).slice(-2) + ":00"; }),
+    series: [{ name: "Answered", color: RP_C.answered, values: d.hourly.map(function(h) { return h.answered; }) },
+             { name: "Missed", color: RP_C.missed, values: d.hourly.map(function(h) { return h.missed; }) }],
+    fmt: rpNum, every: 3
+  });
+  rpHeat(document.getElementById("rp-c4"), d.heat);
+}
+
+// Stacked columns, 2px surface gap between segments, 4px rounded top.
+function rpColumns(card, o) {
+  var W = Math.max(280, card.clientWidth - 24), H = 180, L = 34, R = 6, TOP = 14, B = 22;
+  var pw = W - L - R, ph = H - TOP - B, n = o.cats.length;
+  var totals = o.cats.map(function(_, i) { return o.series.reduce(function(a, s) { return a + (s.values[i] || 0); }, 0); });
+  var max = Math.max.apply(null, totals.concat([0]));
+  var step = rpNiceStep(max), top = Math.max(step, Math.ceil(max / step) * step);
+  var y = function(v) { return TOP + ph - (v / top) * ph; };
+  var band = pw / Math.max(1, n), bw = Math.max(2, Math.min(24, band * 0.66));
+  var svg = '<svg class="rp-svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="' + esc(o.title) + '">';
+  for (var t = 0; t <= top; t += step) {
+    svg += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(t) + '" y2="' + y(t) + '" stroke="' + (t ? "#2c2c2a" : "#383835") + '" stroke-width="1"/>';
+    svg += '<text x="' + (L - 6) + '" y="' + (y(t) + 3.5) + '" text-anchor="end" class="rp-ax">' + rpNum(t) + '</text>';
+  }
+  var every = o.every || Math.max(1, Math.ceil(n / 7));
+  var peak = totals.indexOf(max);
+  for (var i = 0; i < n; i++) {
+    var cx = L + band * i + band / 2, x = cx - bw / 2, cur = 0, segs = [];
+    o.series.forEach(function(s) { var v = s.values[i] || 0; if (v > 0) segs.push({ v: v, c: s.color }); });
+    segs.forEach(function(sg, k) {
+      var y0 = y(cur), y1 = y(cur + sg.v);
+      cur += sg.v;
+      if (k > 0) y0 -= 2; // the surface gap
+      var h = y0 - y1;
+      if (h <= 0.5) return;
+      if (k === segs.length - 1) {
+        var r = Math.min(4, h, bw / 2);
+        svg += '<path fill="' + sg.c + '" d="M' + x + ' ' + y0 + 'V' + (y1 + r) + 'Q' + x + ' ' + y1 + ' ' + (x + r) + ' ' + y1 + 'H' + (x + bw - r) + 'Q' + (x + bw) + ' ' + y1 + ' ' + (x + bw) + ' ' + (y1 + r) + 'V' + y0 + 'Z"/>';
+      } else svg += '<rect fill="' + sg.c + '" x="' + x + '" y="' + y1 + '" width="' + bw + '" height="' + h + '"/>';
+    });
+    if (i % every === 0) svg += '<text x="' + cx + '" y="' + (H - 6) + '" text-anchor="middle" class="rp-ax">' + esc(o.cats[i]) + '</text>';
+    // The peak gets its total on the cap; the rest are in the tooltip and table.
+    if (i === peak && max > 0) svg += '<text x="' + cx + '" y="' + (y(max) - 4) + '" text-anchor="middle" class="rp-val">' + esc(o.fmt(max)) + '</text>';
+    svg += '<rect class="rp-hit" data-i="' + i + '" x="' + (L + band * i) + '" y="' + TOP + '" width="' + band + '" height="' + ph + '" fill="transparent" tabindex="0"/>';
+  }
+  svg += '<rect class="rp-wash" x="0" y="' + TOP + '" width="' + band + '" height="' + ph + '" fill="#ffffff" opacity="0" pointer-events="none"/></svg>';
+  var legend = o.series.length > 1 ? '<div class="rp-legend">' + o.series.map(function(s) { return '<span><b style="background:' + s.color + '"></b>' + esc(s.name) + '</span>'; }).join("") + '</div>' : "";
+  var table = rpTable(["When"].concat(o.series.map(function(s) { return s.name; })).concat(o.series.length > 1 ? ["Total"] : []), o.cats.map(function(_, i) {
+    var row = [esc((o.longCats || o.cats)[i])].concat(o.series.map(function(s) { return o.fmt(s.values[i] || 0); }));
+    return o.series.length > 1 ? row.concat([o.fmt(totals[i])]) : row;
+  }), 1);
+  card.innerHTML = '<div class="rp-ch"><div><div class="rp-ct">' + esc(o.title) + '</div><div class="rp-cs">' + esc(o.sub) + '</div></div><button class="rp-tbtn" onclick="rpToggleTable(this)">Table</button></div>'
+    + legend + '<div class="rp-plot">' + svg + '<div class="rp-tip hidden"></div></div><div class="rp-tview hidden">' + table + '</div>';
+  rpHover(card, function(i) {
+    var rows = o.series.map(function(s) { return { v: o.fmt(s.values[i] || 0), name: s.name, c: s.color }; });
+    if (o.series.length > 1) rows.push({ v: o.fmt(totals[i]), name: "Total", c: "" });
+    return { title: (o.longCats || o.cats)[i], rows: rows, x: L + band * i, w: band };
+  });
+}
+function rpNiceStep(max) {
+  if (max <= 4) return 1;
+  var raw = max / 4, mag = Math.pow(10, Math.floor(Math.log(raw) / Math.LN10)), f = raw / mag;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * mag;
+}
+// Tooltip for columns and cells: values lead, names follow, short line keys.
+function rpHover(card, info) {
+  var svg = card.querySelector("svg"), tip = card.querySelector(".rp-tip"), wash = card.querySelector(".rp-wash");
+  function show(t) {
+    var i = Number(t.getAttribute("data-i")), d = info(i, t);
+    tip.textContent = "";
+    var h = document.createElement("div"); h.className = "rp-tiph"; h.textContent = d.title; tip.appendChild(h);
+    d.rows.forEach(function(r) {
+      var row = document.createElement("div"); row.className = "rp-tipr";
+      var key = document.createElement("i"); if (r.c) key.style.background = r.c; else key.className = "none";
+      var v = document.createElement("b"); v.textContent = r.v;
+      var nm = document.createElement("span"); nm.textContent = r.name;
+      row.appendChild(key); row.appendChild(v); row.appendChild(nm); tip.appendChild(row);
+    });
+    tip.classList.remove("hidden");
+    if (wash && d.w) { wash.setAttribute("x", d.x); wash.setAttribute("width", d.w); wash.setAttribute("opacity", "0.06"); }
+    var box = svg.getBoundingClientRect(), scale = box.width / Number(svg.getAttribute("width"));
+    var left = (d.x + (d.w || 0) / 2) * scale + 10;
+    if (left + tip.offsetWidth > box.width) left = Math.max(0, (d.x * scale) - tip.offsetWidth - 10);
+    tip.style.left = left + "px";
+    tip.style.top = "8px";
+  }
+  function hide() { tip.classList.add("hidden"); if (wash) wash.setAttribute("opacity", "0"); }
+  svg.addEventListener("pointermove", function(e) { var t = e.target.closest(".rp-hit"); if (t) show(t); else hide(); });
+  svg.addEventListener("pointerleave", hide);
+  svg.addEventListener("focusin", function(e) { var t = e.target.closest(".rp-hit"); if (t) show(t); });
+  svg.addEventListener("focusout", hide);
+}
+function rpToggleTable(btn) {
+  var card = btn.closest(".rp-card"), tv = card.querySelector(".rp-tview"), on = tv.classList.toggle("hidden");
+  btn.textContent = on ? "Table" : "Chart";
+  card.querySelector(".rp-plot").classList.toggle("hidden", !on);
+  var lg = card.querySelector(".rp-legend"); if (lg) lg.classList.toggle("hidden", !on);
+}
+// Busy times: weekday × hour, one blue hue light-for-more on the dark surface.
+function rpHeat(card, heat) {
+  var W = Math.max(280, card.clientWidth - 24), L = 30, TOP = 4, cell = (W - L) / 24, rh = Math.max(14, Math.min(22, cell * 1.1)), H = TOP + rh * 7 + 18;
+  var max = 0;
+  heat.forEach(function(r) { r.forEach(function(v) { if (v > max) max = v; }); });
+  var col = function(v) { return v ? RP_HEAT[Math.min(RP_HEAT.length - 1, Math.floor((v / max) * (RP_HEAT.length - 1e-9)))] : "#1c1c1b"; };
+  var svg = '<svg class="rp-svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="Busy times by weekday and hour">';
+  for (var d = 0; d < 7; d++) {
+    svg += '<text x="' + (L - 6) + '" y="' + (TOP + rh * d + rh / 2 + 3.5) + '" text-anchor="end" class="rp-ax">' + RP_DAYS[d] + '</text>';
+    for (var h = 0; h < 24; h++) {
+      var x = L + cell * h, yy = TOP + rh * d;
+      svg += '<rect x="' + (x + 1) + '" y="' + (yy + 1) + '" width="' + Math.max(1, cell - 2) + '" height="' + (rh - 2) + '" rx="2" fill="' + col(heat[d][h]) + '"/>';
+      svg += '<rect class="rp-hit" data-i="' + (d * 24 + h) + '" x="' + x + '" y="' + yy + '" width="' + cell + '" height="' + rh + '" fill="transparent" tabindex="0"/>';
+    }
+  }
+  [0, 6, 12, 18].forEach(function(h) { svg += '<text x="' + (L + cell * h + 1) + '" y="' + (H - 4) + '" class="rp-ax">' + ("0" + h).slice(-2) + ':00</text>'; });
+  svg += '</svg>';
+  var scale = '<div class="rp-scale"><span>Fewer</span>' + RP_HEAT.map(function(c) { return '<b style="background:' + c + '"></b>'; }).join("") + '<span>More (busiest hour: ' + rpNum(max) + ')</span></div>';
+  var table = rpTable(["Day"].concat(Array.from({ length: 24 }, function(_, i) { return ("0" + i).slice(-2); })), heat.map(function(r, i) { return [RP_DAYS[i]].concat(r.map(rpNum)); }), 1);
+  card.innerHTML = '<div class="rp-ch"><div><div class="rp-ct">Busy times</div><div class="rp-cs">Incoming calls by weekday and hour, UK time</div></div><button class="rp-tbtn" onclick="rpToggleTable(this)">Table</button></div>'
+    + '<div class="rp-plot">' + svg + '<div class="rp-tip hidden"></div>' + scale + '</div><div class="rp-tview hidden">' + table + '</div>';
+  rpHover(card, function(i) {
+    var dd = Math.floor(i / 24), hh = i % 24;
+    return { title: RP_DAYS[dd] + " " + ("0" + hh).slice(-2) + ":00–" + ("0" + ((hh + 1) % 24)).slice(-2) + ":00", rows: [{ v: rpNum(heat[dd][hh]), name: heat[dd][hh] === 1 ? "call" : "calls", c: col(heat[dd][hh]) }], x: L + cell * hh, w: cell };
+  });
+}
+
+// ── CSV: every table in one file.
+function reportsCsv() {
+  var d = rpData;
+  if (!d) return;
+  var q = function(v) { v = v == null ? "" : String(v); return /[",;]/.test(v) || v.indexOf(NL) >= 0 ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  var lines = [], add = function(a) { lines.push(a.map(q).join(",")); };
+  add(["Reports", d.range.from, d.range.to]); add([]);
+  add(["Day", "Answered", "Missed", "Outgoing", "Voicemail", "Likely spam", "Minutes on calls"]);
+  d.daily.forEach(function(x) { add([x.day, x.answered, x.missed, x.outgoing, x.voicemail, x.spam, Math.round(x.callSecs / 60)]); });
+  add([]); add(["Person", "Answered", "Made", "Made and answered", "Minutes on calls", "Missed returned", "Still claimed"]);
+  d.people.forEach(function(p) { add([p.name, p.answered, p.outgoing, p.outgoingConnected, Math.round(p.callSecs / 60), p.missedDealt, p.claimedOpen]); });
+  add([]); add(["Number", "Calls", "Answered", "Missed", "Voicemail", "Likely spam"]);
+  d.numbers.forEach(function(n) { add([n.did === "-" ? n.label : rpUkNumber(n.label), n.incoming, n.answered, n.missed, n.voicemail, n.spam]); });
+  add([]); add(["Hour", "Answered", "Missed"]);
+  d.hourly.forEach(function(h) { add([("0" + h.hour).slice(-2) + ":00", h.answered, h.missed]); });
+  var blob = new Blob([lines.join(NL) + NL], { type: "text/csv" });
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "calls-" + d.range.from + "-to-" + d.range.to + ".csv";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function() { URL.revokeObjectURL(a.href); }, 5000);
 }
 
 // ── menu + settings ────────────────────────────────────────────

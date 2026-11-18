@@ -55,8 +55,11 @@ CREATE TABLE IF NOT EXISTS call_log (
   vm_emailed TEXT,                       -- local-only: who the voicemail was emailed to, or why not (migrations/0020_voicemail_email.sql)
   odoo_synced_at INTEGER,                -- local-only: when pushCallToOdoo last sent this leg's call (see migrations/0009_odoo_push.sql)
   extension TEXT,                        -- local-only: the softphone extension that logged this leg (see migrations/0012_call_extension.sql)
-  callback INTEGER NOT NULL DEFAULT 0    -- local-only: 1 = the caller pressed 2 in the queue for a callback (migrations/0022_blocked_numbers_queue.sql)
+  callback INTEGER NOT NULL DEFAULT 0,   -- local-only: 1 = the caller pressed 2 in the queue for a callback (migrations/0022_blocked_numbers_queue.sql)
+  spam TEXT,                             -- local-only: why the call looks like spam (migrations/0024_spam.sql, src/spam.ts)
+  answered_at INTEGER                    -- local-only: when it was answered (migrations/0025_answered_at.sql, src/reports.ts)
 );
+CREATE INDEX IF NOT EXISTS idx_call_log_direction_start ON call_log(direction, start_date);
 CREATE INDEX IF NOT EXISTS idx_call_log_phone ON call_log(phone_number);
 CREATE INDEX IF NOT EXISTS idx_call_log_start ON call_log(start_date);
 CREATE INDEX IF NOT EXISTS idx_call_log_partner ON call_log(partner_id);
@@ -219,4 +222,13 @@ CREATE TABLE IF NOT EXISTS missed_owner (
   done_name TEXT,
   done_at INTEGER,
   reopened_at INTEGER
+);
+
+-- Likely-spam numbers (migrations/0024_spam.sql, src/spam.ts)
+CREATE TABLE IF NOT EXISTS spam_numbers (
+  key TEXT PRIMARY KEY,
+  verdict TEXT NOT NULL,
+  reason TEXT,
+  user_name TEXT,
+  at INTEGER NOT NULL
 );

@@ -22,6 +22,8 @@ import { handlePbxOwner } from "./owner";
 import { handleStaffEmployees, handleStaffLogin, handleStaffLocation } from "./staff";
 import { handleMobileCall, handleMobileCallEvent } from "./mobilecall";
 import { markReturned, attachOwners, handleMissedAction } from "./missed";
+import { checkSpam, markSpam, spamReason, clearSpam } from "./spam";
+import { handleReports } from "./reports";
 import { handleWebCallback, handleWebCallbackConfig, handleWebCallbackStatus, handleWebCallbackEvent } from "./webcallback";
 import { callerBlocked, noteBlockedCall, handleBlockedList, handleBlockNumber, handleUnblockNumber, handleBlockWithheld } from "./blocked";
 
@@ -90,7 +92,7 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
       method: "POST",
       body: JSON.stringify({ callId, status: "answered", answerTime: Date.now() }),
     }));
-    await env.DB.prepare("UPDATE call_log SET state='ongoing' WHERE call_id=?1").bind(callId).run();
+    await env.DB.prepare("UPDATE call_log SET state='ongoing', answered_at=COALESCE(answered_at, ?2) WHERE call_id=?1").bind(callId, Date.now()).run();
     return Response.json({ action: "answered" });
   }
 
@@ -155,6 +157,12 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
     // Voicemail answers the call, so it has a duration, but nobody took it.
     await env.DB.prepare("UPDATE call_log SET state=CASE WHEN voicemail=1 THEN 'missed' ELSE ?1 END, end_date=?2 WHERE call_id=?3")
       .bind(state, Date.now(), callId).run();
+    // Likely spam (spam.ts): no contact is made and nothing goes to Odoo.
+    let spam = "";
+    if (direction === "incoming") {
+      try { spam = await checkSpam(env, caller, callId); if (spam) await markSpam(env, caller, spam); } catch (e) { console.error("checkSpam failed:", e); }
+    }
+    if (spam) return Response.json({ action: "hangup", duration, partner: null, spam });
     // Awaited (not waitUntil) so the dashboard can refresh its lists as soon
     // as this responds and see the new/linked contact's name.
     let partner: Contact | null = null;
@@ -226,8 +234,8 @@ async function handleHangupCall(request: Request, env: Env): Promise<Response> {
 async function handleCallerLookup(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const number = url.searchParams.get("number") ?? "";
-  const partner = await lookupCaller(env, number);
-  return Response.json(partner ? { found: true, name: partner.name, id: partner.id } : { found: false });
+  const [partner, spam] = await Promise.all([lookupCaller(env, number), spamReason(env, number)]);
+  return Response.json(partner ? { found: true, name: partner.name, id: partner.id, spam } : { found: false, spam });
 }
 
 async function handleActiveCalls(_request: Request, env: Env): Promise<Response> {
@@ -246,7 +254,7 @@ const CALL_HISTORY_SELECT = `SELECT c.id, c.call_id, c.phone_number, c.did, c.di
      CASE WHEN COALESCE(c.notes_html, '') != '' OR COALESCE(c.jot_svg, '') != '' THEN 1 ELSE 0 END AS has_notes,
      CASE WHEN COALESCE(c.recording, '') != '' THEN 1 ELSE 0 END AS has_recording,
      CASE WHEN c.transcript IS NOT NULL THEN 1 ELSE 0 END AS has_transcript,
-     c.voicemail, c.callback, c.extension, c.user_id
+     c.voicemail, c.callback, c.extension, c.user_id, c.spam
    FROM call_log c
    LEFT JOIN contacts p ON p.id = c.partner_id`;
 
@@ -275,10 +283,26 @@ function mergeLegs(legs: CallRow[]): CallRow {
   if (answered) { out.state = answered.state; out.duration = answered.duration; out.end_date = answered.end_date; }
   else if (trunkLeg) { out.state = trunkLeg.state; out.duration = trunkLeg.duration; out.end_date = trunkLeg.end_date; }
   for (const f of ["has_notes", "has_recording", "has_transcript", "voicemail", "callback"]) out[f] = legs.some(l => Number(l[f])) ? 1 : 0;
-  for (const f of ["partner_id", "partner_name", "partner_email", "match"]) out[f] = legs.find(l => l[f])?.[f] ?? primary[f];
+  for (const f of ["partner_id", "partner_name", "partner_email", "match", "spam"]) out[f] = legs.find(l => l[f])?.[f] ?? primary[f];
   out.rec_call_id = rec.call_id;
   out.leg_ids = legs.map(l => l.id);
   return out;
+}
+
+/** POST /spam/ok {number}: "Not spam". The number is never flagged again,
+ *  and its flagged calls get their contact and go to Odoo after all. */
+async function handleNotSpam(request: Request, env: Env, user: User, ctx: ExecutionContext): Promise<Response> {
+  let body: { number?: unknown };
+  try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
+  const number = String(body.number ?? "").trim();
+  if (!phoneKey(number)) return Response.json({ error: "number needed" }, { status: 400 });
+  const callIds = await clearSpam(env, number, user.name);
+  ctx.waitUntil((async () => {
+    for (const id of callIds) {
+      try { await ensureCallContact(env, id, number); await pushCallToOdoo(env, id); } catch (e) { console.error("not-spam catch-up failed:", e); }
+    }
+  })());
+  return Response.json({ ok: true, calls: callIds.length });
 }
 
 // Calls the viewer swiped away (migrations/0019_call_hidden.sql): deleted
@@ -979,6 +1003,8 @@ export default {
       else if (request.method === "GET" && url.pathname === "/active-calls") response = await handleActiveCalls(request, env);
       else if (request.method === "GET" && url.pathname === "/call-history") response = await handleCallHistory(request, env, user);
       else if (m === "POST" && p === "/call-history/hide") response = await handleHideCall(request, env, user);
+      else if (m === "GET" && p === "/reports") response = await handleReports(request, env, user);
+      else if (m === "POST" && p === "/spam/ok") response = await handleNotSpam(request, env, user, ctx);
       else if (m === "POST" && p === "/call-history/missed") response = await handleMissedAction(request, env, user);
       else if (m === "POST" && p === "/mobile-call") response = await handleMobileCall(request, env, user);
       else if (request.method === "POST" && url.pathname === "/call-history/resolve-names") response = await handleResolveHistoryNames(env);

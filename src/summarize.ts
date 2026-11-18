@@ -1,5 +1,6 @@
 import type { Env } from "./types";
 import { callLegs } from "./odoo";
+import { noteNuisanceVoicemail } from "./spam";
 
 // ── Call summary (Workers AI text model) ──────────────────────
 // Once a call is transcribed, a text model writes a short summary, key
@@ -16,11 +17,12 @@ const PROMPT = "You summarise phone calls for Infrared Heating Products (IHP), a
   'The transcript lines are labelled "Us" (IHP staff) and "Them" (the other party); speech recognition may have errors. ' +
   'Reply with JSON only, no markdown: {"summary": "2-3 sentences: who called, why, and the outcome", ' +
   '"points": ["key facts: products, sizes, quantities, prices, addresses, dates mentioned"], ' +
-  '"actions": ["follow-ups someone agreed to do, with who and when"]}. ' +
+  '"actions": ["follow-ups someone agreed to do, with who and when"], ' +
+  '"nuisance": true only if the caller is an automated or recorded message, a cold sales pitch to IHP, or a scam, rather than a customer, supplier or anyone with real business with IHP; otherwise false}. ' +
   "Use empty arrays when there is nothing to list. Do not invent details that are not in the transcript. " +
   'Always write in English, even when the call was in Thai or another language; a line starting with "→" is the English translation of the line above it.';
 
-interface Summary { summary?: string; points?: string[]; actions?: string[] }
+interface Summary { summary?: string; points?: string[]; actions?: string[]; nuisance?: boolean | string }
 
 /** Summarise a transcribed call into its notes. Skips calls whose notes
  *  already carry a summary unless `force`. Returns the summary HTML, or ""
@@ -42,6 +44,10 @@ export async function summarizeCall(env: Env, callId: string, force = false): Pr
     temperature: 0.2,
   }) as { response?: unknown };
   const parsed = parseSummary(out?.response);
+  // A voicemail that's a robocall or sales pitch marks the number as likely spam.
+  if (parsed.nuisance === true || parsed.nuisance === "true") {
+    try { await noteNuisanceVoicemail(env, callId); } catch (e) { console.error("noteNuisanceVoicemail failed:", e); }
+  }
   if (!parsed.summary) return "";
 
   const html = summaryHtml(parsed);
@@ -76,7 +82,7 @@ export function parseSummary(response: unknown): Summary {
   };
   const summary = field("summary");
   if (!summary) return { summary: text.slice(0, at).trim() || text };
-  return { summary: str(summary), points: list("points"), actions: list("actions") };
+  return { summary: str(summary), points: list("points"), actions: list("actions"), nuisance: /"nuisance"\s*:\s*true/.test(body) };
 }
 
 /** The summary block's html, built from the parsed fields. */

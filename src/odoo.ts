@@ -677,6 +677,7 @@ interface CallRow {
   direction: string | null; state: string | null; partner_id: number | null;
   start_date: number | null; end_date: number | null; notes_html: string | null;
   transcript: string | null; recording: string | null; voicemail: number; extension: string | null;
+  spam?: string | null;
 }
 
 // Recordings are ~1 MB a minute (8 kHz 16-bit WAV). uploadRecording streams
@@ -774,6 +775,8 @@ export async function callLegs(env: Env, callId: string): Promise<CallRow[]> {
 export async function pushCallToOdoo(env: Env, callId: string, withRecording = false): Promise<number | null> {
   const legs = await callLegs(env, callId);
   if (!legs.length) return null;
+  // Likely spam (spam.ts) stays out of Odoo until someone says it isn't.
+  if (legs.some(l => l.spam)) return null;
   const markSynced = () => env.DB.batch(legs.map(l =>
     env.DB.prepare("UPDATE call_log SET odoo_synced_at = ?1 WHERE call_id = ?2").bind(Date.now(), l.call_id)));
   // bridge_upsert gives the call to its extension's user in Odoo.

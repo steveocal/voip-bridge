@@ -43,6 +43,14 @@ What the phone system does today (main branch, November 2026). It has four parts
 - Calls are named from contacts. Contacts can be created automatically, or in bulk for numbers that have no name.
 - Ext 202's calls are kept out of the shared history. Users only see their own calls, plus unanswered ones.
 
+## Reports
+
+- 📊 in the header opens Reports (`src/reports.ts`, `GET /reports`). Pick a range (today, 7 / 30 / 90 days, this month, last month, or custom dates); everything is in UK days and compared with the same length of time before.
+- **Overview**: total calls, answer rate, missed calls (and how many aren't called back), share called back within an hour and the typical wait, time on calls, callers (and how many are new), outgoing calls answered, voicemails and queue callbacks, time to answer, and who rang most.
+- **Graphs**: calls per day (answered, missed, outgoing; a column a week past two months), time on calls per day, incoming calls by hour, and busy times by weekday and hour. Hover or tab to a column or cell for its numbers; each chart has a Table view.
+- **People**: calls each person answered and made, time on calls, and missed calls they returned or still have claimed. **Numbers**: calls, answered, missed, voicemail and answer rate per IHP number. **Missed calls**: called back, within an hour, typical wait, marked done, still open, with a button to show the open ones in History.
+- ⬇ CSV downloads the figures. Everyone signed in sees the team's figures (counts and times only). Internal calls between extensions aren't counted. Time to answer and exact talk time come from the answer time recorded from 18 Nov 2026 (`migrations/0025_answered_at.sql`); earlier calls count from when they rang.
+
 ## Call details, notes and jot
 
 - **Call details**: tabs for Notes, Transcript (with a player), Sales/Quotations, Call History and Jot.
@@ -100,6 +108,7 @@ What the phone system does today (main branch, November 2026). It has four parts
 - **Inbound routing per number**: ring time, recording on or off, and which extensions or mobiles ring. If nobody answers: voicemail, hang up, or forward.
 - **Call queue per number** (Odoo: Phone Number → Queue Callers): callers hold with music, hear their place in line and a spoken message every 45 s, while the extensions ring all at once, one at a time in turn, or whoever answered least recently. They wait up to a set time, then get the number's "When Nobody Answers". They can press 1 to leave a voicemail or 2 to be called back; a callback shows in History as a missed call with ↩️. Nobody signed in: straight to "When Nobody Answers".
 - **Blocked numbers**: 🚫 on a selected call in History, or Settings → Blocked numbers (with how many calls each has had rejected), plus a switch for withheld numbers. The PBX rejects their calls before anything rings, and they never reach History or Odoo.
+- **Likely spam** (`src/spam.ts`, no outside service): a number nobody here knows (no real contact, never answered, never called by us) is flagged when it hangs up within 6 s twice in 30 days, rings two of our numbers within 10 minutes, or leaves a voicemail the AI summary calls a recorded, sales or scam call. Flagged calls still ring, show ⚠️ on the incoming screen and Spam? in History, but get no Odoo contact, aren't pushed to Odoo and aren't counted as missed calls to return. Tap Spam? to Block the number or say Not spam (which clears it for good and catches its calls up with Odoo).
 - **Forwarding per extension**: always, busy, no answer, busy or no answer, or straight to voicemail.
 - **Quick switches per user** in the top bar: 📼 sends everything straight to voicemail; 📱 rings your mobile first.
 - **Opening hours** from an Odoo working schedule, including public holidays and closures. Out of hours there's a message, then voicemail, hang up, forward or a menu.

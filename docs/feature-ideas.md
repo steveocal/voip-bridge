@@ -31,10 +31,10 @@ Written 2026-11-17. Status: suggestions, nothing built. Based on `docs/FEATURES.
 | No presence | Nobody can see who is on a call or available before transferring. |
 | No text messaging | No SMS or WhatsApp to customers, and no "sorry we missed you" text after a missed call. |
 | ~~Missed calls have no owner~~ | Done 2026-11-18: claim, done, take over, and auto-done when the number is called back (`src/missed.ts`). |
-| No reporting | No answer rate, missed-call response time, calls per person or per number. A manager will ask for this first. |
+| ~~No reporting~~ | Done 2026-11-18: Reports screen with answer rate, missed-call response time, per person and per number, graphs and CSV (`src/reports.ts`). |
 | Recording compliance | No recording announcement, no retention period, no pause for card details. The multi-tenant plan already lists the first two as required. |
 | No per-campaign numbers | A number per advert or web page, written to the Odoo lead source, shows which marketing makes the phone ring. |
-| No spam blocking | No block list or caller reputation; every nuisance call also creates an Odoo contact. |
+| No spam blocking | Block list done; likely spam is flagged from IHP's own call patterns (`src/spam.ts`). No outside caller-reputation service. |
 | No fallback if the PBX is down | Carrier-level failover to mobiles would keep the main number answering. |
 | Desk phones are manual | No provisioning for handsets, which matters once customers aren't all on WebRTC. |
 
