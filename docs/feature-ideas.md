@@ -30,7 +30,7 @@ Written 2026-11-17. Status: suggestions, nothing built. Based on `docs/FEATURES.
 | No call queue | Ring groups only. No hold music with position, no "all busy" handling beyond voicemail, no callback-from-queue. |
 | No presence | Nobody can see who is on a call or available before transferring. |
 | No text messaging | No SMS or WhatsApp to customers, and no "sorry we missed you" text after a missed call. |
-| Missed calls have no owner | Unanswered calls show to everyone, but nobody can claim one or mark it dealt with, so two people ring back or nobody does. |
+| ~~Missed calls have no owner~~ | Done 2026-11-18: claim, done, take over, and auto-done when the number is called back (`src/missed.ts`). |
 | No reporting | No answer rate, missed-call response time, calls per person or per number. A manager will ask for this first. |
 | Recording compliance | No recording announcement, no retention period, no pause for card details. The multi-tenant plan already lists the first two as required. |
 | No per-campaign numbers | A number per advert or web page, written to the Odoo lead source, shows which marketing makes the phone ring. |

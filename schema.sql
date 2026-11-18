@@ -208,3 +208,15 @@ CREATE TABLE IF NOT EXISTS blocked_numbers (
   hits INTEGER NOT NULL DEFAULT 0,
   last_at INTEGER
 );
+
+-- Missed-call ownership (migrations/0023_missed_owner.sql, src/missed.ts)
+CREATE TABLE IF NOT EXISTS missed_owner (
+  call_log_id INTEGER PRIMARY KEY,
+  own_id INTEGER,
+  own_name TEXT,
+  own_at INTEGER,
+  done_id INTEGER,
+  done_name TEXT,
+  done_at INTEGER,
+  reopened_at INTEGER
+);

@@ -21,6 +21,7 @@ import { handlePbxSay } from "./ivrsay";
 import { handlePbxOwner } from "./owner";
 import { handleStaffEmployees, handleStaffLogin, handleStaffLocation } from "./staff";
 import { handleMobileCall, handleMobileCallEvent } from "./mobilecall";
+import { markReturned, attachOwners, handleMissedAction } from "./missed";
 import { handleWebCallback, handleWebCallbackConfig, handleWebCallbackStatus, handleWebCallbackEvent } from "./webcallback";
 import { callerBlocked, noteBlockedCall, handleBlockedList, handleBlockNumber, handleUnblockNumber, handleBlockWithheld } from "./blocked";
 
@@ -256,23 +257,28 @@ const CALL_HISTORY_SELECT = `SELECT c.id, c.call_id, c.phone_number, c.did, c.di
 type CallRow = Record<string, unknown>;
 async function mergeCallLegs(env: Env, rows: CallRow[], viewer: User): Promise<CallRow[]> {
   const owners = await extensionOwners(env);
-  return groupCallLegs(rows).filter((legs) => canSee(legs, owners, viewer)).map((legs) => {
-    if (legs.length === 1) return { ...legs[0], leg_ids: [legs[0].id] };
-    const trunkLeg = legs.find(l => l.did);
-    const answered = legs.find(l => !l.did && (l.state === "terminated" || l.state === "ongoing"));
-    const primary = legs.find(l => l.has_notes) ?? answered ?? trunkLeg ?? legs[0];
-    const rec = legs.find(l => l.has_recording) ?? legs.find(l => l.has_transcript) ?? primary;
-    const out: CallRow = { ...primary };
-    out.start_date = Math.min(...legs.map(l => Number(l.start_date) || Infinity));
-    out.did = trunkLeg?.did ?? primary.did;
-    if (answered) { out.state = answered.state; out.duration = answered.duration; out.end_date = answered.end_date; }
-    else if (trunkLeg) { out.state = trunkLeg.state; out.duration = trunkLeg.duration; out.end_date = trunkLeg.end_date; }
-    for (const f of ["has_notes", "has_recording", "has_transcript", "voicemail", "callback"]) out[f] = legs.some(l => Number(l[f])) ? 1 : 0;
-    for (const f of ["partner_id", "partner_name", "partner_email", "match"]) out[f] = legs.find(l => l[f])?.[f] ?? primary[f];
-    out.rec_call_id = rec.call_id;
-    out.leg_ids = legs.map(l => l.id);
-    return out;
-  });
+  const groups = groupCallLegs(rows).map((legs) => ({ legs, call: mergeLegs(legs) }));
+  // Whether a missed call was called back is found across everyone's calls,
+  // before other people's are dropped.
+  markReturned(groups, owners);
+  return attachOwners(env, groups.filter((g) => canSee(g.legs, owners, viewer)).map((g) => g.call), viewer);
+}
+function mergeLegs(legs: CallRow[]): CallRow {
+  if (legs.length === 1) return { ...legs[0], leg_ids: [legs[0].id] };
+  const trunkLeg = legs.find(l => l.did);
+  const answered = legs.find(l => !l.did && (l.state === "terminated" || l.state === "ongoing"));
+  const primary = legs.find(l => l.has_notes) ?? answered ?? trunkLeg ?? legs[0];
+  const rec = legs.find(l => l.has_recording) ?? legs.find(l => l.has_transcript) ?? primary;
+  const out: CallRow = { ...primary };
+  out.start_date = Math.min(...legs.map(l => Number(l.start_date) || Infinity));
+  out.did = trunkLeg?.did ?? primary.did;
+  if (answered) { out.state = answered.state; out.duration = answered.duration; out.end_date = answered.end_date; }
+  else if (trunkLeg) { out.state = trunkLeg.state; out.duration = trunkLeg.duration; out.end_date = trunkLeg.end_date; }
+  for (const f of ["has_notes", "has_recording", "has_transcript", "voicemail", "callback"]) out[f] = legs.some(l => Number(l[f])) ? 1 : 0;
+  for (const f of ["partner_id", "partner_name", "partner_email", "match"]) out[f] = legs.find(l => l[f])?.[f] ?? primary[f];
+  out.rec_call_id = rec.call_id;
+  out.leg_ids = legs.map(l => l.id);
+  return out;
 }
 
 // Calls the viewer swiped away (migrations/0019_call_hidden.sql): deleted
@@ -972,6 +978,7 @@ export default {
       else if (request.method === "GET" && url.pathname === "/active-calls") response = await handleActiveCalls(request, env);
       else if (request.method === "GET" && url.pathname === "/call-history") response = await handleCallHistory(request, env, user);
       else if (m === "POST" && p === "/call-history/hide") response = await handleHideCall(request, env, user);
+      else if (m === "POST" && p === "/call-history/missed") response = await handleMissedAction(request, env, user, (id) => mayOpenCall(env, user, id));
       else if (m === "POST" && p === "/mobile-call") response = await handleMobileCall(request, env, user);
       else if (request.method === "POST" && url.pathname === "/call-history/resolve-names") response = await handleResolveHistoryNames(env);
       else if (request.method === "POST" && url.pathname === "/call-history/create-missing-contacts") response = await handleCreateMissingContacts(env);

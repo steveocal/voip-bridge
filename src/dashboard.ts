@@ -147,6 +147,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .hist-row .dir-ic{font-size:16px;width:18px}
 .hist-row .h-time{font-size:13px;color:#999;font-variant-numeric:tabular-nums;flex-shrink:0;width:40px}
 .hist-row .who{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* missed-call owner (src/missed.ts): who is calling back, or who did */
+.h-own{flex-shrink:0;border:none;cursor:pointer;font:inherit;font-size:11px;padding:3px 8px;border-radius:9px;white-space:nowrap;max-width:96px;overflow:hidden;text-overflow:ellipsis}
+.h-own.open{background:#3f1d1d;color:#fca5a5}
+.h-own.mine{background:#1e3a5f;color:#93c5fd}
+.h-own.theirs{background:#2c2c2c;color:#d1d5db}
+.h-own.done{background:none;color:#6b7280;padding:3px 2px}
+.missed-banner{flex-shrink:0;margin:0 0 6px;padding:8px 12px;border-radius:10px;background:#2a1414;color:#fca5a5;font-size:13px;cursor:pointer}
+.missed-banner b{color:#fff;font-weight:600}
+.missed-banner.on{background:#1e3a5f;color:#bfdbfe}
 .hist-main .h-ic{width:30px;height:30px;flex-shrink:0;margin:0;background:none;border:none;border-radius:8px;font-size:15px;color:#ececec;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
 .hist-main .h-ic:active{background:#262626}
 .hist-main .h-ic.dim{opacity:.35}
@@ -186,9 +195,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .set-note{font-size:12px;color:#9ca3af;margin:6px 0 2px}
 .set-note.err{color:#f87171}
 .set-google{display:flex;align-items:center;gap:8px;margin:4px 0}
-.set-tabs{display:flex;gap:4px;margin:0 0 12px;overflow-x:auto;scrollbar-width:none}
-.set-tabs button{flex:1 0 auto;padding:7px 10px;border:0;border-radius:8px;background:#222;color:#999;font-size:13px;white-space:nowrap}
-.set-tabs button.active{background:#1e3a5f;color:#ececec}
+#view-settings{max-width:560px;margin:0 auto;width:100%}
+#view-settings .cp-tabs{margin:0 0 12px;padding:0;position:sticky;top:44px;z-index:6;background:#000}
+#view-settings .cp-tab{font-size:13px;padding:10px 8px}
+.set-foot{position:sticky;bottom:0;background:#000;padding:10px 0 6px;border-top:1px solid #1c1c1c;margin-top:10px}
+.set-install{width:100%;padding:11px;border:none;border-radius:10px;background:#2c2c2c;color:#ececec;font-size:14px;cursor:pointer;margin-bottom:10px}
 .set-pane > .loc-box:first-child{border-top:0;margin-top:0;padding-top:0}
 .set-google .set-note{flex:1;margin:0}
 .set-google .acc-mini{width:auto;height:30px;padding:0 10px;font-size:13px}
@@ -233,15 +244,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .dial-fab.pad .fab{background:#2a2a2a;box-shadow:0 4px 14px rgba(0,0,0,.5);color:#e5e7eb}
 .dial-fab.in-call .fab{background:linear-gradient(135deg,#f87171,#ef4444);box-shadow:0 4px 18px rgba(239,68,68,.45)}
 .callbar{display:none}
-/* compact settings dialog */
-.modal-card.compact{padding:14px;max-width:380px;max-height:92vh;overflow-y:auto}
-.modal-card.compact .modal-head{margin-bottom:10px;font-size:16px}
-.modal-card.compact .set-field{margin-bottom:8px}
-.modal-card.compact .set-field label{font-size:11px;margin-bottom:3px}
-.modal-card.compact .set-field input[type=text],.modal-card.compact .acc-select{padding:8px 10px;font-size:14px;border-radius:8px}
-.modal-card.compact textarea{min-height:56px;padding:8px 10px}
-.modal-card.compact .switch-row{margin-bottom:8px}
-.modal-card.compact .dev-hint{margin-top:8px;font-size:11px}
+/* settings screen: compact fields */
+#view-settings .set-field{margin-bottom:8px}
+#view-settings .set-field label{font-size:11px;margin-bottom:3px}
+#view-settings .set-field input[type=text],#view-settings .acc-select{padding:8px 10px;font-size:14px;border-radius:8px}
+#view-settings textarea{min-height:56px;padding:8px 10px}
+#view-settings .switch-row{margin-bottom:8px}
+#view-settings .dev-hint{margin-top:8px;font-size:11px}
 .set-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 8px}
 .set-grid .wide{grid-column:1/-1}
 .acc-row{display:flex;gap:6px;margin-bottom:8px}
@@ -253,9 +262,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .set-cancel{background:#2c2c2c;color:#ececec}
 /* menu + settings */
 .menu-icon{background:none;border:none;color:#ececec;font-size:22px;cursor:pointer;padding:4px;line-height:1;flex-shrink:0}
-.menu-drawer{position:fixed;top:64px;right:12px;background:#1a1a1a;border:1px solid #2c2c2c;border-radius:12px;padding:6px;z-index:40;min-width:170px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
-.menu-drawer button{display:block;width:100%;text-align:left;background:none;border:none;color:#ececec;padding:12px 14px;font-size:15px;border-radius:8px;cursor:pointer}
-.menu-drawer button:active{background:#2c2c2c}
 .route-sheet{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center;z-index:60}
 .route-sheet .rs-card{background:#161616;border:1px solid #2c2c2c;border-radius:16px 16px 0 0;padding:14px 14px 20px;width:100%;max-width:420px;display:flex;flex-direction:column;gap:8px}
 .route-sheet .rs-title{font-size:13px;color:#aaa;text-align:center;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -605,7 +611,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <button class="install-btn hidden" id="install-btn" onclick="installApp()">⬇ Install</button>
     <button class="quick-btn" id="qb-vm" onclick="quickToggle('direct')" title="My calls straight to voicemail" aria-label="My calls straight to voicemail">📼</button>
     <button class="quick-btn" id="qb-mob" onclick="quickToggle('mobileFirst')" title="Ring my mobile straight away" aria-label="Ring my mobile straight away">📱</button>
-    <button class="menu-icon" onclick="toggleMenu()" aria-label="Menu">☰</button>
+    <button class="menu-icon" onclick="openSettings()" aria-label="Settings">☰</button>
   </header>
 
   <div class="install-tip hidden" id="install-tip">
@@ -672,6 +678,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
         <button data-action="transcript" onclick="histCallAction('transcript')" title="Transcript">💬</button>
         <button data-action="block" onclick="histAction('block')" title="Block this number: its calls are rejected">🚫</button>
       </div>
+      <div class="missed-banner hidden" id="missed-banner" onclick="toggleMissedOnly()"></div>
       <div class="dial-scroll" id="history-list"><div class="empty">Loading…</div></div>
       <div class="dial-scroll suggestions hidden" id="dial-suggestions"></div>
       <div class="dial-scroll hidden" id="hist-emails"></div>
@@ -746,201 +753,26 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       </div>
     </div>
 
-    <!-- PARAMETERS VIEW (opened from the menu) -->
-    <div class="view hidden" id="view-voicemail">
+    <!-- SETTINGS VIEW (the ☰ menu): one screen, a tab per section -->
+    <div class="view hidden" id="view-settings">
       <div class="p-head">
-        <button class="cd-back" onclick="closeVoicemail()" aria-label="Back"><svg class="back-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4.5L7.5 12l7.5 7.5"/></svg></button>
-        <div class="cd-title"><strong>Voicemail</strong></div>
+        <button class="cd-back" onclick="cancelSettings()" aria-label="Back"><svg class="back-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4.5L7.5 12l7.5 7.5"/></svg></button>
+        <div class="cd-title"><strong>Settings</strong></div>
         <span class="jot-status" id="vm-status"></span>
-      </div>
-      <div class="vm-sync" id="vm-sync"></div>
-      <div class="switch-row">
-        <span>My calls straight to voicemail<div class="p-note">Your extensions and mobile don't ring; callers for you hear the greeting. Others' phones still ring.</div></span>
-        <label class="switch"><input type="checkbox" id="vm-direct" onchange="setVmDirect(this.checked)"><span class="track"></span></label>
-      </div>
-      <div class="switch-row">
-        <span>Ring my mobile straight away<div class="p-note">Off: your mobile joins after the delay set on your user in Odoo, so the app and desk phones get first go. On: it rings with them.</div></span>
-        <label class="switch"><input type="checkbox" id="vm-mobile-first" onchange="setMobileFirst(this.checked)"><span class="track"></span></label>
-      </div>
-      <div class="vm-head">Greeting</div>
-      <div id="vm-list"><div class="empty">Loading…</div></div>
-      <div class="vm-add">
-        <button id="vm-rec-btn" onclick="toggleVmRecording()">🎙 Record</button>
-        <button onclick="document.getElementById('vm-file').click()">⬆ Upload audio</button>
-      </div>
-      <input type="file" id="vm-file" accept="audio/*" class="hidden">
-      <div class="p-foot"><div class="p-note">Calls nobody answers within 45s, or that hit busy phones, go to voicemail. Messages appear in History with ▶ and a transcript.</div></div>
-    </div>
-
-    <div class="view hidden" id="view-params">
-      <div class="p-head">
-        <button class="cd-back" onclick="closeParams()" aria-label="Back"><svg class="back-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4.5L7.5 12l7.5 7.5"/></svg></button>
-        <div class="cd-title"><strong>Parameters</strong></div>
         <span class="jot-status" id="params-status"></span>
       </div>
-      <input class="p-filter" id="params-filter" type="text" placeholder="Filter (name, group…)" autocomplete="off" autocapitalize="off">
-      <table class="ptable" id="params-table"></table>
-      <div class="p-foot">
-        <button id="params-reset-all" onclick="resetAllParams()">Reset all to defaults</button>
-        <div class="p-note">Saved automatically, on this device only. Jot values apply to Jot pages opened afterwards.</div>
+      <div class="cp-tabs" id="set-tabs" role="tablist">
+        <button class="cp-tab" data-tab="account" onclick="setSettingsTab('account')">Account</button>
+        <button class="cp-tab" data-tab="calls" onclick="setSettingsTab('calls')">Calls</button>
+        <button class="cp-tab" data-tab="voicemail" onclick="setSettingsTab('voicemail')">Voicemail</button>
+        <button class="cp-tab" data-tab="blocked" onclick="setSettingsTab('blocked')">Blocked</button>
+        <button class="cp-tab" data-tab="device" onclick="setSettingsTab('device')">Device</button>
+        <button class="cp-tab" data-tab="text" onclick="setSettingsTab('text')">Quick text</button>
+        <button class="cp-tab" data-tab="params" onclick="setSettingsTab('params')">Parameters</button>
       </div>
-    </div>
-
-    <!-- CALL DETAIL VIEW (drill-down from History — in-screen, not a dialog) -->
-    <div class="view hidden" id="view-call-detail">
-      <div class="cd-head">
-        <button class="cd-back" onclick="closeCallDetailView()" aria-label="Back"><svg class="back-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4.5L7.5 12l7.5 7.5"/></svg></button>
-        <div class="cd-title">
-          <div class="cd-name" id="cd-caller-name">Call</div>
-          <div class="cd-sub" id="cd-caller-sub"></div>
-        </div>
-        <button class="cd-callback hidden" id="cd-callback-btn" onclick="dialBackSelected()">📞</button>
-      </div>
-      <div class="cp-tabs">
-        <button class="cp-tab" data-tab="details" onclick="switchCallDetailTab('details')">Details</button>
-        <button class="cp-tab" data-tab="notes" onclick="switchCallDetailTab('notes')">Notes</button>
-        <button class="cp-tab" data-tab="transcript" onclick="switchCallDetailTab('transcript')">Transcript</button>
-      </div>
-      <div class="cd-body">
-        <div class="cp-pane hidden" id="cd-pane-details"></div>
-        <div class="cp-pane hidden nb-write" id="cd-pane-notes">
-          <div class="nb-bar" data-nb="cd"><button data-nbm="write" title="Write by hand: words go into the notes after a short pause">🖊 Write</button><button data-nbm="type" title="Type into the notes">⌨ Type</button><button data-nbm="speak" title="Speak: what you say is added to the notes">🎙 Speak</button><button data-nbm="followup" title="Follow-up: a to-do for this call, written like a note">📅 Follow-up</button><span class="nb-status" id="cd-jot-status"></span></div>
-          <div id="cd-notes-host"><div class="empty">Loading…</div></div>
-          <div class="nb-pad" id="cd-jot-canvas"></div>
-        </div>
-        <div class="cp-pane hidden" id="cd-pane-transcript"></div>
-      </div>
-      <div class="cd-footer">
-        <span class="jot-status" id="cd-save-status"></span>
-      </div>
-    </div>
-
-    <!-- CONTACT DETAIL VIEW (drill-down from Contacts / History) -->
-    <div class="view hidden" id="view-contact-detail">
-      <div class="cd-head">
-        <button class="cd-back" onclick="closeContactView()" aria-label="Back"><svg class="back-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4.5L7.5 12l7.5 7.5"/></svg></button>
-        <div class="cd-title">
-          <div class="cd-name" id="ct-name">Contact</div>
-          <div class="cd-sub" id="ct-sub"></div>
-        </div>
-        <button class="cd-callback hidden" id="ct-dial-btn" onclick="dialContactView()">📞</button>
-      </div>
-      <div class="cp-tabs">
-        <button class="cp-tab active" data-tab="details" onclick="switchContactTab('details')">Details</button>
-        <button class="cp-tab" data-tab="sales" onclick="switchContactTab('sales')">Sales / Purchases</button>
-        <button class="cp-tab" data-tab="messages" onclick="switchContactTab('messages')">Emails</button>
-        <button class="cp-tab" data-tab="calls" onclick="switchContactTab('calls')">Calls</button>
-      </div>
-      <div class="cd-body">
-        <div class="cp-pane" id="ct-pane-details"></div>
-        <div class="cp-pane hidden" id="ct-pane-sales"></div>
-        <div class="cp-pane hidden" id="ct-pane-messages"></div>
-        <div class="cp-pane hidden" id="ct-pane-calls"></div>
-      </div>
-    </div>
-
-    <!-- ACTIVITIES VIEW (Odoo activities + Google Calendar) -->
-    <div class="view hidden" id="view-activities">
-      <h2>📋 Activities</h2>
-      <div id="activities-list"><div class="empty">Loading…</div></div>
-    </div>
-
-    <!-- CONTACTS VIEW -->
-    <div class="view hidden" id="view-contacts">
-      <h2>👥 Contacts</h2>
-      <div class="ct-filter" id="ct-filter">
-        <button data-src="all" onclick="setContactsTab('all')">All</button>
-        <button data-src="fav" class="active" onclick="setContactsTab('fav')">★ Favourites</button>
-        <button data-src="phone" onclick="setContactsTab('phone')">📱 Phone</button>
-        <button data-src="odoo" onclick="setContactsTab('odoo')"><img src="/icons/icon-192.png" alt="">Odoo</button>
-        <button data-src="gmail" onclick="setContactsTab('gmail')">✉️ Gmail</button>
-      </div>
-      <div class="entry">
-        <input id="contact-search" type="text" placeholder="Search contacts" autocomplete="off">
-      </div>
-      <div id="contacts-list"><div class="empty">Type to search</div></div>
-    </div>
-
-    <!-- MESSAGES VIEW -->
-    <div class="view hidden" id="view-messages">
-      <h2 id="msg-title">✉️ Emails</h2>
-      <div id="messages-list"><div class="empty">Select a contact to view emails</div></div>
-    </div>
-  </div>
-
-  <nav class="bottom-menu" id="bottom-menu">
-    <button class="menu-btn idle-only active" data-view="dial" onclick="navHistory()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4.5v4h4"/><path d="M12 7.5V12l3 2"/></svg><span>History</span></button>
-    <button class="menu-btn idle-only" data-view="activities" onclick="switchView('activities')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V2.8h6V4"/><path d="M9 12.5l2 2 4-4"/></svg><span>Activities</span><b class="nav-badge hidden" id="act-badge"></b></button>
-    <button class="menu-btn call-only" id="nav-hold" onclick="toggleHold()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><g class="norm"><path d="M9 5.5v13"/><path d="M15 5.5v13"/></g><path class="alt" d="M8 5.5l11 6.5-11 6.5z"/></svg><span class="norm">Hold</span><span class="alt">Resume</span></button>
-    <button class="menu-btn call-only" id="nav-mute" onclick="toggleMute()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/><path class="alt" d="M4 4l16 16"/></svg><span class="norm">Mute</span><span class="alt">Muted</span></button>
-    <button class="dial-fab" id="nav-dial" onclick="navDialAction()" aria-label="Dial"><span class="fab"></span></button>
-    <button class="fab-plus call-only" id="nav-hangplus" onclick="hangupAndNote()" aria-label="Hang up and add a note" title="Hang up and add a note"><svg class="ico-note-add" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21H12"/><path d="M14 3l5 5v3"/><path d="M14 3v5h5"/><path d="M8 12h6M8 15.5h3"/><circle class="pl" cx="17.5" cy="17.5" r="4.5"/><path class="plx" d="M17.5 15.3v4.4M15.3 17.5h4.4"/></svg></button>
-    <button class="menu-btn idle-only" data-view="contacts" onclick="switchView('contacts')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8"/><path d="M18.2 14.4c2 .8 3.3 2.8 3.3 5.6"/></svg><span>Contacts</span></button>
-    <button class="menu-btn idle-only" data-view="messages" onclick="switchView('messages')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6.5 8.5-6.5"/></svg><span>Emails</span></button>
-    <button class="menu-btn call-only" id="nav-speaker" onclick="toggleSpeaker()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6"/><path d="M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/></svg><span>Speaker</span></button>
-    <button class="menu-btn call-only" id="nav-callmenu" onclick="toggleCallMenu()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg><span>Menu</span></button>
-  </nav>
-  <div class="action-bar hidden" id="action-bar"></div>
-</div>
-
-<div class="menu-drawer hidden" id="menu-drawer">
-  <button class="hidden" id="menu-install-btn" onclick="menuInstallApp()">⬇ Install App</button>
-  <button onclick="openSettings()">⚙️ Settings</button>
-  <button onclick="openVoicemail()">📼 Voicemail</button>
-  <button onclick="openParams()">📋 Parameters</button>
-</div>
-
-<div class="route-sheet hidden" id="route-sheet" onclick="if (event.target === this) closeRouteSheet()">
-  <div class="rs-card" id="route-sheet-card"></div>
-</div>
-<div class="fu-view hidden" id="fu-view">
-  <div class="cd-head">
-    <button class="cd-back" onclick="closeFollowUp()" aria-label="Back"><svg class="back-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4.5L7.5 12l7.5 7.5"/></svg></button>
-    <div class="cd-title"><div class="cd-name">📅 Follow-up</div><div class="cd-sub" id="fu-sub"></div></div>
-  </div>
-  <div class="fu-pane nb-write" id="fu-pane">
-    <div class="nb-bar" data-nb="fu"><button data-nbm="write" title="Write by hand: words go into the text after a short pause">🖊 Write</button><button data-nbm="type" title="Type">⌨ Type</button><button data-nbm="speak" title="Speak: what you say is added">🎙 Speak</button><span class="nb-status" id="fu-status"></span></div>
-    <textarea id="fu-notes" placeholder="What to follow up" autocomplete="off"></textarea>
-    <div class="nb-pad" id="fu-jot-canvas"></div>
-  </div>
-  <div class="ns-fu" id="fu-when">Due:
-    <button data-days="1">Tomorrow</button><button data-days="3">3 days</button><button data-days="7">1 week</button><button data-days="14">2 weeks</button>
-    <input type="date" id="fu-date" aria-label="Follow-up date">
-  </div>
-  <div class="set-actions">
-    <button class="set-cancel" onclick="closeFollowUp()">Cancel</button>
-    <button class="acc-save" id="fu-save" onclick="saveFollowUp()">Add follow-up</button>
-  </div>
-</div>
-<div class="route-sheet hidden" id="note-sheet" onclick="if (event.target === this) closeNoteSheet()">
-  <div class="rs-card">
-    <div class="rs-title" id="ns-title">Add to call</div>
-    <button class="ns-mic" id="ns-mic" onclick="toggleNoteRecording()">🎙 Tap to speak</button>
-    <div class="ns-status" id="ns-status"></div>
-    <textarea id="ns-text" placeholder="Your note (say it, or type it)"></textarea>
-    <div class="ns-fu" id="ns-fu">Follow up:
-      <button data-days="">None</button><button data-days="1">Tomorrow</button><button data-days="3">3 days</button><button data-days="7">1 week</button>
-      <input type="date" id="ns-date" aria-label="Follow-up date">
-    </div>
-    <div class="set-actions">
-      <button class="set-cancel" onclick="closeNoteSheet()">Cancel</button>
-      <button class="acc-save" id="ns-save" onclick="saveNoteSheet()">Add to call</button>
-    </div>
-  </div>
-</div>
-
-<div class="modal hidden" id="settings-modal">
-  <div class="modal-card compact">
-    <div class="modal-head"><span>⚙️ Settings</span><button onclick="cancelSettings()" aria-label="Cancel">✕</button></div>
-    <div class="set-tabs" id="set-tabs" role="tablist">
-      <button data-tab="account" onclick="setSettingsTab('account')">Account</button>
-      <button data-tab="calls" onclick="setSettingsTab('calls')">Calls</button>
-      <button data-tab="blocked" onclick="setSettingsTab('blocked')">Blocked</button>
-      <button data-tab="device" onclick="setSettingsTab('device')">Device</button>
-      <button data-tab="text" onclick="setSettingsTab('text')">Quick text</button>
-    </div>
-
+      <div class="set-body">
     <div class="set-pane" data-pane="account">
+    <button class="set-install hidden" id="menu-install-btn" onclick="menuInstallApp()">⬇ Install App</button>
 
     <div class="acc-row">
       <select id="set-account" class="acc-select" onchange="onAccountSelect()"></select>
@@ -1050,11 +882,179 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 
     </div>
 
-    <div class="set-actions">
+
+    <div class="set-pane" data-pane="voicemail">
+      <div class="vm-sync" id="vm-sync"></div>
+      <div class="switch-row">
+        <span>My calls straight to voicemail<div class="p-note">Your extensions and mobile don't ring; callers for you hear the greeting. Others' phones still ring.</div></span>
+        <label class="switch"><input type="checkbox" id="vm-direct" onchange="setVmDirect(this.checked)"><span class="track"></span></label>
+      </div>
+      <div class="switch-row">
+        <span>Ring my mobile straight away<div class="p-note">Off: your mobile joins after the delay set on your user in Odoo, so the app and desk phones get first go. On: it rings with them.</div></span>
+        <label class="switch"><input type="checkbox" id="vm-mobile-first" onchange="setMobileFirst(this.checked)"><span class="track"></span></label>
+      </div>
+      <div class="vm-head">Greeting</div>
+      <div id="vm-list"><div class="empty">Loading…</div></div>
+      <div class="vm-add">
+        <button id="vm-rec-btn" onclick="toggleVmRecording()">🎙 Record</button>
+        <button onclick="document.getElementById('vm-file').click()">⬆ Upload audio</button>
+      </div>
+      <input type="file" id="vm-file" accept="audio/*" class="hidden">
+      <div class="p-foot"><div class="p-note">Calls nobody answers within 45s, or that hit busy phones, go to voicemail. Messages appear in History with ▶ and a transcript.</div></div>
+    </div>
+
+    <div class="set-pane" data-pane="params">
+      <input class="p-filter" id="params-filter" type="text" placeholder="Filter (name, group…)" autocomplete="off" autocapitalize="off">
+      <table class="ptable" id="params-table"></table>
+      <div class="p-foot">
+        <button id="params-reset-all" onclick="resetAllParams()">Reset all to defaults</button>
+        <div class="p-note">Saved automatically, on this device only. Jot values apply to Jot pages opened afterwards.</div>
+      </div>
+    </div>
+      </div>
+      <div class="set-foot" id="set-foot">
+        <div class="set-actions">
       <button class="set-cancel" onclick="cancelSettings()">Cancel</button>
       <button class="save-btn" onclick="applyAndReconnect()">Save</button>
     </div>
     <div class="dev-hint">Save reconnects with these settings. Dev Mode skips the server connection.</div>
+      </div>
+    </div>
+
+    <!-- CALL DETAIL VIEW (drill-down from History — in-screen, not a dialog) -->
+    <div class="view hidden" id="view-call-detail">
+      <div class="cd-head">
+        <button class="cd-back" onclick="closeCallDetailView()" aria-label="Back"><svg class="back-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4.5L7.5 12l7.5 7.5"/></svg></button>
+        <div class="cd-title">
+          <div class="cd-name" id="cd-caller-name">Call</div>
+          <div class="cd-sub" id="cd-caller-sub"></div>
+        </div>
+        <button class="cd-callback hidden" id="cd-callback-btn" onclick="dialBackSelected()">📞</button>
+      </div>
+      <div class="cp-tabs">
+        <button class="cp-tab" data-tab="details" onclick="switchCallDetailTab('details')">Details</button>
+        <button class="cp-tab" data-tab="notes" onclick="switchCallDetailTab('notes')">Notes</button>
+        <button class="cp-tab" data-tab="transcript" onclick="switchCallDetailTab('transcript')">Transcript</button>
+      </div>
+      <div class="cd-body">
+        <div class="cp-pane hidden" id="cd-pane-details"></div>
+        <div class="cp-pane hidden nb-write" id="cd-pane-notes">
+          <div class="nb-bar" data-nb="cd"><button data-nbm="write" title="Write by hand: words go into the notes after a short pause">🖊 Write</button><button data-nbm="type" title="Type into the notes">⌨ Type</button><button data-nbm="speak" title="Speak: what you say is added to the notes">🎙 Speak</button><button data-nbm="followup" title="Follow-up: a to-do for this call, written like a note">📅 Follow-up</button><span class="nb-status" id="cd-jot-status"></span></div>
+          <div id="cd-notes-host"><div class="empty">Loading…</div></div>
+          <div class="nb-pad" id="cd-jot-canvas"></div>
+        </div>
+        <div class="cp-pane hidden" id="cd-pane-transcript"></div>
+      </div>
+      <div class="cd-footer">
+        <span class="jot-status" id="cd-save-status"></span>
+      </div>
+    </div>
+
+    <!-- CONTACT DETAIL VIEW (drill-down from Contacts / History) -->
+    <div class="view hidden" id="view-contact-detail">
+      <div class="cd-head">
+        <button class="cd-back" onclick="closeContactView()" aria-label="Back"><svg class="back-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4.5L7.5 12l7.5 7.5"/></svg></button>
+        <div class="cd-title">
+          <div class="cd-name" id="ct-name">Contact</div>
+          <div class="cd-sub" id="ct-sub"></div>
+        </div>
+        <button class="cd-callback hidden" id="ct-dial-btn" onclick="dialContactView()">📞</button>
+      </div>
+      <div class="cp-tabs">
+        <button class="cp-tab active" data-tab="details" onclick="switchContactTab('details')">Details</button>
+        <button class="cp-tab" data-tab="sales" onclick="switchContactTab('sales')">Sales / Purchases</button>
+        <button class="cp-tab" data-tab="messages" onclick="switchContactTab('messages')">Emails</button>
+        <button class="cp-tab" data-tab="calls" onclick="switchContactTab('calls')">Calls</button>
+      </div>
+      <div class="cd-body">
+        <div class="cp-pane" id="ct-pane-details"></div>
+        <div class="cp-pane hidden" id="ct-pane-sales"></div>
+        <div class="cp-pane hidden" id="ct-pane-messages"></div>
+        <div class="cp-pane hidden" id="ct-pane-calls"></div>
+      </div>
+    </div>
+
+    <!-- ACTIVITIES VIEW (Odoo activities + Google Calendar) -->
+    <div class="view hidden" id="view-activities">
+      <h2>📋 Activities</h2>
+      <div id="activities-list"><div class="empty">Loading…</div></div>
+    </div>
+
+    <!-- CONTACTS VIEW -->
+    <div class="view hidden" id="view-contacts">
+      <h2>👥 Contacts</h2>
+      <div class="ct-filter" id="ct-filter">
+        <button data-src="all" onclick="setContactsTab('all')">All</button>
+        <button data-src="fav" class="active" onclick="setContactsTab('fav')">★ Favourites</button>
+        <button data-src="phone" onclick="setContactsTab('phone')">📱 Phone</button>
+        <button data-src="odoo" onclick="setContactsTab('odoo')"><img src="/icons/icon-192.png" alt="">Odoo</button>
+        <button data-src="gmail" onclick="setContactsTab('gmail')">✉️ Gmail</button>
+      </div>
+      <div class="entry">
+        <input id="contact-search" type="text" placeholder="Search contacts" autocomplete="off">
+      </div>
+      <div id="contacts-list"><div class="empty">Type to search</div></div>
+    </div>
+
+    <!-- MESSAGES VIEW -->
+    <div class="view hidden" id="view-messages">
+      <h2 id="msg-title">✉️ Emails</h2>
+      <div id="messages-list"><div class="empty">Select a contact to view emails</div></div>
+    </div>
+  </div>
+
+  <nav class="bottom-menu" id="bottom-menu">
+    <button class="menu-btn idle-only active" data-view="dial" onclick="navHistory()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4.5v4h4"/><path d="M12 7.5V12l3 2"/></svg><span>History</span><b class="nav-badge hidden" id="hist-badge" title="Missed calls nobody is calling back"></b></button>
+    <button class="menu-btn idle-only" data-view="activities" onclick="switchView('activities')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V2.8h6V4"/><path d="M9 12.5l2 2 4-4"/></svg><span>Activities</span><b class="nav-badge hidden" id="act-badge"></b></button>
+    <button class="menu-btn call-only" id="nav-hold" onclick="toggleHold()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><g class="norm"><path d="M9 5.5v13"/><path d="M15 5.5v13"/></g><path class="alt" d="M8 5.5l11 6.5-11 6.5z"/></svg><span class="norm">Hold</span><span class="alt">Resume</span></button>
+    <button class="menu-btn call-only" id="nav-mute" onclick="toggleMute()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/><path class="alt" d="M4 4l16 16"/></svg><span class="norm">Mute</span><span class="alt">Muted</span></button>
+    <button class="dial-fab" id="nav-dial" onclick="navDialAction()" aria-label="Dial"><span class="fab"></span></button>
+    <button class="fab-plus call-only" id="nav-hangplus" onclick="hangupAndNote()" aria-label="Hang up and add a note" title="Hang up and add a note"><svg class="ico-note-add" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21H12"/><path d="M14 3l5 5v3"/><path d="M14 3v5h5"/><path d="M8 12h6M8 15.5h3"/><circle class="pl" cx="17.5" cy="17.5" r="4.5"/><path class="plx" d="M17.5 15.3v4.4M15.3 17.5h4.4"/></svg></button>
+    <button class="menu-btn idle-only" data-view="contacts" onclick="switchView('contacts')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8"/><path d="M18.2 14.4c2 .8 3.3 2.8 3.3 5.6"/></svg><span>Contacts</span></button>
+    <button class="menu-btn idle-only" data-view="messages" onclick="switchView('messages')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6.5 8.5-6.5"/></svg><span>Emails</span></button>
+    <button class="menu-btn call-only" id="nav-speaker" onclick="toggleSpeaker()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6"/><path d="M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/></svg><span>Speaker</span></button>
+    <button class="menu-btn call-only" id="nav-callmenu" onclick="toggleCallMenu()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg><span>Menu</span></button>
+  </nav>
+  <div class="action-bar hidden" id="action-bar"></div>
+</div>
+
+
+<div class="route-sheet hidden" id="route-sheet" onclick="if (event.target === this) closeRouteSheet()">
+  <div class="rs-card" id="route-sheet-card"></div>
+</div>
+<div class="fu-view hidden" id="fu-view">
+  <div class="cd-head">
+    <button class="cd-back" onclick="closeFollowUp()" aria-label="Back"><svg class="back-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4.5L7.5 12l7.5 7.5"/></svg></button>
+    <div class="cd-title"><div class="cd-name">📅 Follow-up</div><div class="cd-sub" id="fu-sub"></div></div>
+  </div>
+  <div class="fu-pane nb-write" id="fu-pane">
+    <div class="nb-bar" data-nb="fu"><button data-nbm="write" title="Write by hand: words go into the text after a short pause">🖊 Write</button><button data-nbm="type" title="Type">⌨ Type</button><button data-nbm="speak" title="Speak: what you say is added">🎙 Speak</button><span class="nb-status" id="fu-status"></span></div>
+    <textarea id="fu-notes" placeholder="What to follow up" autocomplete="off"></textarea>
+    <div class="nb-pad" id="fu-jot-canvas"></div>
+  </div>
+  <div class="ns-fu" id="fu-when">Due:
+    <button data-days="1">Tomorrow</button><button data-days="3">3 days</button><button data-days="7">1 week</button><button data-days="14">2 weeks</button>
+    <input type="date" id="fu-date" aria-label="Follow-up date">
+  </div>
+  <div class="set-actions">
+    <button class="set-cancel" onclick="closeFollowUp()">Cancel</button>
+    <button class="acc-save" id="fu-save" onclick="saveFollowUp()">Add follow-up</button>
+  </div>
+</div>
+<div class="route-sheet hidden" id="note-sheet" onclick="if (event.target === this) closeNoteSheet()">
+  <div class="rs-card">
+    <div class="rs-title" id="ns-title">Add to call</div>
+    <button class="ns-mic" id="ns-mic" onclick="toggleNoteRecording()">🎙 Tap to speak</button>
+    <div class="ns-status" id="ns-status"></div>
+    <textarea id="ns-text" placeholder="Your note (say it, or type it)"></textarea>
+    <div class="ns-fu" id="ns-fu">Follow up:
+      <button data-days="">None</button><button data-days="1">Tomorrow</button><button data-days="3">3 days</button><button data-days="7">1 week</button>
+      <input type="date" id="ns-date" aria-label="Follow-up date">
+    </div>
+    <div class="set-actions">
+      <button class="set-cancel" onclick="closeNoteSheet()">Cancel</button>
+      <button class="acc-save" id="ns-save" onclick="saveNoteSheet()">Add to call</button>
+    </div>
   </div>
 </div>
 
@@ -1338,7 +1338,7 @@ function applyAllParams() {
   }
 }
 
-var paramsReturnView = "dial", paramTimers = {}, paramStatusTimer = null, resetAllArmed = null;
+var paramTimers = {}, paramStatusTimer = null, resetAllArmed = null;
 function paramStatus(msg, bad) {
   var el = document.getElementById("params-status");
   el.textContent = msg;
@@ -1346,17 +1346,7 @@ function paramStatus(msg, bad) {
   clearTimeout(paramStatusTimer);
   if (!bad) paramStatusTimer = setTimeout(function() { el.textContent = ""; }, 2500);
 }
-function openParams() {
-  document.getElementById("menu-drawer").classList.add("hidden");
-  var views = document.querySelectorAll(".view");
-  for (var i = 0; i < views.length; i++) {
-    if (!views[i].classList.contains("hidden") && views[i].id !== "view-params") paramsReturnView = views[i].id.replace("view-", "");
-  }
-  document.getElementById("params-filter").value = "";
-  renderParams();
-  switchView("params");
-}
-function closeParams() { switchView(paramsReturnView || "dial"); }
+function openParams() { openSettings("params"); }
 function renderParams() {
   var o = paramOverrides(), html = "", grp = "";
   for (var i = 0; i < PARAMS.length; i++) {
@@ -1730,7 +1720,7 @@ if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
   // Headset plugged back in: put each sound back on its chosen device.
   navigator.mediaDevices.addEventListener("devicechange", function() {
     applyAllSinks();
-    if (!document.getElementById("settings-modal").classList.contains("hidden")) renderSinkSettings();
+    if (currentViewName() === "settings") renderSinkSettings();
   });
 }
 
@@ -4110,6 +4100,7 @@ function dialAction() {
 }
 function dialOut(num) {
   if (!num) return;
+  claimOnDial(num);
   var mc = meetingCode(num);
   if (mc) {
     routeOverride = null;
@@ -4972,7 +4963,7 @@ function saveFollowUp() {
 }
 
 // ── swipe right to go back ───────────────────────────────────
-// On a screen with a back arrow (a call, a contact, Voicemail, Parameters,
+// On a screen with a back arrow (a call, a contact, Settings,
 // Follow-up), dragging it to the right goes back, as the arrow does. Not
 // from the handwriting pad, text boxes or rows with swipes of their own.
 function backTarget() {
@@ -5594,6 +5585,7 @@ function updateDialBottomVisibility() {
   document.getElementById("hist-toolbar").classList.toggle("hidden", inAnyCall);
   updateHistToolbar(); // the selected call's buttons row hides during a call too
   document.getElementById("history-list").classList.toggle("hidden", inAnyCall || typed || histTab === "emails");
+  document.getElementById("missed-banner").classList.toggle("hidden", inAnyCall || typed || !missedBannerWanted());
   document.getElementById("dial-suggestions").classList.toggle("hidden", inAnyCall || !typed);
   document.getElementById("hist-emails").classList.toggle("hidden", inAnyCall || histTab !== "emails");
   document.getElementById("banner-keypad").classList.toggle("hidden", !connected);
@@ -5744,7 +5736,12 @@ function loadHistory() {
     if (q !== historyQuery()) return;
     var calls = d.calls || [];
     if (personTx) calls = calls.filter(function(c) { return !c.meeting && c.has_transcript; });
-    if (!calls.length) { el.innerHTML = '<div class="empty">' + (personTx ? "No transcripts of calls with " + esc(histTxPerson.label) : historyTxSearch ? "No transcripts mention that" : q ? "No matching calls" : "No calls yet") + '</div>'; return; }
+    var plain = !q && !historyTxSearch;
+    if (plain) countMissed(calls);
+    var onlyMissed = plain && missedOnly;
+    if (onlyMissed) calls = calls.filter(function(c) { var ms = missedState(c); return ms && ms.s !== "done"; });
+    renderMissedBanner();
+    if (!calls.length) { el.innerHTML = '<div class="empty">' + (onlyMissed ? "No missed calls to call back" : personTx ? "No transcripts of calls with " + esc(histTxPerson.label) : historyTxSearch ? "No transcripts mention that" : q ? "No matching calls" : "No calls yet") + '</div>'; return; }
     // A picked caller stays selected while History narrows to them.
     var keep = histFilter && selected && selected.type === "call" ? "h-" + selected.data.id : "";
     if (selected && selected.type === "call" && !keep) deselect();
@@ -5796,7 +5793,7 @@ function renderHistoryRow(c) {
   return '<div class="hist-row" data-key="' + esc(key) + '">'
     + '<div class="hist-main">' + dirIcon(dir, missed) + '<span class="h-time">' + when + '</span>'
     + '<span class="who">' + esc(name || num) + (c.did === "SIM" ? ' <span class="h-sim" title="Called from the SIM">📱</span>' : '') + (c.voicemail ? ' <span title="Voicemail">📼</span>' : '') + (c.callback ? ' <span title="Asked to be called back (pressed 2 in the queue)">↩️</span>' : '') + '</span>'
-    + tx + '</div>'
+    + missedChip(c) + tx + '</div>'
     + (c.match ? '<div class="hist-match">' + markMatch(c.match, historyQuery()) + '</div>' : '')
     + '</div>';
 }
@@ -5805,6 +5802,7 @@ function renderHistoryRow(c) {
 function histIconTap(e, row, c) {
   var key = row.getAttribute("data-key");
   if (e.target.closest(".hist-play")) { toggleRecording(row, c); return true; }
+  if (e.target.closest(".h-own")) { missedButton(c); return true; }
   if (e.target.closest(".h-add")) { openNoteSheet(c.call_id, (c.partner_name || "").trim() || c.phone_number || "", false); return true; }
   if (e.target.closest(".h-note")) { selectItem("call", c, key); openCallDetailView(c, { tab: "notes" }); return true; }
   if (e.target.closest(".h-tx")) { selectItem("call", c, key); openCallDetailView(c, { tab: "transcript" }); return true; }
@@ -5993,6 +5991,105 @@ function histAction(action) {
   else if (action === "details") openCallDetailView(c);
   else if (action === "contact") openContactById(c.partner_id);
   else if (action === "block") confirmBlock(c);
+}
+
+// ── Missed-call ownership (src/missed.ts) ──────────────────────
+// Everyone sees unanswered calls, so each says who is calling back: open
+// (nobody yet), claimed (🙋 name) or done (✓ name), shown as a tappable
+// chip on the row. A later answered call with the same number marks it done
+// by itself; calling back from a selected missed call claims it. History's banner lists the ones still to
+// do, and the History button counts those nobody has claimed.
+var missedOnly = false, missedTodo = 0, missedUnclaimed = 0;
+function missedState(c) {
+  if (!c || c.meeting || c.direction !== "incoming" || !(c.state === "missed" || c.state === "rejected" || c.state === "aborted")) return null;
+  if (c.done_at) return { s: "done", who: c.done_name || "", at: c.done_at };
+  if (c.returned_at && (!c.reopened_at || c.returned_at > c.reopened_at)) return { s: "done", who: c.returned_name || "", at: c.returned_at, auto: true };
+  if (c.own_id) return { s: c.own_mine ? "mine" : "theirs", who: c.own_name || "", at: c.own_at };
+  return { s: "open" };
+}
+function firstName(n) { return String(n || "").trim().split(" ")[0]; }
+function missedChip(c) {
+  var ms = missedState(c);
+  if (!ms) return "";
+  if (ms.s === "open") return '<button class="h-own open" title="Nobody is calling back yet: tap to take it">Call back</button>';
+  if (ms.s === "mine") return '<button class="h-own mine" title="You are calling back: tap when done">🙋 Me</button>';
+  if (ms.s === "theirs") return '<button class="h-own theirs" title="' + esc(ms.who) + ' is calling back">🙋 ' + esc(firstName(ms.who)) + '</button>';
+  return '<button class="h-own done" title="' + esc(missedDoneText(ms)) + '">✓' + (ms.who ? " " + esc(firstName(ms.who)) : "") + '</button>';
+}
+function missedDoneText(ms) {
+  var when = ms.at ? ", " + fmtDay(ms.at) + " " + new Date(ms.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+  return (ms.auto ? "Called back" : "Dealt with") + (ms.who ? " by " + ms.who : "") + when;
+}
+function missedAction(c, action, force, quiet) {
+  return fetch(API + "/call-history/missed", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: c.leg_ids || [c.id], action: action, force: !!force }) })
+    .then(function(r) { return r.json().then(function(d) {
+      if (r.status === 409) {
+        if (!quiet) showToast("🙋 " + (d.own_name || "Someone") + " is already calling back", { label: "Take over", run: function() { missedAction(c, "claim", true); } }, 8000);
+        return null;
+      }
+      if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+      return d;
+    }); })
+    .then(function(d) {
+      if (!d) return null;
+      if (action === "claim") { c.own_id = d.user_id; c.own_name = d.name; c.own_at = d.at; c.own_mine = 1; c.done_at = null; c.done_name = null; }
+      else if (action === "release") { c.own_id = null; c.own_name = null; c.own_at = null; c.own_mine = 0; }
+      else if (action === "done") { c.done_at = d.at; c.done_name = d.name; }
+      else if (action === "reopen") { c.done_at = null; c.done_name = null; c.reopened_at = d.at; }
+      if (onDialView()) loadHistory();
+      return d;
+    })
+    .catch(function(e) { if (!quiet) showToast("❌ Couldn't update the missed call: " + e.message); return null; });
+}
+// Tapping the chip: Call back → yours, 🙋 Me → done (both with Undo);
+// someone else's offers Take over, and ✓ offers Reopen.
+function missedButton(c) {
+  var ms = missedState(c);
+  if (!ms) return;
+  var who = (c.partner_name || "").trim() || c.phone_number;
+  if (ms.s === "open") missedAction(c, "claim").then(function(d) {
+    if (d) showToast("🙋 You're calling back " + who, { label: "Undo", run: function() { missedAction(c, "release"); } });
+  });
+  else if (ms.s === "mine") missedAction(c, "done").then(function(d) {
+    if (d) showToast("✓ " + who + " dealt with", { label: "Undo", run: function() { missedAction(c, "reopen"); } });
+  });
+  else if (ms.s === "theirs") showToast("🙋 " + ms.who + " is calling back " + who, { label: "Take over", run: function() { missedAction(c, "claim", true); } }, 8000);
+  else showToast("✓ " + missedDoneText(ms), { label: "Reopen", run: function() { missedAction(c, "reopen"); } }, 8000);
+}
+// Calling back from a selected missed call nobody has claimed claims it.
+function claimOnDial(num) {
+  var c = selected && selected.type === "call" ? selected.data : null;
+  var ms = missedState(c);
+  var k = function(n) { return String(n || "").replace(/[^0-9]/g, "").slice(-9); };
+  if (ms && ms.s === "open" && k(num).length >= 7 && k(num) === k(c.phone_number)) missedAction(c, "claim", false, true);
+}
+function countMissed(calls) {
+  missedTodo = 0; missedUnclaimed = 0;
+  for (var i = 0; i < calls.length; i++) {
+    var ms = missedState(calls[i]);
+    if (!ms || ms.s === "done") continue;
+    missedTodo++;
+    if (ms.s === "open") missedUnclaimed++;
+  }
+  var b = document.getElementById("hist-badge");
+  b.textContent = missedUnclaimed > 99 ? "99+" : String(missedUnclaimed);
+  b.classList.toggle("hidden", !missedUnclaimed);
+}
+function missedBannerWanted() { return histTab === "calls" && !historyQuery() && (missedOnly || missedTodo > 0); }
+function renderMissedBanner() {
+  var el = document.getElementById("missed-banner");
+  el.classList.toggle("on", missedOnly);
+  el.innerHTML = missedOnly ? "📵 Missed calls to call back · <b>Show all calls</b>"
+    : "📵 " + missedTodo + " missed call" + (missedTodo === 1 ? "" : "s") + " to call back"
+      + (missedUnclaimed && missedUnclaimed !== missedTodo ? " (" + missedUnclaimed + " unclaimed)" : missedUnclaimed ? ", nobody on " + (missedTodo === 1 ? "it" : "them") : "")
+      + " · <b>Show</b>";
+  updateDialBottomVisibility();
+}
+function toggleMissedOnly() {
+  missedOnly = !missedOnly;
+  if (selected && selected.type === "call") deselect();
+  renderMissedBanner();
+  loadHistory();
 }
 
 // ── Blocked numbers (src/blocked.ts) ─────────────────────────
@@ -6974,7 +7071,6 @@ function installApp() {
   document.getElementById("install-tip").classList.remove("hidden");
 }
 function menuInstallApp() {
-  document.getElementById("menu-drawer").classList.add("hidden");
   installApp();
 }
 function dismissInstallTip() {
@@ -7031,23 +7127,15 @@ document.addEventListener("visibilitychange", function() { if (!document.hidden)
 // Greetings are stored on the worker, and Asterisk keeps its own copy of the
 // active one (greetings-sync.sh), so "synced" says whether the phone system
 // has caught up with the latest change. Everything saves as it's changed.
-var vmState = null, vmReturnView = "dial", vmStatusTimer = null, vmPollTimer = null;
+var vmState = null, vmStatusTimer = null, vmPollTimer = null;
 var vmRenameTimers = {}, vmDeleteArmed = {}, vmRec = null, vmPreview = null;
 var VM_MAX_SECONDS = 120; // the worker stores greetings in D1, which caps a row at 2 MB
-function openVoicemail() {
-  document.getElementById("menu-drawer").classList.add("hidden");
-  var views = document.querySelectorAll(".view");
-  for (var i = 0; i < views.length; i++) {
-    if (!views[i].classList.contains("hidden") && views[i].id !== "view-voicemail") vmReturnView = views[i].id.replace("view-", "");
-  }
-  switchView("voicemail");
-  loadVoicemail();
-}
-function closeVoicemail() {
+function openVoicemail() { openSettings("voicemail"); }
+// Leaving the Voicemail tab (or Settings): stop any recording or preview.
+function leaveVoicemail() {
   stopVmRecording(true);
   stopVmPreview();
   clearTimeout(vmPollTimer);
-  switchView(vmReturnView || "dial");
 }
 function vmStatus(msg, bad) {
   var el = document.getElementById("vm-status");
@@ -7077,7 +7165,7 @@ function setVmState(d) {
   renderVoicemail();
   // Asterisk applies a change a moment after it's saved; check back until it has.
   clearTimeout(vmPollTimer);
-  if (!d.synced && !document.getElementById("view-voicemail").classList.contains("hidden")) vmPollTimer = setTimeout(loadVoicemail, 3000);
+  if (!d.synced && settingsTab === "voicemail" && currentViewName() === "settings") vmPollTimer = setTimeout(loadVoicemail, 3000);
 }
 function renderVoicemail() {
   var d = vmState;
@@ -7315,12 +7403,11 @@ function stopVmRecording(discard) {
 }
 
 // ── menu + settings ────────────────────────────────────────────
-function toggleMenu() {
-  document.getElementById("menu-drawer").classList.toggle("hidden");
-}
-var settingsBackup = null;
-function openSettings() {
-  document.getElementById("menu-drawer").classList.add("hidden");
+var settingsBackup = null, settingsReturnView = "dial", settingsTab = "";
+// tab: open on this tab instead of the last one used.
+function openSettings(tab) {
+  var from = currentViewName();
+  if (from !== "settings") settingsReturnView = from;
   // Picking/adding an account in the form switches activeAccountId right away;
   // remember it so Cancel can put it back.
   settingsBackup = { activeAccountId: activeAccountId };
@@ -7341,19 +7428,31 @@ function openSettings() {
   // browser that can pick audio outputs.
   var devTab = document.querySelector('#set-tabs [data-tab="device"]');
   devTab.classList.toggle("hidden", document.getElementById("loc-box").classList.contains("hidden") && document.getElementById("sink-box").classList.contains("hidden"));
-  var tab = "account";
-  try { tab = localStorage.getItem("vb_settings_tab") || "account"; } catch (e) {}
+  if (!tab) { try { tab = localStorage.getItem("vb_settings_tab") || "account"; } catch (e) { tab = "account"; } }
+  document.getElementById("params-filter").value = "";
+  settingsTab = "";
+  switchView("settings");
   setSettingsTab(tab);
-  document.getElementById("settings-modal").classList.remove("hidden");
 }
 
-// Settings is split into tabs (Account, Calls, Blocked, Device, Quick text);
-// the last one used opens next time.
+// Settings (the ☰ menu) is one screen with tabs: Account, Calls, Voicemail,
+// Blocked, Device, Quick text, Parameters. The last one used opens next time.
+// Voicemail and Parameters save as they change, so they have no Save button.
 function setSettingsTab(tab) {
   var btn = document.querySelector('#set-tabs [data-tab="' + tab + '"]');
   if (!btn || btn.classList.contains("hidden")) tab = "account";
+  if (settingsTab === "voicemail" && tab !== "voicemail") leaveVoicemail();
+  var was = settingsTab;
+  settingsTab = tab;
   document.querySelectorAll("#set-tabs button").forEach(function(b) { b.classList.toggle("active", b.getAttribute("data-tab") === tab); });
-  document.querySelectorAll("#settings-modal .set-pane").forEach(function(p) { p.classList.toggle("hidden", p.getAttribute("data-pane") !== tab); });
+  document.querySelectorAll("#view-settings .set-pane").forEach(function(p) { p.classList.toggle("hidden", p.getAttribute("data-pane") !== tab); });
+  document.getElementById("set-foot").classList.toggle("hidden", tab === "voicemail" || tab === "params");
+  if (tab !== was) {
+    if (tab === "voicemail") loadVoicemail();
+    if (tab === "params") renderParams();
+  }
+  btn = document.querySelector('#set-tabs [data-tab="' + tab + '"]');
+  if (btn && btn.scrollIntoView) btn.scrollIntoView({ block: "nearest", inline: "nearest" });
   try { localStorage.setItem("vb_settings_tab", tab); } catch (e) {}
 }
 
@@ -7464,7 +7563,9 @@ function cancelSettings() {
   closeSettings();
 }
 function closeSettings() {
-  document.getElementById("settings-modal").classList.add("hidden");
+  if (settingsTab === "voicemail") leaveVoicemail();
+  settingsTab = "";
+  if (currentViewName() === "settings") switchView(settingsReturnView || "dial");
 }
 
 // ── SIP account management ─────────────────────────────────────
@@ -7577,12 +7678,6 @@ function teardownSoftphone() {
   sipUA = null; sipSession = null; currentCall = null;
   renderCallUI();
 }
-document.addEventListener("click", function(e) {
-  var d = document.getElementById("menu-drawer");
-  if (!d.classList.contains("hidden") && !e.target.closest(".menu-icon") && !e.target.closest("#menu-drawer")) {
-    d.classList.add("hidden");
-  }
-});
 
 // ── softphone init ─────────────────────────────────────────────
 // Wire the remote audio track to an <audio> element so we can actually hear

@@ -36,6 +36,7 @@ What the phone system does today (main branch, November 2026). It has four parts
 
 - History and the dial pad share one screen. Each call is one row, with duplicate call legs merged. Day headers stay at the top while you scroll.
 - **Each row shows**: direction triangles (coloured, missed calls marked), the time, the name or number, 📱 for SIM calls, 📼 for voicemail, ↩️ for a callback asked for from the queue, ＋ voice note, 📝 notes, 💬 transcript and ▶ play recording.
+- **Missed calls have an owner**: each shows Call back (nobody yet), 🙋 name (someone is calling back) or ✓ name (done). Tap Call back to take it, 🙋 Me when done, someone else's to take over, ✓ to reopen. Calling back from a selected missed call takes it; a later answered call with that number marks it done. A banner counts the ones still to call back and shows just those; the History button counts the ones nobody has taken.
 - Search the history. Picking a contact or call narrows the list to that person.
 - 💬 searches call transcripts, newest first. A match opens the call at that line.
 - Swipe a row to archive or delete it.
