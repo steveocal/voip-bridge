@@ -117,6 +117,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .xfer-row .n{flex:1;min-width:0;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .xfer-row .s{font-size:12px;color:#999;white-space:nowrap}
 .xfer-list .empty{padding:12px 0}
+.xfer-list.exts button.pr{display:flex;align-items:center;gap:6px;text-align:left}
+.xfer-list.exts button.pr.on{background:#1e3a5f}
+.pr-dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;background:#555}
+.pr-free .pr-dot{background:#3fb950}
+.pr-app .pr-dot{background:#3fb950;opacity:.45}
+.pr-ringing .pr-dot{background:#d29922;animation:prblink 1s infinite}
+.pr-busy .pr-dot{background:#f85149}
+.pr-offline{opacity:.55}
+.pr-txt{display:flex;flex-direction:column;line-height:1.2}
+.pr-txt small{font-size:11px;color:#999}
+@keyframes prblink{50%{opacity:.3}}
 .parked-strip{display:flex;flex-wrap:wrap;gap:6px;margin:0 16px 8px;align-items:center;font-size:13px;color:#aaa}
 .parked-strip button{flex:0 0 auto;background:#1e3a5f}
 .hidden{display:none!important}
@@ -870,6 +881,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
         <button class="cp-tab" data-tab="calls" onclick="setSettingsTab('calls')">Calls</button>
         <button class="cp-tab" data-tab="voicemail" onclick="setSettingsTab('voicemail')">Voicemail</button>
         <button class="cp-tab" data-tab="blocked" onclick="setSettingsTab('blocked')">Blocked</button>
+        <button class="cp-tab" data-tab="limits" onclick="setSettingsTab('limits')">Limits</button>
         <button class="cp-tab" data-tab="device" onclick="setSettingsTab('device')">Device</button>
         <button class="cp-tab" data-tab="text" onclick="setSettingsTab('text')">Quick text</button>
         <button class="cp-tab" data-tab="params" onclick="setSettingsTab('params')">Parameters</button>
@@ -892,7 +904,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
         <div class="set-field"><label>Name</label><input id="acc-name" type="text" placeholder="Asterisk (WebPhone 201)" autocomplete="off"></div>
         <div class="set-field"><label>Caller ID</label><input id="acc-callerid" type="text" placeholder="+44 7520 658657" autocomplete="off"></div>
         <div class="set-field"><label>Username</label><input id="acc-username" type="text" placeholder="201" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
-        <div class="set-field"><label>Password</label><input id="acc-password" type="text" placeholder="webphone201" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+        <div class="set-field"><label>Password</label><input id="acc-password" type="text" placeholder="SIP password from Odoo" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
         <div class="set-field wide"><label>Proxy / Server</label><input id="acc-server" type="text" placeholder="wss://host/ws" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
         <div class="set-field"><label>Transport</label>
           <select id="acc-transport" class="acc-select">
@@ -964,6 +976,19 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       </div>
     </div>
 
+    </div>
+
+    <div class="set-pane" data-pane="limits">
+    <div class="loc-box" id="lim-box">
+      <div class="loc-title">📵 Outgoing call limits</div>
+      <div class="set-note" style="margin:0 0 6px">The PBX refuses an outgoing call ("all circuits are busy") once one of these is reached. They cover everything that goes out through the trunk: calls from extensions, 📱 calls via a mobile, forwards, mobile legs of ring groups and queues, and website callbacks. They cap what a stolen password could cost.</div>
+      <div class="set-field"><label>Calls at once, all together</label><input id="lim-atOnce" type="number" min="1" step="1"></div>
+      <div class="set-field"><label>Calls at once from one extension</label><input id="lim-perExt" type="number" min="1" step="1"></div>
+      <div class="set-field"><label>Calls one extension can start in an hour</label><input id="lim-extHour" type="number" min="1" step="1"></div>
+      <div class="set-field"><label>Calls the PBX can start in an hour, all together</label><input id="lim-allHour" type="number" min="1" step="1"></div>
+      <div class="loc-row"><button onclick="saveCallLimits()">Save limits</button><span class="set-note" id="lim-status"></span></div>
+      <div class="set-note" id="lim-hits"></div>
+    </div>
     </div>
 
     <div class="set-pane" data-pane="calls">
@@ -1308,6 +1333,7 @@ var J_INK = "Jot: ink", J_WORD = "Jot: word detection", J_LAY = "Jot: layout & s
 
 defParam(G_CALL, "parkExtension", "Park extension", 700, { min: 1, max: 99999, step: 1, note: "Asterisk's parking extension; Park transfers the call there" });
 defParam(G_CALL, "longPressCallMs", "Hold 📞 for SIM/VoIP", 550, { unit: "ms", min: 250, max: 2000, step: 50, note: "Long-press on a call button (Android app) to choose VoIP or the SIM" });
+defParam(G_CALL, "presencePollMs", "Who's free refresh", 3000, { unit: "ms", min: 1000, max: 30000, step: 500, note: "How often the transfer panel checks who is free, ringing or on a call" });
 defParam(G_CALL, "parkedPollMs", "Parked calls refresh", 5000, { unit: "ms", min: 1000, max: 60000, step: 500, note: "How often the parked-calls strip is checked" });
 defParam(G_CALL, "wsKeepAliveSec", "WebSocket keep-alive", 25, { unit: "s", min: 0, max: 300, step: 5, note: "Ping the SIP server this often (0 = off); applies on next connect" });
 defParam(G_CALL, "reconnectMinMs", "Reconnect first retry", 2000, { unit: "ms", min: 500, max: 60000, step: 500, note: "Wait before the first reconnect after the connection drops; doubles on each failure" });
@@ -1584,7 +1610,9 @@ var OUTBOUND_CLI = "+44 7520 658657";
 function defaultCallerId(ext) { return String(ext) === "201" ? "+44 1283 246491" : OUTBOUND_CLI; }
 function defaultAccounts() {
   return [
-    { id: "asterisk", name: "Asterisk (WebPhone 201)", username: "201", password: "webphone201", server: DEFAULT_WS, transport: "wss", domain: "64.176.184.11", callerId: defaultCallerId("201") }
+    // No extension or password built in: each person enters their own
+    // (Settings → Account), which also signs the page in.
+    { id: "asterisk", name: "My extension", username: "", password: "", server: DEFAULT_WS, transport: "wss", domain: "64.176.184.11", callerId: OUTBOUND_CLI }
   ];
 }
 function loadAccounts() {
@@ -5156,7 +5184,35 @@ function resetCall() {
 // a blind transfer to Asterisk's parking extension; the parked strip lists
 // what's waiting (worker /parked, from ARI) and tapping a slot dials it.
 var consultSession = null, consultTarget = "";
-var XFER_EXTS = ["200", "201", "202", "203", "204"];
+// Used until /presence answers (or when it can't).
+var XFER_EXTS = ["200", "201", "202", "203"];
+
+// Presence (src/presence.ts): who is free, ringing or on a call, polled
+// while the transfer panel is open and shown on its Extensions tab.
+var presenceList = null, presenceTimer = null;
+var PRESENCE_TEXT = { free: "Free", app: "App (rings by push)", ringing: "Ringing", busy: "On a call", offline: "Offline" };
+function loadPresence() {
+  fetch(API + "/presence").then(function(r) { return r.json(); }).then(function(d) {
+    if (!d.presence || !d.presence.length) return;
+    presenceList = d.presence;
+    var inp = document.getElementById("xfer-input");
+    if (presenceTimer && xferSource === "ext" && (!inp.value.trim() || /^[0-9]{2,4}$/.test(inp.value.trim()))) renderTransferList();
+  }).catch(function() {});
+}
+function startPresence() {
+  stopPresence();
+  loadPresence();
+  presenceTimer = setInterval(loadPresence, PV.presencePollMs);
+}
+function stopPresence() { if (presenceTimer) { clearInterval(presenceTimer); presenceTimer = null; } }
+function presenceLabel(p) {
+  var t = PRESENCE_TEXT[p.state] || p.state;
+  if (p.state === "busy" && p.since) {
+    var m = Math.floor((Date.now() - p.since) / 60000);
+    t += m >= 1 ? " · " + m + " min" : " · just now";
+  }
+  return t;
+}
 
 function sipTarget(num) {
   var acc = activeAccount();
@@ -5268,6 +5324,7 @@ function openTransfer(mode) {
   xferPick = null;
   loadT9Corpus();
   loadTransferRecent();
+  startPresence();
   setTransferSource(xferSource);
   inp.focus();
 }
@@ -5306,11 +5363,21 @@ function renderTransferList() {
   var el = document.getElementById("xfer-list");
   var raw = document.getElementById("xfer-input").value.trim();
   var q = raw && !(xferPick && raw === xferPick.num) ? raw : "";
+  // An extension typed in the box (or picked) keeps the extension buttons.
+  if (q && xferSource === "ext" && presenceList && /^[0-9]{2,4}$/.test(q)) q = "";
   el.classList.toggle("exts", !q && xferSource === "ext");
   if (!q && xferSource === "ext") {
-    var mine = myExtension();
-    el.innerHTML = XFER_EXTS.filter(function(x) { return x !== mine; })
-      .map(function(x) { return '<button onclick="pickTransferExt(this.textContent)">' + x + '</button>'; }).join("");
+    var mine = myExtension(), picked = raw;
+    if (!presenceList) {
+      el.innerHTML = XFER_EXTS.filter(function(x) { return x !== mine; })
+        .map(function(x) { return '<button onclick="pickTransferExt(' + "'" + x + "'" + ')">' + x + '</button>'; }).join("");
+      return;
+    }
+    el.innerHTML = presenceList.filter(function(p) { return p.ext !== mine; }).map(function(p) {
+      var ext = esc(p.ext);
+      return '<button class="pr pr-' + esc(p.state) + (picked === p.ext ? ' on' : '') + '" onclick="pickTransferExt(' + "'" + ext + "'" + ')" title="' + esc(presenceLabel(p)) + '">'
+        + '<span class="pr-dot"></span><span class="pr-txt">' + ext + (p.name ? ' ' + esc(p.name) : '') + '<small>' + esc(presenceLabel(p)) + '</small></span></button>';
+    }).join("");
     return;
   }
   var rows;
@@ -5358,8 +5425,8 @@ document.getElementById("xfer-input").addEventListener("input", function() {
   if (xferPick && this.value.trim() !== xferPick.num) xferPick = null;
   renderTransferList();
 });
-function pickTransferExt(x) { xferPick = null; document.getElementById("xfer-input").value = x; }
-function closeTransfer() { document.getElementById("xfer-panel").classList.add("hidden"); }
+function pickTransferExt(x) { xferPick = null; document.getElementById("xfer-input").value = x; renderTransferList(); }
+function closeTransfer() { stopPresence(); document.getElementById("xfer-panel").classList.add("hidden"); }
 // The number to transfer to. A typed name isn't one: the top match is used
 // if there's exactly one, otherwise ask to pick from the list.
 function transferInput() {
@@ -6327,6 +6394,36 @@ function toggleMissedOnly() {
   if (selected && selected.type === "call") deselect();
   renderMissedBanner();
   loadHistory();
+}
+
+// ── Outgoing call limits (src/limits.ts) ──────────────────────
+var LIMIT_FIELDS = ["atOnce", "perExt", "extHour", "allHour"];
+var LIMIT_REASONS = { at_once: "calls at once", ext_at_once: "calls at once from one extension", ext_hour: "calls per hour from one extension", all_hour: "calls per hour" };
+function loadCallLimits() {
+  var st = document.getElementById("lim-status");
+  st.textContent = "";
+  fetch(API + "/call-limits").then(function(r) { return r.json(); }).then(function(d) {
+    if (!d.limits) throw new Error(d.error || "no limits");
+    LIMIT_FIELDS.forEach(function(k) {
+      var el = document.getElementById("lim-" + k);
+      el.value = d.limits[k];
+      el.max = d.max[k];
+      el.title = "Default " + d.defaults[k] + ", at most " + d.max[k];
+    });
+    var h = d.hits;
+    document.getElementById("lim-hits").textContent = h && h.count
+      ? "Calls refused so far: " + h.count + ". Last: " + new Date(h.at).toLocaleString() + ", " + (LIMIT_REASONS[h.reason] || h.reason) + (h.ext ? " (ext " + h.ext + ")" : "") + "."
+      : "No calls refused so far.";
+  }).catch(function(e) { st.textContent = "Couldn't load: " + e.message; });
+}
+function saveCallLimits() {
+  var body = {}, st = document.getElementById("lim-status");
+  LIMIT_FIELDS.forEach(function(k) { body[k] = Number(document.getElementById("lim-" + k).value); });
+  st.textContent = "Saving…";
+  fetch(API + "/call-limits", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+    .then(function(r) { return r.json().then(function(d) { if (!r.ok) throw new Error(d.error || ("HTTP " + r.status)); return d; }); })
+    .then(function() { st.textContent = "Saved. The PBX picks it up within a minute."; })
+    .catch(function(e) { st.textContent = "❌ " + e.message; });
 }
 
 // ── Blocked numbers (src/blocked.ts) ─────────────────────────
@@ -8064,7 +8161,7 @@ function openSettings(tab) {
 }
 
 // Settings (the ☰ menu) is one screen with tabs: Account, Calls, Voicemail,
-// Blocked, Device, Quick text, Parameters. The last one used opens next time.
+// Blocked, Limits, Device, Quick text, Parameters. The last one used opens next time.
 // Voicemail and Parameters save as they change, so they have no Save button.
 function setSettingsTab(tab) {
   var btn = document.querySelector('#set-tabs [data-tab="' + tab + '"]');
@@ -8074,9 +8171,10 @@ function setSettingsTab(tab) {
   settingsTab = tab;
   document.querySelectorAll("#set-tabs button").forEach(function(b) { b.classList.toggle("active", b.getAttribute("data-tab") === tab); });
   document.querySelectorAll("#view-settings .set-pane").forEach(function(p) { p.classList.toggle("hidden", p.getAttribute("data-pane") !== tab); });
-  document.getElementById("set-foot").classList.toggle("hidden", tab === "voicemail" || tab === "params");
+  document.getElementById("set-foot").classList.toggle("hidden", tab === "voicemail" || tab === "params" || tab === "limits");
   if (tab !== was) {
     if (tab === "voicemail") loadVoicemail();
+    if (tab === "limits") loadCallLimits();
     if (tab === "params") renderParams();
   }
   btn = document.querySelector('#set-tabs [data-tab="' + tab + '"]');
@@ -8448,6 +8546,7 @@ function initSoftphone() {
   var acc = activeAccount();
   if (!acc) { setStatus("❌ No SIP account configured", true); return; }
   updateAccountHeader();
+  if (!acc.username || !acc.password) { setStatus("Add your extension and password in Settings → Account", true); return; }
   setStatus("Connecting…", false);
   try {
     sipUA = new SIP.UserAgent({

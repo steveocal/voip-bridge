@@ -223,23 +223,45 @@ function sessionToken(env: Env, userId: number, ext: string): Promise<string> {
   return signed(env, `s.${userId}.${ext}.${Date.now() + SESSION_DAYS * 86400_000}`);
 }
 
+// The login password is the SIP password, so without a limit this route
+// would let anyone guess SIP passwords online. Like /staff/login (staff.ts),
+// wrong passwords are counted (login_failures, migration 0026): MAX_EXT_FAILURES
+// for one extension, or MAX_IP_FAILURES from one address, within
+// FAILURE_WINDOW_MS locks sign-in there until the window has passed.
+const MAX_EXT_FAILURES = 5;
+const MAX_IP_FAILURES = 20;
+const FAILURE_WINDOW_MS = 15 * 60_000;
+
 export async function handleLogin(request: Request, env: Env): Promise<Response> {
   if (!sessionKey(env)) return Response.json({ error: "SESSION_SECRET is not set on the worker" }, { status: 503 });
   let body: { ext?: string; password?: string };
   try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
-  const ext = String(body.ext ?? "").trim();
+  const ext = String(body.ext ?? "").trim().slice(0, 20);
   const password = String(body.password ?? "");
   if (!ext || !password) return Response.json({ error: "extension and password required" }, { status: 400 });
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  const since = Date.now() - FAILURE_WINDOW_MS;
+  const fails = await env.DB.prepare(
+    "SELECT (SELECT COUNT(*) FROM login_failures WHERE ext = ?1 AND at > ?3) AS byExt, (SELECT COUNT(*) FROM login_failures WHERE ip = ?2 AND at > ?3) AS byIp"
+  ).bind(ext, ip, since).first<{ byExt: number; byIp: number }>();
+  if ((fails?.byExt ?? 0) >= MAX_EXT_FAILURES || (fails?.byIp ?? 0) >= MAX_IP_FAILURES) {
+    return Response.json({ error: "Too many wrong passwords. Try again in 15 minutes." }, { status: 429 });
+  }
+  const fail = async (status: number, error: string) => {
+    await env.DB.prepare("INSERT INTO login_failures (ext, ip, at) VALUES (?1, ?2, ?3)").bind(ext, ip, Date.now()).run();
+    return Response.json({ error }, { status });
+  };
   const uid = await odooAuth(env);
   if (!uid) return Response.json({ error: "Odoo unavailable" }, { status: 502 });
   const r = await odooCall(env, uid, "phone_bridge.extension", "search_read",
     [[["number", "=", ext], ["active", "=", true]]], { fields: ["user_id", "sip_password"], limit: 1 });
   if (r.fault) return Response.json({ error: "Odoo extensions unavailable" }, { status: 502 });
   const rec = ((r.parsed ?? []) as Array<Record<string, unknown>>)[0];
-  if (!rec) return Response.json({ error: `Extension ${ext} isn't set up in Odoo (Phone → Extensions)` }, { status: 403 });
+  if (!rec) return fail(403, `Extension ${ext} isn't set up in Odoo (Phone → Extensions)`);
   if (!rec.sip_password) return Response.json({ error: `Extension ${ext} has no SIP password in Odoo` }, { status: 403 });
   if (!Array.isArray(rec.user_id)) return Response.json({ error: `Extension ${ext} has no user in Odoo` }, { status: 403 });
-  if (!(await same(password, String(rec.sip_password)))) return Response.json({ error: "Wrong password for this extension" }, { status: 403 });
+  if (!(await same(password, String(rec.sip_password)))) return fail(403, "Wrong password for this extension");
+  await env.DB.prepare("DELETE FROM login_failures WHERE ext = ?1 OR at < ?2").bind(ext, since).run();
   const user: User = { id: rec.user_id[0] as number, name: String(rec.user_id[1]), ext };
   userNames.set(user.id, user.name);
   return Response.json({ ok: true, user, token: await sessionToken(env, user.id, ext) });

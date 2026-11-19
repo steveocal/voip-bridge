@@ -12,6 +12,7 @@
 #   when / hours / menu / key / prompt: menus and opening hours (below)
 #   queue <our number> <strategy> <ring secs> <max wait> <position 0|1> <options 0|1> <prompt> <thanks|-> <legs|->
 #   block <last 9 digits> / blockwithheld: blocked callers (below)
+#   limits <at once> <per ext at once> <per ext per hour> <all per hour>: outgoing call limits
 # Each extension becomes an endpoint, auth and aor in $OUT, on the templates
 # in pjsip-phone-bridge.conf. An extension that is already defined by hand in
 # another pjsip*.conf is skipped (and logged), so hand-made ones can be moved
@@ -296,6 +297,17 @@ blocks=$(echo "$cfg" | awk '$1 == "block" && $2 ~ /^[0-9]+$/ && length($2) >= 7 
 sync_family pbblock "$blocks"
 if echo "$cfg" | grep -q -x 'blockwithheld'; then $AST "database put pbx block_withheld 1" >/dev/null
 else $AST "database del pbx block_withheld" >/dev/null 2>&1; fi
+
+# Outgoing call limits (src/limits.ts): astdb pbx/call_limits =
+# <at once>|<per extension at once>|<per extension per hour>|<all per hour>,
+# read by [pb-out-limit]. No valid line: the key goes and the dialplan's
+# defaults apply, so calls stay capped.
+limits=$(echo "$cfg" | awk '
+  function n(v, max) { return v ~ /^[0-9]+$/ && v >= 1 && v <= max }
+  $1 == "limits" && n($2, 30) && n($3, 10) && n($4, 300) && n($5, 1000) { print $2 "|" $3 "|" $4 "|" $5; exit }')
+if [ -n "$limits" ]; then
+  [ "$($AST "database get pbx call_limits" 2>/dev/null | sed -n 's/^Value: //p')" = "$limits" ] || $AST "database put pbx call_limits $limits" >/dev/null
+else $AST "database del pbx call_limits" >/dev/null 2>&1; fi
 
 # Only report what was applied, so the worker can tell it's in step.
 applied=$(printf '%s\n' "$cfg" | sha256sum | cut -d' ' -f1)

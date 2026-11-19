@@ -3,6 +3,7 @@ import { ariPing, ariSyncExtensions } from "./asterisk";
 import { same, syncExtensions } from "./users";
 import { ivrSyncLines } from "./ivr";
 import { blockSyncLines } from "./blocked";
+import { limitSyncLines } from "./limits";
 
 // ── PBX extensions from Odoo ──────────────────────────────────
 // Odoo's phone_bridge.extension records are the extensions: nobody adds them
@@ -101,7 +102,8 @@ export async function userLegs(env: Env, userId: number): Promise<string[]> {
  *  is none, straight to the no-answer action. Numbers are digits only. A
  *  number with no route line keeps the PBX's own routing. Then the menus,
  *  opening hours and queues (ivr.ts: when / hours / menu / key / queue /
- *  prompt lines), and the blocked numbers (blocked.ts: block lines). */
+ *  prompt lines), the blocked numbers (blocked.ts: block lines) and the
+ *  outgoing call limits (limits.ts: limits line). */
 export async function pbxSyncText(env: Env): Promise<string> {
   const [rows, nums, sw] = await Promise.all([
     env.DB.prepare(`SELECT ${EXT_COLUMNS} FROM extensions ORDER BY number`).all<ExtRow>().then(r => r.results ?? []),
@@ -154,6 +156,7 @@ export async function pbxSyncText(env: Env): Promise<string> {
   }
   lines.push(...await ivrSyncLines(env, routed, (exts) => [...new Set(exts.map(legOf).filter((l): l is string => !!l))]));
   lines.push(...await blockSyncLines(env));
+  lines.push(...await limitSyncLines(env));
   return lines.join("\n") + "\n";
 }
 

@@ -24,7 +24,9 @@ import { handleMobileCall, handleMobileCallEvent } from "./mobilecall";
 import { markReturned, attachOwners, handleMissedAction } from "./missed";
 import { checkSpam, markSpam, spamReason, clearSpam } from "./spam";
 import { handleReports } from "./reports";
+import { handlePresence } from "./presence";
 import { handleWebCallback, handleWebCallbackConfig, handleWebCallbackStatus, handleWebCallbackEvent } from "./webcallback";
+import { noteLimitHit, handleGetCallLimits, handleSetCallLimits } from "./limits";
 import { callerBlocked, noteBlockedCall, handleBlockedList, handleBlockNumber, handleUnblockNumber, handleBlockWithheld } from "./blocked";
 
 // Durable Object class must be exported from the entrypoint module.
@@ -32,11 +34,26 @@ export { CallState } from "./callstate";
 
 // ── Route handlers ─────────────────────────────────────────────
 
+// Events a signed-in softphone (dashboard / app) may post about its own
+// calls. Everything else (recordings, voicemail, queue callbacks, call
+// limits) and every trunk event comes from the PBX, which sends
+// X-Pbx-Secret (asterisk/pb-event.sh).
+const SOFTPHONE_EVENTS = new Set(["ring", "answer", "hangup", "sim", "sim_done"]);
+
 async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const session = await sessionUser(request, env);
+  const fromPbx = !session && await pbxAllowed(request, env);
+  if (!session && !fromPbx) return Response.json({ error: "unauthorized" }, { status: 401 });
   const body = await request.text();
   const params = new URLSearchParams(body);
   const event = params.get("event") ?? "unknown";
+  if (!fromPbx && !SOFTPHONE_EVENTS.has(event)) return Response.json({ error: "forbidden" }, { status: 403 });
+
+  // Posted by [pb-out-limit] when it refuses an outgoing call (limits.ts).
+  if (event === "limit") {
+    await noteLimitHit(env, params);
+    return Response.json({ action: "limit" });
+  }
   const callId = params.get("callId") ?? crypto.randomUUID();
   const caller = params.get("caller") ?? "unknown";
   const did = params.get("did") ?? "";
@@ -994,6 +1011,8 @@ export default {
       else if (m === "POST" && p === "/odoo/deleted") response = await handleOdooDeleted(request, env, user);
       else if (request.method === "POST" && url.pathname === "/odoo/push-calls") response = await handlePushCalls(request, env);
       else if (request.method === "GET" && url.pathname === "/push/status") response = await handlePushStatus(env);
+      else if (m === "GET" && p === "/call-limits") response = await handleGetCallLimits(env);
+      else if (m === "POST" && p === "/call-limits") response = await handleSetCallLimits(request, env, ctx);
       else if (m === "GET" && p === "/blocked") response = await handleBlockedList(env);
       else if (m === "POST" && p === "/blocked") response = await handleBlockNumber(request, env, ctx, user);
       else if (m === "POST" && p === "/blocked/withheld") response = await handleBlockWithheld(request, env, ctx);
@@ -1026,6 +1045,7 @@ export default {
       else if (request.method === "GET" && url.pathname === "/transcript") response = await handleGetTranscript(request, env, user);
       else if (request.method === "POST" && url.pathname === "/transcribe") response = await handleTranscribe(request, env, ctx, user);
       else if (request.method === "GET" && url.pathname === "/parked") response = await handleParked(env);
+      else if (m === "GET" && p === "/presence") response = await handlePresence(env);
       else if (request.method === "POST" && url.pathname === "/summarize") response = await handleSummarize(request, env, ctx, user);
       else if (request.method === "GET" && url.pathname === "/voicemail") response = await handleGetVoicemail(env, user.id);
       else if (request.method === "POST" && url.pathname === "/voicemail") response = await handleSetVoicemail(request, env, user.id);

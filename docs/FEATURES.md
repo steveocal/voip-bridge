@@ -18,6 +18,7 @@ What the phone system does today (main branch, November 2026). It has four parts
 - **Caller ID**: ext 201 shows 01283 246491; the other extensions show the voip.ms mobile number.
 - **In-call bottom bar**: Hold/Resume, Mute, a red hang-up button, Speaker and Menu.
 - **In-call menu**: DTMF keypad, quick texts, and blind or attended transfer, including 📱 transfer to your mobile.
+- **Who's free (presence)**: the transfer panel's Extensions tab lists every extension from Odoo with its owner and a dot: free, ringing, on a call (with how long), reachable through the app by push, or offline. It refreshes every 3 s while open, from Asterisk over ARI (`GET /presence`). Calls on the phone's SIM and 📱 calls via a mobile don't show as busy.
 - **Call parking**: park a call, with a strip showing parked calls. The dialplan picks the slot (PARKSLOT).
 - **Conference calls**: ➕ Add a person, then 👥 Merge.
 - **Call via my mobile**: the PBX rings your mobile, then connects it to the other person (`/mobile-call`).
@@ -120,6 +121,14 @@ What the phone system does today (main branch, November 2026). It has four parts
   - **Customer's salesperson**: rings the caller's salesperson, from their Odoo contact or its company, then the sales team, all at once or one at a time.
   - **While Ringing, Callers Hear**: a message plays while the phones ring, followed by a ringing tone.
 - PBX status and sync state show in the dashboard.
+
+- **Outgoing call limits** (Settings → Limits): the PBX refuses an outgoing call, and plays "all circuits are busy", once there are too many calls at once (in total or from one extension) or too many started this hour (in total or from one extension). The limits cover everything that goes out through the trunk: extensions, 📱 calls via a mobile, forwards, mobile legs of ring groups and queues, and website callbacks. Defaults are 10 / 3 / 40 / 150. Refused calls are counted, and the last one is shown. The settings have upper limits, so a stolen login can't switch the cap off.
+
+## Security
+
+- Signing in with an extension locks for 15 minutes after 5 wrong passwords for that extension, or 20 from one address.
+- The PBX's call events carry its secret (`pb-event.sh`), and softphones must be signed in, so nobody else can post events to `/call-event`. The dialplan filters caller IDs before they reach a shell command.
+- The page ships no built-in SIP account. Each person enters their own extension and password.
 
 ## Odoo integration
 

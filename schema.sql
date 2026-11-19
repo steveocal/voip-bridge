@@ -121,6 +121,15 @@ CREATE TABLE IF NOT EXISTS staff_login_failures (
 );
 CREATE INDEX IF NOT EXISTS idx_staff_login_failures ON staff_login_failures(employee_id, at);
 
+-- Wrong passwords at /auth/login (see migrations/0026_login_failures.sql)
+CREATE TABLE IF NOT EXISTS login_failures (
+  ext TEXT NOT NULL,
+  ip TEXT NOT NULL,
+  at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_login_failures_ext ON login_failures(ext, at);
+CREATE INDEX IF NOT EXISTS idx_login_failures_ip ON login_failures(ip, at);
+
 -- ── Website callback requests (see migrations/0011_web_callback.sql) ──
 CREATE TABLE IF NOT EXISTS web_callbacks (
   id TEXT PRIMARY KEY,

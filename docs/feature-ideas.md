@@ -27,8 +27,8 @@ Written 2026-11-17. Status: suggestions, nothing built. Based on `docs/FEATURES.
 | Gap | Why it matters |
 |---|---|
 | No iPhone app | The largest one for selling it. Incoming calls on iOS need a native shell with CallKit and VoIP push; a PWA can't ring reliably. |
-| No call queue | Ring groups only. No hold music with position, no "all busy" handling beyond voicemail, no callback-from-queue. |
-| No presence | Nobody can see who is on a call or available before transferring. |
+| ~~No call queue~~ | Done 2026-11-18: queues with hold music, place in line, press 1 for voicemail or 2 for a callback. |
+| ~~No presence~~ | Done 2026-11-19: the transfer panel shows who is free, ringing, on a call or offline (`src/presence.ts`). |
 | No text messaging | No SMS or WhatsApp to customers, and no "sorry we missed you" text after a missed call. |
 | ~~Missed calls have no owner~~ | Done 2026-11-18: claim, done, take over, and auto-done when the number is called back (`src/missed.ts`). |
 | ~~No reporting~~ | Done 2026-11-18: Reports screen with answer rate, missed-call response time, per person and per number, graphs and CSV (`src/reports.ts`). |
