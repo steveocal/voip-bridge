@@ -1,4 +1,5 @@
 from odoo import _, api, fields, models
+from odoo.exceptions import UserError
 
 CALL_STATES = [
     ("calling", "Calling"),
@@ -51,6 +52,10 @@ class PhoneBridgeCall(models.Model):
                                              compute="_compute_voicemail_extension_id", store=True)
     voicemail_heard = fields.Boolean("Heard")
     voicemail_notified = fields.Boolean(readonly=True, copy=False)
+    important = fields.Boolean(
+        readonly=True, index=True, tracking=True, copy=False,
+        help="Flagged Important in the phone dashboard: the call, its recording and transcript "
+             "are never deleted by retention, and can't be deleted here until it is cleared there.")
 
     _bridge_call_id_uniq = models.Constraint(
         "unique(bridge_call_id)",
@@ -61,6 +66,7 @@ class PhoneBridgeCall(models.Model):
     BRIDGE_FIELDS = (
         "phone_number", "direction", "state", "start_date", "end_date", "partner_id",
         "did", "extension", "voicemail", "voicemail_box", "notes", "transcript",
+        "important",
     )
 
     @api.depends("extension")
@@ -133,6 +139,8 @@ class PhoneBridgeCall(models.Model):
             call.display_name = f"{'To' if call.direction == 'outgoing' else 'From'} {who}"
 
     def unlink(self):
+        if any(self.mapped("important")):
+            raise UserError(_("Important calls can't be deleted. Clear Important on the call in the phone dashboard first."))
         bridge_ids = self.mapped("bridge_call_id")
         res = super().unlink()
         self.env["phone_bridge.installation"]._notify_deleted(calls=bridge_ids)

@@ -1,5 +1,6 @@
 from unittest.mock import patch
 
+from odoo.exceptions import UserError
 from odoo.tests import TransactionCase, tagged
 
 from ..models.phone_bridge_installation import PhoneBridgeInstallation
@@ -28,6 +29,18 @@ class TestBridgeUpsert(TransactionCase):
         call = self.Call.browse(self.Call.bridge_upsert({
             "bridge_call_id": "1.2", "phone_number": "1", "partner_id": 999999, "from_a_newer_worker": True}))
         self.assertFalse(call.partner_id)
+
+    def test_important_comes_from_the_worker_and_blocks_delete(self):
+        call = self.Call.browse(self.Call.bridge_upsert({
+            "bridge_call_id": "1.9", "phone_number": "1", "important": True}))
+        self.assertTrue(call.important)
+        with self.assertRaises(UserError):
+            call.unlink()
+        self.Call.bridge_upsert({"bridge_call_id": "1.9", "important": False})
+        self.assertFalse(call.important)
+        with patch.object(PhoneBridgeInstallation, "_notify_deleted", lambda *a, **k: None):
+            call.unlink()
+        self.assertFalse(call.exists())
 
     def test_upsert_needs_an_id(self):
         with self.assertRaises(ValueError):
