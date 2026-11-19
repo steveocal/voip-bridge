@@ -24,6 +24,10 @@ ODOO_URL = "https://www.infraredheaterpanels.co.uk"
 ODOO_DB = "www.infraredheaterpanels.co.uk"
 ASTERISK_URL = "https://64.176.184.11.nip.io"
 
+# Hourly: call retention (src/retention.ts), a few recordings per run.
+[triggers]
+crons = ["17 * * * *"]
+
 [[d1_databases]]
 binding = "DB"
 database_name = "voip-bridge-d1"

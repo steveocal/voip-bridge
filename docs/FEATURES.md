@@ -123,6 +123,8 @@ What the phone system does today (main branch, November 2026). It has four parts
 - PBX status and sync state show in the dashboard.
 
 - **Outgoing call limits** (Settings → Limits): the PBX refuses an outgoing call, and plays "all circuits are busy", once there are too many calls at once (in total or from one extension) or too many started this hour (in total or from one extension). The limits cover everything that goes out through the trunk: extensions, 📱 calls via a mobile, forwards, mobile legs of ring groups and queues, and website callbacks. Defaults are 10 / 3 / 40 / 150. Refused calls are counted, and the last one is shown. The settings have upper limits, so a stolen login can't switch the cap off.
+- **Retention** (Settings → Retention): how many days to keep recordings and voicemail messages, transcripts, and whole calls (History row, notes, AI summary, recording and transcript). 0 keeps them for ever, which is the default; otherwise 7 to 3650 days. Saving first shows how much would be deleted straight away, and asks you to confirm. An hourly cron removes the data, a few recordings per run (deleted from the PBX over ARI). Copies already sent to Odoo aren't affected.
+- **⭐ Important**: a switch on a call's Details tab, set on every leg of the call. Retention never removes that call, its recording or its transcript. It shows ⭐ in History. The flag goes to Odoo with the call (`phone_bridge.call.important`, phone_bridge 19.0.0.15.0), where it shows as a star with an "Important" filter, and Odoo refuses to delete the call while it is set.
 
 ## Security
 

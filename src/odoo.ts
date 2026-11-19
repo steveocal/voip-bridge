@@ -678,6 +678,7 @@ interface CallRow {
   start_date: number | null; end_date: number | null; notes_html: string | null;
   transcript: string | null; recording: string | null; voicemail: number; extension: string | null;
   spam?: string | null;
+  important?: number;
 }
 
 // Recordings are ~1 MB a minute (8 kHz 16-bit WAV). uploadRecording streams
@@ -814,6 +815,9 @@ export async function pushCallToOdoo(env: Env, callId: string, withRecording = f
     });
     // bridge_upsert gives the call to the extension's Odoo user.
     if (phoneBridge && ext) vals.extension = ext;
+    // Important (retention.ts). phone_bridge.call only: an addon too old to
+    // know it ignores it, where voip.call would refuse the whole write.
+    if (phoneBridge) vals.important = legs.some(l => Number(l.important));
   }
 
   // odoo_id is unique in call_log, so only the oldest leg holds it.

@@ -25,6 +25,7 @@ import { markReturned, attachOwners, handleMissedAction } from "./missed";
 import { checkSpam, markSpam, spamReason, clearSpam } from "./spam";
 import { handleReports } from "./reports";
 import { handlePresence } from "./presence";
+import { handleGetRetention, handleSetRetention, handleCallImportant, runRetention } from "./retention";
 import { handleWebCallback, handleWebCallbackConfig, handleWebCallbackStatus, handleWebCallbackEvent } from "./webcallback";
 import { noteLimitHit, handleGetCallLimits, handleSetCallLimits } from "./limits";
 import { callerBlocked, noteBlockedCall, handleBlockedList, handleBlockNumber, handleUnblockNumber, handleBlockWithheld } from "./blocked";
@@ -271,7 +272,7 @@ const CALL_HISTORY_SELECT = `SELECT c.id, c.call_id, c.phone_number, c.did, c.di
      CASE WHEN COALESCE(c.notes_html, '') != '' OR COALESCE(c.jot_svg, '') != '' THEN 1 ELSE 0 END AS has_notes,
      CASE WHEN COALESCE(c.recording, '') != '' THEN 1 ELSE 0 END AS has_recording,
      CASE WHEN c.transcript IS NOT NULL THEN 1 ELSE 0 END AS has_transcript,
-     c.voicemail, c.callback, c.extension, c.user_id, c.spam
+     c.voicemail, c.callback, c.extension, c.user_id, c.spam, c.important
    FROM call_log c
    LEFT JOIN contacts p ON p.id = c.partner_id`;
 
@@ -299,7 +300,7 @@ function mergeLegs(legs: CallRow[]): CallRow {
   out.did = trunkLeg?.did ?? primary.did;
   if (answered) { out.state = answered.state; out.duration = answered.duration; out.end_date = answered.end_date; }
   else if (trunkLeg) { out.state = trunkLeg.state; out.duration = trunkLeg.duration; out.end_date = trunkLeg.end_date; }
-  for (const f of ["has_notes", "has_recording", "has_transcript", "voicemail", "callback"]) out[f] = legs.some(l => Number(l[f])) ? 1 : 0;
+  for (const f of ["has_notes", "has_recording", "has_transcript", "voicemail", "callback", "important"]) out[f] = legs.some(l => Number(l[f])) ? 1 : 0;
   for (const f of ["partner_id", "partner_name", "partner_email", "match", "spam"]) out[f] = legs.find(l => l[f])?.[f] ?? primary[f];
   out.rec_call_id = rec.call_id;
   out.leg_ids = legs.map(l => l.id);
@@ -1046,6 +1047,10 @@ export default {
       else if (request.method === "POST" && url.pathname === "/transcribe") response = await handleTranscribe(request, env, ctx, user);
       else if (request.method === "GET" && url.pathname === "/parked") response = await handleParked(env);
       else if (m === "GET" && p === "/presence") response = await handlePresence(env);
+      else if (m === "GET" && p === "/retention") response = await handleGetRetention(env);
+      else if (m === "POST" && p === "/retention") response = await handleSetRetention(request, env);
+      else if (m === "POST" && p === "/retention/run") response = Response.json({ ok: true, done: await runRetention(env) });
+      else if (m === "POST" && p === "/call-important") response = await handleCallImportant(request, env, ctx, user, (id) => mayOpenCall(env, user, id));
       else if (request.method === "POST" && url.pathname === "/summarize") response = await handleSummarize(request, env, ctx, user);
       else if (request.method === "GET" && url.pathname === "/voicemail") response = await handleGetVoicemail(env, user.id);
       else if (request.method === "POST" && url.pathname === "/voicemail") response = await handleSetVoicemail(request, env, user.id);
@@ -1073,5 +1078,10 @@ export default {
     const ch = corsHeaders();
     for (const [k, v] of Object.entries(ch)) headers.set(k, v);
     return new Response(response.body, { status: response.status, headers });
+  },
+
+  // Cron trigger (wrangler.toml [triggers]): call retention (retention.ts).
+  async scheduled(_event: unknown, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(runRetention(env).catch((e) => console.error("retention failed:", e)));
   },
 };

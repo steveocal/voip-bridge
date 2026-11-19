@@ -22,6 +22,12 @@ export function ariRecordingFile(env: Env, name: string) {
   return ariFetch(env, `recordings/stored/${encodeURIComponent(name)}/file`);
 }
 
+/** Deletes a stored recording. True when it's gone (404: already gone). */
+export async function ariDeleteRecording(env: Env, name: string): Promise<boolean> {
+  const res = await ariFetch(env, `recordings/stored/${encodeURIComponent(name)}`, { method: "DELETE", signal: AbortSignal.timeout(5000) });
+  return res.ok || res.status === 404;
+}
+
 /** Runs [greetings-sync] on the Asterisk box (greetings-sync.sh), which pulls
  *  the voicemail settings from /voicemail/sync. The Local channel's other end
  *  never answers; it only exists to get the dialplan run. */

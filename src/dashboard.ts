@@ -259,7 +259,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 /* settings screen: compact fields */
 #view-settings .set-field{margin-bottom:8px}
 #view-settings .set-field label{font-size:11px;margin-bottom:3px}
-#view-settings .set-field input[type=text],#view-settings .acc-select{padding:8px 10px;font-size:14px;border-radius:8px}
+#view-settings .set-field input[type=text],#view-settings .set-field input[type=number],#view-settings .acc-select{padding:8px 10px;font-size:14px;border-radius:8px}
 #view-settings textarea{min-height:56px;padding:8px 10px}
 #view-settings .switch-row{margin-bottom:8px}
 #view-settings .dev-hint{margin-top:8px;font-size:11px}
@@ -298,7 +298,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .modal-head button{background:none;border:none;color:#999;font-size:18px;cursor:pointer}
 .set-field{margin-bottom:16px}
 .set-field label{display:block;font-size:12px;color:#999;margin-bottom:6px}
-.set-field input[type=text]{width:100%;padding:12px 14px;border:none;border-radius:10px;background:#1a1a1a;color:#fff;font-size:15px;outline:none}
+.set-field input[type=text],.set-field input[type=number]{width:100%;padding:12px 14px;border:none;border-radius:10px;background:#1a1a1a;color:#fff;font-size:15px;outline:none}
 .acc-select{width:100%;padding:12px 14px;border:none;border-radius:10px;background:#1a1a1a;color:#fff;font-size:15px;outline:none;appearance:none;-webkit-appearance:none}
 .acc-actions{display:flex;gap:8px;margin-bottom:16px}
 .acc-actions button{flex:1;padding:11px;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer}
@@ -882,6 +882,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
         <button class="cp-tab" data-tab="voicemail" onclick="setSettingsTab('voicemail')">Voicemail</button>
         <button class="cp-tab" data-tab="blocked" onclick="setSettingsTab('blocked')">Blocked</button>
         <button class="cp-tab" data-tab="limits" onclick="setSettingsTab('limits')">Limits</button>
+        <button class="cp-tab" data-tab="retention" onclick="setSettingsTab('retention')">Retention</button>
         <button class="cp-tab" data-tab="device" onclick="setSettingsTab('device')">Device</button>
         <button class="cp-tab" data-tab="text" onclick="setSettingsTab('text')">Quick text</button>
         <button class="cp-tab" data-tab="params" onclick="setSettingsTab('params')">Parameters</button>
@@ -988,6 +989,19 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       <div class="set-field"><label>Calls the PBX can start in an hour, all together</label><input id="lim-allHour" type="number" min="1" step="1"></div>
       <div class="loc-row"><button onclick="saveCallLimits()">Save limits</button><span class="set-note" id="lim-status"></span></div>
       <div class="set-note" id="lim-hits"></div>
+    </div>
+    </div>
+
+    <div class="set-pane" data-pane="retention">
+    <div class="loc-box" id="ret-box">
+      <div class="loc-title">🗑️ How long calls are kept</div>
+      <div class="set-note" style="margin:0 0 6px">In days, counted from the call. 0 keeps them for ever. Calls marked ⭐ Important (on the call's Details tab) are never removed. Copies already sent to Odoo are not affected. The clean-up runs every hour.</div>
+      <div class="set-field"><label>Delete recordings and voicemail messages after</label><input id="ret-recordingsDays" type="number" min="0" step="1"></div>
+      <div class="set-field"><label>Delete transcripts after</label><input id="ret-transcriptsDays" type="number" min="0" step="1"></div>
+      <div class="set-field"><label>Delete the whole call (History, notes, summary, recording, transcript) after</label><input id="ret-callsDays" type="number" min="0" step="1"></div>
+      <div class="loc-row"><button id="ret-save" onclick="saveRetention(false)">Save</button><button id="ret-confirm" class="hidden" onclick="saveRetention(true)">Confirm</button></div>
+      <div class="set-note" id="ret-status"></div>
+      <div class="set-note" id="ret-last"></div>
     </div>
     </div>
 
@@ -6076,7 +6090,7 @@ function renderHistoryRow(c) {
     : c.has_recording ? '<button class="h-ic h-tx dim" title="Transcribe">💬</button>' : '<span class="h-ic"></span>';
   return '<div class="hist-row" data-key="' + esc(key) + '">'
     + '<div class="hist-main">' + dirIcon(dir, missed) + '<span class="h-time">' + when + '</span>'
-    + '<span class="who">' + esc(name || num) + (c.did === "SIM" ? ' <span class="h-sim" title="Called from the SIM">📱</span>' : '') + (c.voicemail ? ' <span title="Voicemail">📼</span>' : '') + (c.callback ? ' <span title="Asked to be called back (pressed 2 in the queue)">↩️</span>' : '') + '</span>'
+    + '<span class="who">' + esc(name || num) + (c.did === "SIM" ? ' <span class="h-sim" title="Called from the SIM">📱</span>' : '') + (c.voicemail ? ' <span title="Voicemail">📼</span>' : '') + (c.callback ? ' <span title="Asked to be called back (pressed 2 in the queue)">↩️</span>' : '') + (c.important ? ' <span title="Important">⭐</span>' : '') + '</span>'
     + missedChip(c) + tx + '</div>'
     + (c.match ? '<div class="hist-match">' + markMatch(c.match, historyQuery()) + '</div>' : '')
     + '</div>';
@@ -6424,6 +6438,65 @@ function saveCallLimits() {
     .then(function(r) { return r.json().then(function(d) { if (!r.ok) throw new Error(d.error || ("HTTP " + r.status)); return d; }); })
     .then(function() { st.textContent = "Saved. The PBX picks it up within a minute."; })
     .catch(function(e) { st.textContent = "❌ " + e.message; });
+}
+
+// ── Retention (src/retention.ts) ──────────────────────────────
+// Save first asks the worker what the new settings would delete straight
+// away (dry run) and shows it; Confirm saves.
+var RET_FIELDS = ["recordingsDays", "transcriptsDays", "callsDays"];
+function retentionBody() {
+  var b = {};
+  RET_FIELDS.forEach(function(k) { b[k] = Number(document.getElementById("ret-" + k).value || 0); });
+  return b;
+}
+function loadRetention() {
+  var st = document.getElementById("ret-status");
+  st.textContent = "";
+  document.getElementById("ret-confirm").classList.add("hidden");
+  fetch(API + "/retention").then(function(r) { return r.json(); }).then(function(d) {
+    if (!d.retention) throw new Error(d.error || "no settings");
+    RET_FIELDS.forEach(function(k) {
+      var el = document.getElementById("ret-" + k);
+      el.value = d.retention[k];
+      el.max = d.max;
+      el.title = "0 = keep for ever, otherwise " + d.min + " to " + d.max + " days";
+    });
+    var l = d.last, t = l && l.total;
+    document.getElementById("ret-last").textContent = (d.kept ? "⭐ " + d.kept + " call(s) marked Important. " : "")
+      + (l ? "Last run " + new Date(l.at).toLocaleString() + ". Removed so far: " + t.recordings + " recording(s), " + t.transcripts + " transcript(s), " + t.calls + " call(s)." : "");
+  }).catch(function(e) { st.textContent = "Couldn't load: " + e.message; });
+}
+function saveRetention(confirmed) {
+  var body = retentionBody(), st = document.getElementById("ret-status"), cf = document.getElementById("ret-confirm");
+  if (!confirmed) body.dry = true;
+  st.textContent = confirmed ? "Saving…" : "Checking…";
+  fetch(API + "/retention", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+    .then(function(r) { return r.json().then(function(d) { if (!r.ok) throw new Error(d.error || ("HTTP " + r.status)); return d; }); })
+    .then(function(d) {
+      var w = d.would, n = w.recordings + w.transcripts + w.calls;
+      if (confirmed) { cf.classList.add("hidden"); st.textContent = "Saved." + (n ? " The next hourly run starts deleting." : ""); loadRetention(); return; }
+      if (!n) { saveRetention(true); return; }
+      st.textContent = "⚠️ This will delete " + w.recordings + " recording(s), " + w.transcripts + " transcript(s) and " + w.calls + " call(s) that are already older than that. Confirm to save.";
+      cf.classList.remove("hidden");
+    })
+    .catch(function(e) { st.textContent = "❌ " + e.message; });
+}
+["recordingsDays", "transcriptsDays", "callsDays"].forEach(function(k) {
+  document.getElementById("ret-" + k).addEventListener("input", function() { document.getElementById("ret-confirm").classList.add("hidden"); });
+});
+
+// Important on a call (call details → Details tab): retention never
+// removes it, and the flag goes to Odoo with the call.
+function setCallImportant(c, on, input) {
+  if (!c || !c.call_id) return;
+  fetch(API + "/call-important", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ call_id: c.call_id, important: on }) })
+    .then(function(r) { return r.json().then(function(d) { if (!r.ok) throw new Error(d.error || ("HTTP " + r.status)); return d; }); })
+    .then(function() {
+      c.important = on ? 1 : 0;
+      showToast(on ? "⭐ Marked Important (also in Odoo)" : "No longer Important");
+      if (onDialView()) loadHistory();
+    })
+    .catch(function(e) { if (input) input.checked = !on; showToast("❌ Couldn't save: " + e.message); });
 }
 
 // ── Blocked numbers (src/blocked.ts) ─────────────────────────
@@ -7097,8 +7170,12 @@ function renderCallDetailsPane(c) {
     + '<div class="detail-row"><span class="k">State</span><span class="v">' + esc(c.state || "") + '</span></div>'
     + '<div class="detail-row"><span class="k">When</span><span class="v">' + esc(when) + '</span></div>'
     + '<div class="detail-row"><span class="k">Duration</span><span class="v">' + esc(dur) + '</span></div>'
-    + (c.partner_name ? '<div class="detail-row"><span class="k">Contact</span><span class="v">' + esc(c.partner_name) + '</span></div>' : '');
+    + (c.partner_name ? '<div class="detail-row"><span class="k">Contact</span><span class="v">' + esc(c.partner_name) + '</span></div>' : '')
+    + (c.call_id ? '<div class="switch-row" style="margin-top:10px"><span style="font-size:14px">⭐ Important<span class="set-note" style="display:block">Never deleted by retention, here or in Odoo. Shows in Odoo with the call.</span></span>'
+      + '<label class="switch"><input type="checkbox" id="cd-important"' + (c.important ? ' checked' : '') + '><span class="track"></span></label></div>' : '');
   document.getElementById("cd-pane-details").innerHTML = rows;
+  var impEl = document.getElementById("cd-important");
+  if (impEl) impEl.addEventListener("change", function() { setCallImportant(c, this.checked, this); });
 }
 
 function closeCallDetailView() {
@@ -8161,7 +8238,7 @@ function openSettings(tab) {
 }
 
 // Settings (the ☰ menu) is one screen with tabs: Account, Calls, Voicemail,
-// Blocked, Limits, Device, Quick text, Parameters. The last one used opens next time.
+// Blocked, Limits, Retention, Device, Quick text, Parameters. The last one used opens next time.
 // Voicemail and Parameters save as they change, so they have no Save button.
 function setSettingsTab(tab) {
   var btn = document.querySelector('#set-tabs [data-tab="' + tab + '"]');
@@ -8171,10 +8248,11 @@ function setSettingsTab(tab) {
   settingsTab = tab;
   document.querySelectorAll("#set-tabs button").forEach(function(b) { b.classList.toggle("active", b.getAttribute("data-tab") === tab); });
   document.querySelectorAll("#view-settings .set-pane").forEach(function(p) { p.classList.toggle("hidden", p.getAttribute("data-pane") !== tab); });
-  document.getElementById("set-foot").classList.toggle("hidden", tab === "voicemail" || tab === "params" || tab === "limits");
+  document.getElementById("set-foot").classList.toggle("hidden", tab === "voicemail" || tab === "params" || tab === "limits" || tab === "retention");
   if (tab !== was) {
     if (tab === "voicemail") loadVoicemail();
     if (tab === "limits") loadCallLimits();
+    if (tab === "retention") loadRetention();
     if (tab === "params") renderParams();
   }
   btn = document.querySelector('#set-tabs [data-tab="' + tab + '"]');

@@ -57,7 +57,10 @@ CREATE TABLE IF NOT EXISTS call_log (
   extension TEXT,                        -- local-only: the softphone extension that logged this leg (see migrations/0012_call_extension.sql)
   callback INTEGER NOT NULL DEFAULT 0,   -- local-only: 1 = the caller pressed 2 in the queue for a callback (migrations/0022_blocked_numbers_queue.sql)
   spam TEXT,                             -- local-only: why the call looks like spam (migrations/0024_spam.sql, src/spam.ts)
-  answered_at INTEGER                    -- local-only: when it was answered (migrations/0025_answered_at.sql, src/reports.ts)
+  answered_at INTEGER,                   -- local-only: when it was answered (migrations/0025_answered_at.sql, src/reports.ts)
+  important INTEGER NOT NULL DEFAULT 0,  -- 1 = Important: retention skips it, sent to Odoo (migrations/0027_call_important.sql, src/retention.ts)
+  important_by TEXT,                     -- local-only: who flagged it
+  important_at INTEGER                   -- local-only: when
 );
 CREATE INDEX IF NOT EXISTS idx_call_log_direction_start ON call_log(direction, start_date);
 CREATE INDEX IF NOT EXISTS idx_call_log_phone ON call_log(phone_number);
