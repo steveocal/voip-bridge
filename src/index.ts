@@ -773,13 +773,35 @@ async function handleContacts(request: Request, env: Env): Promise<Response> {
 }
 
 // D1-cache-only contact lookup (fast type-ahead; no Odoo round-trip).
+// SQL that turns a contact name into T9 digits per word, words separated by
+// spaces ("John Smith" → "5646 76484"); punctuation becomes a word break.
+const T9_GROUPS: [string, string][] = [["abc", "2"], ["def", "3"], ["ghi", "4"], ["jkl", "5"], ["mno", "6"], ["pqrs", "7"], ["tuv", "8"], ["wxyz", "9"]];
+const T9_NAME_SQL = (() => {
+  let e = "lower(COALESCE(name, ''))";
+  for (const ch of "-.,&/()'_@") e = `replace(${e}, '${ch === "'" ? "''" : ch}', ' ')`;
+  for (const [letters, d] of T9_GROUPS) for (const ch of letters) e = `replace(${e}, '${ch}', '${d}')`;
+  return e;
+})();
+const DIGITS_SQL = (col: string) => {
+  let e = `COALESCE(${col}, '')`;
+  for (const ch of " +-()./") e = `replace(${e}, '${ch}', '')`;
+  return e;
+};
 async function handleContactsCache(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const q = (url.searchParams.get("q") ?? "").trim();
   const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50", 10) || 50, 200);
   const select = "SELECT id, name, company_type, is_company, phone, mobile, email, website, vat, function, city, active FROM contacts";
   let rows: D1Result<Record<string, unknown>>;
-  if (q) {
+  if (/^[0-9]+$/.test(q)) {
+    // Keypad search: T9 on the start of any word of the name ("564" → JOHn,
+    // "7648" → SMITh, "5647648" → JOHN SMITh), or the digits anywhere in a
+    // number with its spaces/punctuation stripped (a leading 0 also as 44).
+    const intl = q.startsWith("0") ? `44${q.slice(1)}` : q;
+    rows = await env.DB.prepare(
+      `${select} WHERE ' ' || ${T9_NAME_SQL} LIKE ?1 OR ${DIGITS_SQL("phone")} LIKE ?2 OR ${DIGITS_SQL("mobile")} LIKE ?2 OR ${DIGITS_SQL("phone")} LIKE ?3 OR ${DIGITS_SQL("mobile")} LIKE ?3 ORDER BY name LIMIT ?4`
+    ).bind(`% ${q}%`, `%${q}%`, `%${intl}%`, limit).all<Record<string, unknown>>();
+  } else if (q) {
     const like = `%${q}%`;
     rows = await env.DB.prepare(
       `${select} WHERE name LIKE ?1 OR phone LIKE ?1 OR mobile LIKE ?1 OR email LIKE ?1 ORDER BY name LIMIT ?2`
