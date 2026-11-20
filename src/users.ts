@@ -297,3 +297,75 @@ export function canSee(legs: Leg[], owners: Map<string, ExtensionOwner>, viewer:
   const owner = callOwner(legs, owners);
   return owner === null || owner === viewer.id;
 }
+
+// ── One-time setup links (onboarding email) ───────────────────
+// When Odoo adds someone's extension it emails them the app install steps
+// and a link from here. Tapped on the phone once the app is installed, the
+// link opens the app (an App Link on /dashboard) and the page trades it at
+// /auth/setup for a session and the extension's SIP password, so nobody has
+// to type the password and it never sits in a mailbox. A link works once,
+// for SETUP_LINK_DAYS; asking for a new one cancels the old ones. Only a
+// hash of the token is stored. Wrong tokens count towards the same per-IP
+// lockout as wrong passwords.
+const APP_ORIGIN = "https://voip.ihpltd.co.uk";
+const SETUP_LINK_DAYS = 7;
+
+function randomToken(): string {
+  const b = crypto.getRandomValues(new Uint8Array(24));
+  return btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/** POST /onboard/link {ext}, Odoo only: a new setup link for an extension. */
+export async function handleSetupLink(request: Request, env: Env, user: User): Promise<Response> {
+  if (!user.service) return Response.json({ error: "Only Odoo can make setup links" }, { status: 403 });
+  let body: { ext?: string };
+  try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
+  const ext = String(body.ext ?? "").trim();
+  if (!/^[0-9]{2,6}$/.test(ext)) return Response.json({ error: "ext must be 2 to 6 digits" }, { status: 400 });
+  const token = randomToken(), now = Date.now(), expires = now + SETUP_LINK_DAYS * 86400_000;
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM setup_links WHERE (ext = ?1 AND used_at IS NULL) OR expires_at < ?2").bind(ext, now - 30 * 86400_000),
+    env.DB.prepare("INSERT INTO setup_links (token_hash, ext, created_at, expires_at) VALUES (?1, ?2, ?3, ?4)")
+      .bind(await sha256Hex(token), ext, now, expires),
+  ]);
+  return Response.json({ url: `${APP_ORIGIN}/dashboard?setup=${token}`, install_url: `${APP_ORIGIN}/app/`, expires_at: expires, days: SETUP_LINK_DAYS });
+}
+
+/** POST /auth/setup {token}: redeem a setup link. Returns a session like
+ *  /auth/login, plus the extension and its SIP password for the softphone. */
+export async function handleSetupRedeem(request: Request, env: Env): Promise<Response> {
+  if (!sessionKey(env)) return Response.json({ error: "SESSION_SECRET is not set on the worker" }, { status: 503 });
+  let body: { token?: string };
+  try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
+  const token = String(body.token ?? "");
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  const now = Date.now(), since = now - FAILURE_WINDOW_MS;
+  const fails = await env.DB.prepare("SELECT COUNT(*) AS n FROM login_failures WHERE ip = ?1 AND at > ?2").bind(ip, since).first<{ n: number }>();
+  if ((fails?.n ?? 0) >= MAX_IP_FAILURES) return Response.json({ error: "Too many attempts. Try again in 15 minutes." }, { status: 429 });
+  const row = /^[A-Za-z0-9_-]{20,64}$/.test(token)
+    ? await env.DB.prepare("SELECT ext, expires_at, used_at FROM setup_links WHERE token_hash = ?1").bind(await sha256Hex(token))
+      .first<{ ext: string; expires_at: number; used_at: number | null }>()
+    : null;
+  if (!row) {
+    await env.DB.prepare("INSERT INTO login_failures (ext, ip, at) VALUES ('setup', ?1, ?2)").bind(ip, now).run();
+    return Response.json({ error: "This setup link isn't valid. Ask for a new one." }, { status: 403 });
+  }
+  if (row.used_at) return Response.json({ error: "This setup link has already been used. Ask for a new one if you need to set up another phone." }, { status: 410 });
+  if (row.expires_at < now) return Response.json({ error: "This setup link has expired. Ask for a new one." }, { status: 410 });
+  const uid = await odooAuth(env);
+  if (!uid) return Response.json({ error: "Odoo unavailable" }, { status: 502 });
+  const r = await odooCall(env, uid, "phone_bridge.extension", "search_read",
+    [[["number", "=", row.ext], ["active", "=", true]]], { fields: ["user_id", "sip_password"], limit: 1 });
+  if (r.fault) return Response.json({ error: "Odoo extensions unavailable" }, { status: 502 });
+  const rec = ((r.parsed ?? []) as Array<Record<string, unknown>>)[0];
+  if (!rec?.sip_password || !Array.isArray(rec.user_id)) {
+    return Response.json({ error: `Extension ${row.ext} isn't fully set up in Odoo yet (user and SIP password).` }, { status: 409 });
+  }
+  // Claim it; a second tap racing this one gets nothing.
+  const claim = await env.DB.prepare("UPDATE setup_links SET used_at = ?1 WHERE token_hash = ?2 AND used_at IS NULL")
+    .bind(now, await sha256Hex(token)).run();
+  if (!claim.meta.changes) return Response.json({ error: "This setup link has already been used." }, { status: 410 });
+  const user: User = { id: rec.user_id[0] as number, name: String(rec.user_id[1]), ext: row.ext };
+  userNames.set(user.id, user.name);
+  return Response.json({ ok: true, user, token: await sessionToken(env, user.id, row.ext), ext: row.ext, password: String(rec.sip_password) });
+}

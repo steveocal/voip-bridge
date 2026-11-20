@@ -17,23 +17,28 @@ html,body{height:100%}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:radial-gradient(1200px 600px at 50% -10%,#2a2a2a 0%,#000 60%);color:#ececec;height:100dvh;overflow:hidden;display:flex;justify-content:center}
 .app{width:100%;max-width:430px;height:100dvh;display:flex;flex-direction:column;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
 /* header */
-.topbar{display:flex;align-items:center;gap:12px;padding:14px 16px 8px}
-.avatar{position:relative;width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#4db8ff,#2563eb);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
-.status-dot{position:absolute;right:-1px;bottom:-1px;width:13px;height:13px;border-radius:50%;background:#888;border:2px solid #000;box-sizing:content-box}
+.topbar{display:flex;flex-direction:column;align-items:stretch;gap:2px;padding:14px 16px 8px}
+.tb-title{display:flex;align-items:center;gap:8px;width:100%;min-width:0}
+.status-dot{flex-shrink:0;width:10px;height:10px;border-radius:50%;background:#888}
 .status-dot.ok{background:#34d399}
 .status-dot.err{background:#f87171}
 .status-dot.warn{background:#f0a33c}
-.identity{flex:1;min-width:0}
-.user-name{font-size:17px;font-weight:700}
-.caller-id{font-size:13px;color:#999}
+.user-name{flex:1;min-width:0;font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.caller-id{font-size:12px;color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .reg-status{display:none}
-.install-btn{flex-shrink:0;border:1px solid #2563eb;border-radius:20px;background:rgba(37,99,235,.15);color:#7fb2ff;font-size:12px;font-weight:600;padding:7px 12px;cursor:pointer}
-.install-btn:active{background:rgba(37,99,235,.3)}
-/* quick routing switches: 📼 straight to voicemail, 📱 mobile first */
-.quick-btn{flex-shrink:0;width:36px;height:36px;border:1px solid #333;border-radius:50%;background:#1a1a1a;font-size:17px;line-height:1;cursor:pointer;padding:0;filter:grayscale(1);opacity:.55}
-.quick-btn.on{filter:none;opacity:1}
-#qb-vm.on{background:rgba(220,38,38,.25);border-color:#dc2626}
-#qb-mob.on{background:rgba(52,211,153,.2);border-color:#34d399}
+.tb-btns{display:flex;align-items:center;gap:10px;margin-top:8px}
+.tb-sep{width:1px;height:22px;background:#333;margin:0 2px}
+.tb-ic{width:20px;height:20px;display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.install-btn{flex-shrink:0;display:flex;align-items:center;gap:6px;margin-left:auto;border:1px solid #2563eb;border-radius:20px;background:none;color:#7fb2ff;font-size:12px;font-weight:600;padding:7px 12px;cursor:pointer}
+.install-btn .tb-ic{width:16px;height:16px}
+.install-btn:active{background:rgba(37,99,235,.2)}
+/* quick routing switches: voicemail, mobile first */
+.quick-btn{flex-shrink:0;width:38px;height:38px;display:flex;align-items:center;justify-content:center;border:1px solid #333;border-radius:50%;background:none;color:#888;cursor:pointer;padding:0}
+.quick-btn.tb-plain{color:#ececec}
+.quick-btn:active{background:#1a1a1a}
+.quick-btn.on{color:#fff}
+#qb-vm.on{background:rgba(220,38,38,.25);border-color:#dc2626;color:#f87171}
+#qb-mob.on{background:rgba(52,211,153,.2);border-color:#34d399;color:#34d399}
 .route-strip{margin:0 16px 8px;padding:8px 12px;border-radius:10px;font-size:13px;display:flex;align-items:center;gap:8px}
 .route-strip.vm{background:rgba(220,38,38,.18);border:1px solid #dc2626;color:#fecaca}
 .route-strip.mob{background:rgba(52,211,153,.12);border:1px solid #34d399;color:#bbf7d0}
@@ -90,8 +95,34 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .call-banner .keypad{width:40px;height:40px;border-radius:50%;border:none;background:#2c2c2c;color:#ececec;font-size:16px;cursor:pointer;flex-shrink:0;margin-right:8px}
 .call-banner .keypad.active{background:#2563eb}
 .call-ctl,.consult-bar{display:flex;gap:8px;margin:0 16px 8px}
+.ring-pop{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:16px}
+.ring-pop.hidden{display:none}
+.rg-card{width:100%;max-width:400px;max-height:100%;overflow-y:auto;background:#141414;border:1px solid #333;border-radius:18px;padding:20px 18px 16px}
+.rg-label{font-size:12px;color:#6ee7b7;text-transform:uppercase;letter-spacing:.6px}
+.rg-name{font-size:24px;font-weight:700;color:#fff;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rg-num{font-size:13px;color:#999;min-height:16px}
+.rg-info{margin-top:12px;padding:10px 12px;border-radius:10px;background:#1c1c1c;font-size:13.5px;color:#ddd;line-height:1.35}
+.rg-info .k{font-size:11px;color:#f0a33c;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
+.rg-info .sub{font-size:12px;color:#999}
+.rg-btns{display:flex;gap:12px;margin-top:18px}
+.rg-btns button{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:84px;border:none;border-radius:16px;color:#fff;font-size:17px;font-weight:700;cursor:pointer}
+.rg-btns small{font-size:11px;font-weight:400;opacity:.85}
+.rg-answer{background:#10b981}
+.rg-hang{background:#ef4444}
+.rg-ic{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.rg-xfer{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:12px;padding:12px;border:1px solid #333;border-radius:12px;background:none;color:#ececec;font-size:14px;cursor:pointer}
+.rg-xfer .rg-ic{width:20px;height:20px}
+.rg-xfer.on{border-color:#4db8ff;color:#4db8ff}
+.rg-exts{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:10px}
+.rg-exts.hidden{display:none}
+.rg-exts button{padding:10px 6px;border:1px solid #333;border-radius:10px;background:#1c1c1c;color:#ececec;font-size:14px;cursor:pointer;text-align:left}
+.rg-exts button small{display:block;font-size:11px;color:#999}
+.rg-exts button.pr-free small{color:#34d399}
+.rg-exts button.pr-busy small,.rg-exts button.pr-ringing small{color:#f0a33c}
 .call-ctl button,.consult-bar button,.xfer button,.parked-strip button{flex:1;padding:9px 6px;border:none;border-radius:10px;background:#2c2c2c;color:#ececec;font-size:13px;cursor:pointer}
 .call-ctl button.on{background:#b45309}
+.call-ctl button{display:flex;align-items:center;justify-content:center;gap:5px;padding:5px 6px;min-height:38px}
+.ctl-ic{width:20px;height:20px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .call-ctl.hidden,.consult-bar.hidden,.xfer.hidden,.parked-strip.hidden{display:none}
 .consult-bar{align-items:center;padding:8px 10px;border-radius:12px;background:#1e293b;border:1px solid #334155}
 .consult-bar span{flex:2;font-size:13px;color:#cbd5e1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -207,7 +238,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .set-note{font-size:12px;color:#9ca3af;margin:6px 0 2px}
 .set-note.err{color:#f87171}
 .set-google{display:flex;align-items:center;gap:8px;margin:4px 0}
-#view-settings{max-width:560px;margin:0 auto;width:100%}
+#view-settings,#view-params{max-width:560px;margin:0 auto;width:100%}
+#view-params .cp-tabs{margin:0 0 10px;padding:0;position:sticky;top:44px;z-index:6;background:#000}
+#view-params .cp-tab{font-size:13px;padding:10px 8px}
+#view-params .ptable .p-group.tabbed{display:none}
 #view-settings .cp-tabs{margin:0 0 12px;padding:0;position:sticky;top:44px;z-index:6;background:#000}
 #view-settings .cp-tab{font-size:13px;padding:10px 8px}
 .set-foot{position:sticky;bottom:0;background:#000;padding:10px 0 6px;border-top:1px solid #1c1c1c;margin-top:10px}
@@ -296,6 +330,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .modal-card{background:#161616;border:1px solid #2c2c2c;border-radius:16px;padding:20px;width:100%;max-width:360px}
 .modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;font-size:17px;font-weight:700}
 .modal-head button{background:none;border:none;color:#999;font-size:18px;cursor:pointer}
+.modal.hidden{display:none}
+.setup-text{font-size:14.5px;line-height:1.5;color:#ddd;margin:0 0 16px}
+.setup-actions{display:flex;flex-direction:column;gap:8px}
+.setup-actions a,.setup-actions button{display:block;text-align:center;padding:12px;border-radius:10px;font-size:15px;font-weight:600;text-decoration:none;cursor:pointer;border:1px solid #333;background:none;color:#ececec}
+.setup-actions .go{background:#2563eb;border-color:#2563eb;color:#fff}
 .set-field{margin-bottom:16px}
 .set-field label{display:block;font-size:12px;color:#999;margin-bottom:6px}
 .set-field input[type=text],.set-field input[type=number]{width:100%;padding:12px 14px;border:none;border-radius:10px;background:#1a1a1a;color:#fff;font-size:15px;outline:none}
@@ -389,7 +428,6 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 #hist-call-actions button{display:flex;align-items:center;justify-content:center;gap:4px}
 #hist-call-actions .ico-note-add{width:20px;height:20px}
 #hist-call-actions .hca-play:not(:disabled){color:#34d399}
-#ctl-mobile{display:flex;align-items:center;justify-content:center;gap:5px;padding:5px 6px}
 #ctl-mobile.hidden{display:none}
 /* History swipes: either way archives; undo toast */
 #history-list{position:relative}
@@ -685,17 +723,18 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 <body>
 <div class="app">
   <header class="topbar">
-    <div class="avatar" id="avatar">👤<span class="status-dot warn" id="status-dot" title="Loading…"></span></div>
-    <div class="identity">
-      <div class="user-name" id="acc-name-display">Ext 201</div>
-      <div class="caller-id" id="acc-caller-display">Caller ID: +44 7520 658657</div>
-    </div>
+    <div class="tb-title"><span class="status-dot warn" id="status-dot" title="Loading…"></span><span class="user-name" id="acc-name-display">Ext 201</span></div>
+    <div class="caller-id" id="acc-caller-display">Caller ID: +44 7520 658657</div>
     <div class="reg-status" id="phone-status">Loading…</div>
-    <button class="install-btn hidden" id="install-btn" onclick="installApp()">⬇ Install</button>
-    <button class="quick-btn" id="qb-vm" onclick="quickToggle('direct')" title="My calls straight to voicemail" aria-label="My calls straight to voicemail">📼</button>
-    <button class="quick-btn" id="qb-mob" onclick="quickToggle('mobileFirst')" title="Ring my mobile straight away" aria-label="Ring my mobile straight away">📱</button>
-    <button class="menu-icon" onclick="openReports()" aria-label="Reports" title="Reports">📊</button>
-    <button class="menu-icon" onclick="openSettings()" aria-label="Settings">☰</button>
+    <div class="tb-btns">
+      <button class="quick-btn tb-plain" onclick="openSettings()" aria-label="Configuration" title="Configuration"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/><circle cx="12" cy="12" r="6.8"/></svg></button>
+      <button class="quick-btn tb-plain" onclick="openReports()" aria-label="Reports" title="Reports"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20.5h16"/><path d="M6.5 20.5v-6"/><path d="M11 20.5V8"/><path d="M15.5 20.5v-9"/><path d="M20 20.5V4"/></svg></button>
+      <button class="quick-btn tb-plain" onclick="openParams()" aria-label="Parameters" title="Parameters"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg></button>
+      <span class="tb-sep"></span>
+      <button class="quick-btn" id="qb-vm" onclick="quickToggle('direct')" title="My calls straight to voicemail" aria-label="My calls straight to voicemail"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6.5" cy="12" r="3.5"/><circle cx="17.5" cy="12" r="3.5"/><path d="M6.5 15.5h11"/></svg></button>
+      <button class="quick-btn" id="qb-mob" onclick="quickToggle('mobileFirst')" title="Ring my mobile straight away" aria-label="Ring my mobile straight away"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="2" width="11" height="20" rx="2.5"/><path d="M10.5 18.6h3"/></svg></button>
+      <button class="install-btn hidden" id="install-btn" onclick="installApp()"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v11"/><path d="M7.5 10l4.5 4.5 4.5-4.5"/><path d="M4.5 16.5v2a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-2"/></svg>Install</button>
+    </div>
   </header>
 
   <div class="install-tip hidden" id="install-tip">
@@ -721,11 +760,35 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <button class="answer hidden" id="banner-answer" onclick="answerCall()">📞</button>
     <button class="end" onclick="hangup()">📴</button>
   </div>
+  <!-- Incoming call: who, their last call and quote, then answer / voicemail / transfer -->
+  <div class="ring-pop hidden" id="ring-pop" role="dialog" aria-label="Incoming call">
+    <div class="rg-card">
+      <div class="rg-label">Incoming call</div>
+      <div class="rg-name" id="rg-name"></div>
+      <div class="rg-num" id="rg-num"></div>
+      <div class="rg-info"><div class="k">Last call</div><div id="rg-last">…</div></div>
+      <div class="rg-info"><div class="k">Last quote</div><div id="rg-quote">…</div></div>
+      <div class="rg-btns">
+        <button class="rg-answer" onclick="answerCall()"><svg class="rg-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.2 3.5h3.3l1.6 4.4-2.1 1.5a11.5 11.5 0 0 0 6.6 6.6l1.5-2.1 4.4 1.6v3.3a2 2 0 0 1-2.1 2A16.9 16.9 0 0 1 3.2 5.6a2 2 0 0 1 2-2.1z"/></svg>Answer</button>
+        <button class="rg-hang" onclick="hangup()"><svg class="rg-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6.5" cy="12" r="3.5"/><circle cx="17.5" cy="12" r="3.5"/><path d="M6.5 15.5h11"/></svg>Hang up<small>to voicemail</small></button>
+      </div>
+      <button class="rg-xfer" id="rg-xfer-btn" onclick="toggleRingExts()"><svg class="rg-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h14"/><path d="M13.5 7l5 5-5 5"/><path d="M20.5 5v14"/></svg>Transfer to extension</button>
+      <div class="rg-exts hidden" id="rg-exts"></div>
+    </div>
+  </div>
+  <!-- Setup link from the onboarding email (checkSetupLink) -->
+  <div class="modal hidden" id="setup-modal" role="dialog" aria-label="Set up">
+    <div class="modal-card">
+      <div class="modal-head"><span id="setup-title">Set up VoIP Bridge</span><button onclick="closeSetupModal()" aria-label="Close">✕</button></div>
+      <p class="setup-text" id="setup-text"></p>
+      <div class="setup-actions" id="setup-actions"></div>
+    </div>
+  </div>
   <div class="call-ctl hidden" id="call-ctl">
-    <button id="ctl-xfer" onclick="openTransfer()">↪ Transfer</button>
-    <button id="ctl-add" onclick="openAddCall()">➕ Add</button>
-    <button id="ctl-park" onclick="parkCall()">🅿 Park</button>
-    <button id="ctl-mobile" onclick="moveToMobile()" title="Move this call to my mobile"><svg class="mob-ic" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6.5" y="2" width="11" height="20" rx="2.5"/><path d="M10.5 18.6h3"/></svg>Mobile</button>
+    <button id="ctl-xfer" onclick="openTransfer()"><svg class="ctl-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h14"/><path d="M13.5 7l5 5-5 5"/><path d="M20.5 5v14"/></svg>Transfer</button>
+    <button id="ctl-add" onclick="openAddCall()" title="Add someone: call them, then Merge into a conference"><svg class="ctl-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8"/><path d="M18.2 14.4c2 .8 3.3 2.8 3.3 5.6"/></svg>Conference</button>
+    <button id="ctl-park" onclick="parkCall()"><svg class="ctl-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="M9.5 17V7.5h3.3a2.8 2.8 0 0 1 0 5.6H9.5"/></svg>Park</button>
+    <button id="ctl-mobile" onclick="moveToMobile()" title="Move this call to my mobile"><svg class="ctl-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="2" width="11" height="20" rx="2.5"/><path d="M10.5 18.6h3"/></svg>Mobile</button>
   </div>
   <div class="xfer hidden" id="xfer-panel">
     <div class="row"><input id="xfer-input" type="text" placeholder="Extension, number or name" autocomplete="off" autocapitalize="off"><button class="x" onclick="closeTransfer()" aria-label="Close">✕</button></div>
@@ -868,13 +931,28 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       <div id="rp-body"></div>
     </div>
 
+    <!-- PARAMETERS VIEW: per-device tunables, a tab per group -->
+    <div class="view hidden" id="view-params">
+      <div class="p-head">
+        <button class="cd-back" onclick="closeParams()" aria-label="Back"><svg class="back-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4.5L7.5 12l7.5 7.5"/></svg></button>
+        <div class="cd-title"><strong>Parameters</strong></div>
+        <span class="jot-status" id="params-status"></span>
+      </div>
+      <div class="cp-tabs" id="params-tabs" role="tablist"></div>
+      <input class="p-filter" id="params-filter" type="text" placeholder="Search all parameters" autocomplete="off" autocapitalize="off">
+      <table class="ptable" id="params-table"></table>
+      <div class="p-foot">
+        <button id="params-reset-all" onclick="resetAllParams()">Reset all to defaults</button>
+        <div class="p-note">Saved automatically, on this device only. Jot values apply to Jot pages opened afterwards.</div>
+      </div>
+    </div>
+
     <!-- SETTINGS VIEW (the ☰ menu): one screen, a tab per section -->
     <div class="view hidden" id="view-settings">
       <div class="p-head">
         <button class="cd-back" onclick="cancelSettings()" aria-label="Back"><svg class="back-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4.5L7.5 12l7.5 7.5"/></svg></button>
-        <div class="cd-title"><strong>Settings</strong></div>
+        <div class="cd-title"><strong>Configuration</strong></div>
         <span class="jot-status" id="vm-status"></span>
-        <span class="jot-status" id="params-status"></span>
       </div>
       <div class="cp-tabs" id="set-tabs" role="tablist">
         <button class="cp-tab" data-tab="account" onclick="setSettingsTab('account')">Account</button>
@@ -885,7 +963,6 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
         <button class="cp-tab" data-tab="retention" onclick="setSettingsTab('retention')">Retention</button>
         <button class="cp-tab" data-tab="device" onclick="setSettingsTab('device')">Device</button>
         <button class="cp-tab" data-tab="text" onclick="setSettingsTab('text')">Quick text</button>
-        <button class="cp-tab" data-tab="params" onclick="setSettingsTab('params')">Parameters</button>
       </div>
       <div class="set-body">
     <div class="set-pane" data-pane="account">
@@ -1046,14 +1123,6 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       <div class="p-foot"><div class="p-note">Calls nobody answers within 45s, or that hit busy phones, go to voicemail. Messages appear in History with ▶ and a transcript.</div></div>
     </div>
 
-    <div class="set-pane" data-pane="params">
-      <input class="p-filter" id="params-filter" type="text" placeholder="Filter (name, group…)" autocomplete="off" autocapitalize="off">
-      <table class="ptable" id="params-table"></table>
-      <div class="p-foot">
-        <button id="params-reset-all" onclick="resetAllParams()">Reset all to defaults</button>
-        <div class="p-note">Saved automatically, on this device only. Jot values apply to Jot pages opened afterwards.</div>
-      </div>
-    </div>
       </div>
       <div class="set-foot" id="set-foot">
         <div class="set-actions">
@@ -1490,7 +1559,31 @@ function paramStatus(msg, bad) {
   clearTimeout(paramStatusTimer);
   if (!bad) paramStatusTimer = setTimeout(function() { el.textContent = ""; }, 2500);
 }
-function openParams() { openSettings("params"); }
+// Parameters is its own screen (top bar), a tab per group like Configuration.
+// Typing in the search box looks across every group.
+var paramsReturnView = "dial", paramsTab = "";
+function openParams() {
+  var from = currentViewName();
+  if (from !== "params") paramsReturnView = from;
+  if (!paramsTab) { try { paramsTab = localStorage.getItem("vb_params_tab") || ""; } catch (e) {} }
+  document.getElementById("params-filter").value = "";
+  switchView("params");
+  renderParams();
+}
+function closeParams() { switchView(paramsReturnView || "dial"); }
+function paramGroups() {
+  var g = [];
+  PARAMS.forEach(function(p) { if (g.indexOf(p.group) === -1) g.push(p.group); });
+  return g;
+}
+function setParamsTab(g) {
+  paramsTab = g;
+  try { localStorage.setItem("vb_params_tab", g); } catch (e) {}
+  document.getElementById("params-filter").value = "";
+  filterParams();
+  var btn = document.querySelector("#params-tabs .cp-tab.active");
+  if (btn && btn.scrollIntoView) btn.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
 function renderParams() {
   var o = paramOverrides(), html = "", grp = "";
   for (var i = 0; i < PARAMS.length; i++) {
@@ -1499,14 +1592,23 @@ function renderParams() {
     var changed = hasOverride(o, p.id) && paramValid(p, o[p.id]);
     var attrs = p.type === "text" ? ' type="text" autocapitalize="off" spellcheck="false"'
       : ' type="number" step="' + p.step + '"' + (p.min !== undefined ? ' min="' + p.min + '"' : "") + (p.max !== undefined ? ' max="' + p.max + '"' : "");
-    html += '<tr class="p-row' + (changed ? " changed" : "") + '" data-id="' + p.id + '" data-search="' + esc((p.group + " " + p.label + " " + p.id).toLowerCase()) + '">'
+    html += '<tr class="p-row' + (changed ? " changed" : "") + '" data-id="' + p.id + '" data-g="' + esc(p.group) + '" data-search="' + esc((p.group + " " + p.label + " " + p.id).toLowerCase()) + '">'
       + '<td class="p-name">' + esc(p.label) + (p.note ? '<div class="p-note">' + esc(p.note) + '</div>' : "") + '</td>'
       + '<td class="p-val">' + paramField(p, attrs) + (p.unit ? '<span class="p-unit">' + esc(p.unit) + '</span>' : "") + '</td>'
       + '<td class="p-def">' + esc(p.type === "choice" ? paramChoiceLabel(p.def) : paramFmt(p.def)) + '<button class="p-reset" data-id="' + p.id + '" title="Reset to default"' + (changed ? "" : ' style="visibility:hidden"') + '>↺</button></td></tr>';
   }
   document.getElementById("params-table").innerHTML = html;
+  var groups = paramGroups();
+  if (groups.indexOf(paramsTab) === -1) paramsTab = groups[0] || "";
+  document.getElementById("params-tabs").innerHTML = groups.map(function(g) {
+    return '<button class="cp-tab" data-g="' + esc(g) + '">' + esc(g) + '</button>';
+  }).join("");
   filterParams();
 }
+document.getElementById("params-tabs").addEventListener("click", function(e) {
+  var b = e.target.closest(".cp-tab");
+  if (b) setParamsTab(b.getAttribute("data-g"));
+});
 function filterParams() {
   var q = document.getElementById("params-filter").value.trim().toLowerCase();
   var rows = document.querySelectorAll("#params-table tr");
@@ -1518,11 +1620,14 @@ function filterParams() {
       groupRow = r; groupHas = false;
       continue;
     }
-    var show = !q || r.getAttribute("data-search").indexOf(q) !== -1;
+    var show = q ? r.getAttribute("data-search").indexOf(q) !== -1 : r.getAttribute("data-g") === paramsTab;
     r.classList.toggle("hidden", !show);
     if (show) groupHas = true;
   }
   if (groupRow) groupRow.classList.toggle("hidden", !groupHas);
+  // On a tab the tab names the group; group headings only help a search.
+  document.querySelectorAll("#params-table .p-group").forEach(function(g) { g.classList.toggle("tabbed", !q); });
+  document.querySelectorAll("#params-tabs .cp-tab").forEach(function(b) { b.classList.toggle("active", !q && b.getAttribute("data-g") === paramsTab); });
 }
 function commitParam(id, inp) {
   var p = paramFind(id);
@@ -5181,7 +5286,7 @@ function resetCall() {
   flushCallSave();
   if (heldSession) { try { heldSession.dispose(); } catch(e) {} heldSession = null; }
   if (consultSession) { endSession(consultSession); consultSession = null; }
-  sipSession = null; currentCall = null; onHold = false; muted = false; callMenuOpen = false;
+  sipSession = null; currentCall = null; onHold = false; muted = false; callMenuOpen = false; ringXferTo = "";
   if (speakerOn) setSpeaker(false);
   closeTransfer();
   // The number just called shouldn't sit in the box after the call.
@@ -5508,6 +5613,88 @@ function backToCaller() {
   ensureRemoteAudio(sipSession);
   holdLeg(false).then(function() { onHold = false; renderCallUI(); }).catch(function() { renderCallUI(); });
 }
+// ── incoming-call popup ────────────────────────────────────────
+// Shown while a call rings in: the caller, their last call and last quote,
+// then Answer, Hang up (603 Decline; the dialplan sends them to voicemail)
+// or Transfer to extension (answer, then REFER straight on).
+var ringPopCall = null, ringXferTo = "";
+function renderRingPop() {
+  var pop = document.getElementById("ring-pop");
+  var show = !!(currentCall && currentCall.dir === "in" && currentCall.state === "ringing");
+  pop.classList.toggle("hidden", !show);
+  if (!show) { ringPopCall = null; return; }
+  if (ringPopCall !== currentCall) {
+    ringPopCall = currentCall;
+    document.getElementById("rg-exts").classList.add("hidden");
+    document.getElementById("rg-xfer-btn").classList.remove("on");
+    document.getElementById("rg-last").textContent = "…";
+    document.getElementById("rg-quote").textContent = "…";
+    loadRingInfo(currentCall);
+  }
+  ringPopName();
+}
+function ringPopName() {
+  if (!currentCall) return;
+  var n = callerName(), num = currentCall.remote || "";
+  document.getElementById("rg-name").textContent = n || num || "Unknown caller";
+  document.getElementById("rg-num").textContent = n && num && n !== num ? num : "";
+}
+function loadRingInfo(call) {
+  var num = call.remote || "";
+  var lastEl = document.getElementById("rg-last"), quoteEl = document.getElementById("rg-quote");
+  if (!num) { lastEl.textContent = "No number"; quoteEl.textContent = "—"; return; }
+  fetch(API + "/call-history?limit=5&q=" + encodeURIComponent(num) + "&ext=" + encodeURIComponent(myExtension())).then(function(r) { return r.json(); }).then(function(d) {
+    if (ringPopCall !== call) return;
+    var c = (d.calls || []).filter(function(x) { return x.call_id !== call.id; })[0];
+    if (!c) { lastEl.textContent = "First call from this number"; return; }
+    var when = c.start_date ? new Date(c.start_date).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
+    var what = c.duration > 0 ? "talked " + fmtDur(c.duration) : c.voicemail ? "left a voicemail" : c.direction === "outgoing" ? "no answer" : "missed";
+    lastEl.innerHTML = esc(when) + '<div class="sub">' + esc((c.direction === "outgoing" ? "We called · " : "They called · ") + what + (c.extension ? " · ext " + c.extension : "")) + '</div>';
+  }).catch(function() { if (ringPopCall === call) lastEl.textContent = "Couldn't load"; });
+  fetch(API + "/caller-lookup?number=" + encodeURIComponent(num)).then(function(r) { return r.json(); }).then(function(d) {
+    if (ringPopCall !== call) return;
+    if (d.found && !call.name && !d.spam) { call.name = d.name; ringPopName(); }
+    if (d.spam && !d.found) { call.name = "⚠️ Likely spam"; ringPopName(); }
+    if (!d.found) { quoteEl.textContent = "Not a known contact"; return null; }
+    return fetch(API + "/quotations?contact=" + encodeURIComponent(d.id)).then(function(r) { return r.json(); });
+  }).then(function(q) {
+    if (!q || ringPopCall !== call) return;
+    var list = (q.quotations || []).slice().sort(function(a, b) { return String(b.date_order || "").localeCompare(String(a.date_order || "")); });
+    var o = list[0];
+    if (!o) { quoteEl.textContent = "No quotations"; return; }
+    var when = o.date_order ? new Date(o.date_order.replace(" ", "T") + "Z").toLocaleDateString() : "";
+    quoteEl.innerHTML = esc(o.name) + (o.amount_total != null ? " · " + esc(fmtMoney(o.amount_total)) : "")
+      + '<div class="sub">' + esc([when, o.state].filter(Boolean).join(" · ")) + '</div>'
+      + (o.items_summary ? '<div class="sub">' + esc(o.items_summary) + '</div>' : '');
+  }).catch(function() { if (ringPopCall === call) quoteEl.textContent = "Couldn't load"; });
+}
+function toggleRingExts() {
+  var el = document.getElementById("rg-exts"), btn = document.getElementById("rg-xfer-btn");
+  var open = el.classList.contains("hidden");
+  el.classList.toggle("hidden", !open);
+  btn.classList.toggle("on", open);
+  if (!open) return;
+  renderRingExts();
+  fetch(API + "/presence").then(function(r) { return r.json(); }).then(function(d) {
+    if (d.presence && d.presence.length) { presenceList = d.presence; renderRingExts(); }
+  }).catch(function() {});
+}
+function renderRingExts() {
+  var mine = myExtension(), el = document.getElementById("rg-exts");
+  var list = presenceList ? presenceList.filter(function(p) { return p.ext !== mine; })
+    : XFER_EXTS.filter(function(x) { return x !== mine; }).map(function(x) { return { ext: x }; });
+  el.innerHTML = list.map(function(p) {
+    var ext = esc(p.ext);
+    return '<button class="pr-' + esc(p.state || "") + '" onclick="ringTransfer(' + "'" + ext + "'" + ')">' + ext + (p.name ? ' ' + esc(p.name) : '')
+      + (p.state ? '<small>' + esc(presenceLabel(p)) + '</small>' : '') + '</button>';
+  }).join("");
+}
+function ringTransfer(ext) {
+  if (!currentCall || currentCall.state !== "ringing") return;
+  ringXferTo = ext;
+  answerCall();
+}
+
 // ── conference ─────────────────────────────────────────────────
 // ➕ Add calls someone while the caller waits (as "Talk first" does). Then
 // 👥 Merge REFERs both far ends into a ConfBridge room on Asterisk, 8 + our
@@ -5889,6 +6076,7 @@ function updateDialBottomVisibility() {
   document.getElementById("cp-tab-keypad").classList.toggle("hidden", !connected);
 }
 function renderCallUI() {
+  renderRingPop();
   var banner = document.getElementById("call-banner");
   var btnCall = document.getElementById("btn-call");
   var btnEnd = document.getElementById("btn-end");
@@ -7604,7 +7792,7 @@ function renderVoicemail() {
   }
   list.innerHTML = html;
 }
-// The topbar's 📼/📱 buttons and the strip under it mirror the two routing
+// The topbar's voicemail/mobile buttons and the strip under it mirror the two routing
 // switches, so a forgotten "straight to voicemail" is hard to miss.
 function renderRouteQuick() {
   var d = vmState || {};
@@ -8231,15 +8419,14 @@ function openSettings(tab) {
   var devTab = document.querySelector('#set-tabs [data-tab="device"]');
   devTab.classList.toggle("hidden", document.getElementById("loc-box").classList.contains("hidden") && document.getElementById("sink-box").classList.contains("hidden"));
   if (!tab) { try { tab = localStorage.getItem("vb_settings_tab") || "account"; } catch (e) { tab = "account"; } }
-  document.getElementById("params-filter").value = "";
   settingsTab = "";
   switchView("settings");
   setSettingsTab(tab);
 }
 
 // Settings (the ☰ menu) is one screen with tabs: Account, Calls, Voicemail,
-// Blocked, Limits, Retention, Device, Quick text, Parameters. The last one used opens next time.
-// Voicemail and Parameters save as they change, so they have no Save button.
+// Blocked, Limits, Retention, Device, Quick text. The last one used opens next time.
+// Voicemail saves as it changes, so they have no Save button.
 function setSettingsTab(tab) {
   var btn = document.querySelector('#set-tabs [data-tab="' + tab + '"]');
   if (!btn || btn.classList.contains("hidden")) tab = "account";
@@ -8248,12 +8435,11 @@ function setSettingsTab(tab) {
   settingsTab = tab;
   document.querySelectorAll("#set-tabs button").forEach(function(b) { b.classList.toggle("active", b.getAttribute("data-tab") === tab); });
   document.querySelectorAll("#view-settings .set-pane").forEach(function(p) { p.classList.toggle("hidden", p.getAttribute("data-pane") !== tab); });
-  document.getElementById("set-foot").classList.toggle("hidden", tab === "voicemail" || tab === "params" || tab === "limits" || tab === "retention");
+  document.getElementById("set-foot").classList.toggle("hidden", tab === "voicemail" || tab === "limits" || tab === "retention");
   if (tab !== was) {
     if (tab === "voicemail") loadVoicemail();
     if (tab === "limits") loadCallLimits();
     if (tab === "retention") loadRetention();
-    if (tab === "params") renderParams();
   }
   btn = document.querySelector('#set-tabs [data-tab="' + tab + '"]');
   if (btn && btn.scrollIntoView) btn.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -8680,7 +8866,11 @@ function initSoftphone() {
       showCallNotification(callerLabel());
       if (consumeAutoAnswer()) setTimeout(function() { if (currentCall && currentCall.state === "ringing") answerCall(); }, PV.autoAnswerDelayMs);
       inv.stateChange.on(function(state) {
-        if (state === SIP.SessionState.Established) { stopRingtone(); ensureRemoteAudio(inv); currentCall.state = "active"; currentCall.answeredAt = Date.now(); renderCallUI(); logCallEvent("answer"); }
+        if (state === SIP.SessionState.Established) {
+          stopRingtone(); ensureRemoteAudio(inv); currentCall.state = "active"; currentCall.answeredAt = Date.now(); renderCallUI(); logCallEvent("answer");
+          // "Transfer to extension" on the incoming popup: answered only to pass it on.
+          if (ringXferTo && sipSession === inv) { var to = ringXferTo; ringXferTo = ""; noteTransfer("Transferred to " + to + " before answering"); referTo(inv, sipTarget(to)); }
+        }
         if (state === SIP.SessionState.Terminated) { stopRingtone(); if (sipSession === inv) { logHangup(); resetCall(); } }
       });
       // Remote audio is attached once actually answered (see answerCall) —
@@ -8746,6 +8936,80 @@ function applyBoot() {
 applyAllParams();
 var bootStarted = false;
 function applyBootOnce() { if (bootStarted) return; bootStarted = true; applyBoot(); }
+// ── Setup link from the onboarding email ──────────────────────
+// Odoo emails new users the install steps and a one-time link,
+// voip.ihpltd.co.uk/dashboard?setup=<token> (src/users.ts handleSetupLink).
+// In the app (opened by the link, or already running when it's tapped) it is
+// traded at /auth/setup for the extension and its SIP password, which become
+// this phone's account. In a browser it asks first, so tapping the email
+// before installing the app doesn't use the link up.
+function setupTokenIn(url) { var m = /[?&]setup=([A-Za-z0-9_-]+)/.exec(String(url || "")); return m ? m[1] : ""; }
+function inNativeApp() { var Cap = window.Capacitor; return !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform()) || inAndroidWebView(); }
+// Resolves once any link has been dealt with, so boot() starts on the new account.
+function checkSetupLink() {
+  var t = setupTokenIn(location.search);
+  if (t) { try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) {} }
+  if (!inNativeApp()) { if (t) showSetupModal("browser", t); return Promise.resolve(); }
+  var Cap = window.Capacitor, AppPlugin = Cap && Cap.Plugins && Cap.Plugins.App;
+  if (AppPlugin && AppPlugin.addListener) AppPlugin.addListener("appUrlOpen", function(e) { var x = setupTokenIn(e && e.url); if (x) redeemSetup(x); });
+  var launch = t ? Promise.resolve(t) : AppPlugin && AppPlugin.getLaunchUrl
+    ? AppPlugin.getLaunchUrl().then(function(r) { return setupTokenIn(r && r.url); }).catch(function() { return ""; })
+    : Promise.resolve("");
+  var done = launch.then(function(x) { return x ? redeemSetup(x) : null; });
+  // Never hold the app up for long on a slow server.
+  return Promise.race([done, new Promise(function(res) { setTimeout(res, 8000); })]).catch(function() {});
+}
+function redeemSetup(t) {
+  // The launch URL stays the same while the app runs: don't redeem it twice.
+  try { if (localStorage.getItem("vb_setup_done") === t) return Promise.resolve(); } catch (e) {}
+  return rawFetch(API + "/auth/setup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: t }) })
+    .then(function(r) { return r.json().then(function(d) { return { ok: r.ok && d.ok, d: d }; }); })
+    .then(function(res) {
+      var d = res.d || {};
+      if (!res.ok) { showSetupModal("error", d.error || "Setup failed. Ask for a new link."); return; }
+      try { localStorage.setItem("vb_setup_done", t); } catch (e) {}
+      var a = activeAccount();
+      if (!a) { a = defaultAccounts()[0]; accounts.push(a); }
+      a.username = String(d.ext);
+      a.password = d.password;
+      a.callerId = defaultCallerId(d.ext);
+      if (!a.server) a.server = DEFAULT_WS;
+      if (!a.domain) a.domain = PV.defaultDomain;
+      activeAccountId = a.id;
+      try { localStorage.setItem("vb_accounts", JSON.stringify(accounts)); localStorage.setItem("vb_activeAccount", activeAccountId); } catch (e) {}
+      sessionToken = d.token || "";
+      sessionInfo = d.user || null;
+      sessionError = "";
+      try { localStorage.setItem("vb_session", sessionToken); } catch (e) {}
+      renderSessionState();
+      updateAccountHeader();
+      // Already running on another account: reconnect as this one.
+      if (bootStarted && !settings.devMode) { teardownSoftphone(); loadSipJs().then(initSoftphone).catch(function() {}); loadHistory(); registerPush(); }
+      showSetupModal("done", (d.user && d.user.name ? d.user.name + ", you" : "You") + "'re set up on extension " + d.ext + ".");
+    }).catch(function() { showSetupModal("error", "Can't reach the server. Check the phone is online, then tap the link in your email again."); });
+}
+function showSetupModal(kind, arg) {
+  var title = document.getElementById("setup-title"), text = document.getElementById("setup-text"), acts = document.getElementById("setup-actions");
+  acts.innerHTML = "";
+  function btn(label, cls, fn) { var b = document.createElement("button"); b.textContent = label; if (cls) b.className = cls; b.onclick = fn; acts.appendChild(b); }
+  if (kind === "browser") {
+    title.textContent = "Install the app first";
+    text.textContent = "On an Android phone: install the VoIP Bridge app, then tap the link in your email again and the app sets itself up. The link works once.";
+    var a = document.createElement("a"); a.href = "/app/"; a.className = "go"; a.textContent = "Install the app"; acts.appendChild(a);
+    btn("Use this browser instead", "", function() { closeSetupModal(); redeemSetup(arg); });
+  } else if (kind === "done") {
+    title.textContent = "All set";
+    text.textContent = arg + " Allow the microphone and notifications when asked, so calls can ring.";
+    btn("OK", "go", closeSetupModal);
+  } else {
+    title.textContent = "Setup link";
+    text.textContent = arg;
+    btn("Close", "", closeSetupModal);
+  }
+  document.getElementById("setup-modal").classList.remove("hidden");
+}
+function closeSetupModal() { document.getElementById("setup-modal").classList.add("hidden"); }
+
 function boot() {
   // Merge server-side settings (D1) over localStorage, then start. SIP
   // accounts/activeAccount are deliberately excluded — those are per-device
@@ -8774,7 +9038,7 @@ function boot() {
     if (d && d.linked > 0) refreshCallLists();
   }).catch(function() {});
 }
-document.addEventListener("DOMContentLoaded", boot);
+document.addEventListener("DOMContentLoaded", function() { checkSetupLink().then(boot); });
 document.addEventListener("DOMContentLoaded", apiMe);
 document.addEventListener("DOMContentLoaded", checkAppUpdate);
 document.addEventListener("DOMContentLoaded", loadParked);

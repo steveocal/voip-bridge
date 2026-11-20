@@ -244,3 +244,13 @@ CREATE TABLE IF NOT EXISTS spam_numbers (
   user_name TEXT,
   at INTEGER NOT NULL
 );
+
+-- One-time setup links from the onboarding email (see migrations/0028_setup_links.sql)
+CREATE TABLE IF NOT EXISTS setup_links (
+  token_hash TEXT PRIMARY KEY,
+  ext TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  used_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_setup_links_ext ON setup_links(ext);

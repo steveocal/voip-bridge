@@ -1,5 +1,5 @@
 import type { Env } from "./types";
-import { callLegs } from "./odoo";
+import { callLegs, renameContact } from "./odoo";
 import { noteNuisanceVoicemail } from "./spam";
 
 // ── Call summary (Workers AI text model) ──────────────────────
@@ -18,11 +18,13 @@ const PROMPT = "You summarise phone calls for Infrared Heating Products (IHP), a
   'Reply with JSON only, no markdown: {"summary": "2-3 sentences: who called, why, and the outcome", ' +
   '"points": ["key facts: products, sizes, quantities, prices, addresses, dates mentioned"], ' +
   '"actions": ["follow-ups someone agreed to do, with who and when"], ' +
+  '"caller_name": the other party\'s ("Them") name as they gave it in the call, with their company if they named one (e.g. "John Smith, Acme Builders"); never an IHP staff member; "" if they did not say it, ' +
+  '"about": 3-6 words saying what the other party wanted (e.g. "Conservatory heating enquiry"), ' +
   '"nuisance": true only if the caller is an automated or recorded message, a cold sales pitch to IHP, or a scam, rather than a customer, supplier or anyone with real business with IHP; otherwise false}. ' +
   "Use empty arrays when there is nothing to list. Do not invent details that are not in the transcript. " +
   'Always write in English, even when the call was in Thai or another language; a line starting with "→" is the English translation of the line above it.';
 
-interface Summary { summary?: string; points?: string[]; actions?: string[]; nuisance?: boolean | string }
+interface Summary { summary?: string; points?: string[]; actions?: string[]; nuisance?: boolean | string; caller_name?: string; about?: string }
 
 /** Summarise a transcribed call into its notes. Skips calls whose notes
  *  already carry a summary unless `force`. Returns the summary HTML, or ""
@@ -47,6 +49,8 @@ export async function summarizeCall(env: Env, callId: string, force = false): Pr
   // A voicemail that's a robocall or sales pitch marks the number as likely spam.
   if (parsed.nuisance === true || parsed.nuisance === "true") {
     try { await noteNuisanceVoicemail(env, callId); } catch (e) { console.error("noteNuisanceVoicemail failed:", e); }
+  } else {
+    try { await nameNewContact(env, legs.map(l => l.partner_id).find(Boolean) ?? null, parsed); } catch (e) { console.error("nameNewContact failed:", e); }
   }
   if (!parsed.summary) return "";
 
@@ -82,7 +86,25 @@ export function parseSummary(response: unknown): Summary {
   };
   const summary = field("summary");
   if (!summary) return { summary: text.slice(0, at).trim() || text };
-  return { summary: str(summary), points: list("points"), actions: list("actions"), nuisance: /"nuisance"\s*:\s*true/.test(body) };
+  return { summary: str(summary), points: list("points"), actions: list("actions"), nuisance: /"nuisance"\s*:\s*true/.test(body),
+    caller_name: str(field("caller_name") ?? ""), about: str(field("about") ?? "") };
+}
+
+// A contact made for an unknown number is named "dd/mm/yy number"
+// (createContactForNumber). Once its call is transcribed, give it the name the
+// caller said, or failing that what the call was about. A contact anyone has
+// renamed no longer matches, so it is never touched.
+const AUTO_NAME = /^\d{2}\/\d{2}\/\d{2} /;
+async function nameNewContact(env: Env, partnerId: number | null, parsed: Summary): Promise<void> {
+  if (!partnerId) return;
+  const row = await env.DB.prepare("SELECT name FROM contacts WHERE id = ?1").bind(partnerId).first<{ name: string }>();
+  if (!row || !AUTO_NAME.test(row.name ?? "")) return;
+  const clean = (v: unknown) => String(v ?? "").replace(/["\s]+/g, " ").trim().slice(0, 80);
+  let name = clean(parsed.caller_name);
+  if (/^(unknown|none|n\/a|them|caller)$/i.test(name) || /infrared heating|\bIHP\b/i.test(name)) name = "";
+  const about = clean(parsed.about).replace(/[.]+$/, "");
+  const next = name || about;
+  if (next) await renameContact(env, partnerId, next);
 }
 
 /** The summary block's html, built from the parsed fields. */

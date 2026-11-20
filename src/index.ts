@@ -14,7 +14,7 @@ import type { Contact, Message } from "./odoo";
 import { jotToText } from "./jottext";
 import { handleVoiceNote, handleAddCallNote, handleDictate } from "./followup";
 import { groupCallLegs } from "./calllegs";
-import { type User, sessionUser, handleLogin, handleMe, extensionOwners, extensionUser, syncExtensions, canSee } from "./users";
+import { type User, sessionUser, handleLogin, handleMe, handleSetupLink, handleSetupRedeem, extensionOwners, extensionUser, syncExtensions, canSee } from "./users";
 import { handlePbxHealth, handlePbxStatus, handlePbxSync, handlePbxSynced, pbxAllowed } from "./pbxsync";
 import { handlePbxPrompt } from "./ivr";
 import { handlePbxSay } from "./ivrsay";
@@ -963,6 +963,7 @@ export default {
     let response: Response;
     const m = request.method, p = url.pathname;
     if (m === "POST" && p === "/auth/login") response = await handleLogin(request, env);
+    else if (m === "POST" && p === "/auth/setup") response = await handleSetupRedeem(request, env);
     else if (m === "GET" && p === "/auth/me") response = await handleMe(request, env);
     else if (m === "GET" && p === "/google/callback") response = await handleGoogleCallback(request, env);
     else if (m === "POST" && p === "/call-event") response = await handleCallEvent(request, env, ctx);
@@ -996,6 +997,7 @@ export default {
       else if (m === "GET" && p === "/google/connect") response = await handleGoogleConnect(request, env, user.id);
       else if (m === "POST" && p === "/google/disconnect") response = await handleGoogleDisconnect(env, user.id);
       else if (m === "GET" && p === "/google/status") response = Response.json({ account: await googleAccount(env, user.id) });
+      else if (m === "POST" && p === "/onboard/link") response = await handleSetupLink(request, env, user);
       else if (m === "POST" && p === "/extensions/sync") response = Response.json({ extensions: await syncExtensions(env) });
       else if (m === "GET" && p === "/pbx/status") response = await handlePbxStatus(env);
       else if (m === "GET" && p === "/pbx/health") response = await handlePbxHealth(env);
