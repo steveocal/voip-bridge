@@ -64,3 +64,53 @@ class TestExtensionPbx(TransactionCase):
         ext = self.Ext.create({"number": "9306", "user_id": portal.id})
         self.assertTrue(ext.user_share)
         self.assertFalse(self.Ext._fields["user_id"].domain)
+
+
+@tagged("post_install", "-at_install")
+class TestExtensionAppInvite(TransactionCase):
+    """A browser/app extension given a user emails them the app install steps
+    and a one-time setup link from the worker."""
+
+    def setUp(self):
+        super().setUp()
+        self.sent = []
+
+        def worker(inst, method, path, payload=None):
+            self.sent.append((method, path, payload))
+            if path == "/onboard/link":
+                return {"url": "https://voip.example/dashboard?setup=tok", "install_url": "https://voip.example/app/", "days": 7}
+            return {}
+        patcher = patch.object(PhoneBridgeInstallation, "_worker_request", worker)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.Ext = self.env["phone_bridge.extension"]
+        self.user = self.env["res.users"].create({"name": "New Starter", "login": "pb_new_starter", "email": "starter@example.com"})
+
+    def _invites(self):
+        return self.env["mail.mail"].search([("email_to", "ilike", "starter@example.com"),
+                                             ("subject", "ilike", "phone app")])
+
+    def test_new_extension_with_a_user_emails_the_app(self):
+        ext = self.Ext.create({"number": "9311", "user_id": self.user.id})
+        self.assertIn(("POST", "/onboard/link", {"ext": "9311"}), self.sent)
+        self.assertTrue(ext.invite_sent)
+        mail = self._invites()
+        self.assertEqual(len(mail), 1)
+        self.assertIn("setup=tok", mail.body_html)
+        self.assertIn("https://voip.example/app/", mail.body_html)
+
+    def test_desk_phone_and_no_user_send_nothing(self):
+        self.Ext.create({"number": "9312", "user_id": self.user.id, "device_type": "sip"})
+        self.Ext.create({"number": "9313"})
+        self.assertNotIn("/onboard/link", [p for _m, p, _b in self.sent])
+
+    def test_giving_an_extension_a_user_emails_them(self):
+        ext = self.Ext.create({"number": "9314"})
+        ext.write({"user_id": self.user.id})
+        self.assertTrue(ext.invite_sent)
+
+    def test_button_needs_an_email(self):
+        self.user.email = False
+        ext = self.Ext.create({"number": "9315", "user_id": self.user.id})
+        with self.assertRaises(UserError):
+            ext.action_send_app_invite()

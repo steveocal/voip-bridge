@@ -25,4 +25,49 @@
 </div>
         </field>
     </record>
+    <record id="mail_template_app_invite" model="mail.template">
+        <field name="name">Phone Bridge: install the phone app</field>
+        <field name="model_id" ref="model_phone_bridge_extension"/>
+        <field name="subject">Set up the VoIP Bridge phone app (extension {{ object.number }})</field>
+        <field name="email_from">{{ (object.env.company.email_formatted or user.email_formatted) }}</field>
+        <field name="email_to">{{ object.user_id.email_formatted }}</field>
+        <field name="auto_delete" eval="True"/>
+        <field name="body_html" type="html">
+<div style="font-family: sans-serif; font-size: 14px; line-height: 1.5; max-width: 600px;">
+    <p>Hello <t t-out="object.user_id.name"/>,</p>
+    <p>You have a phone extension: <strong t-out="object.number"/>.
+        Install the VoIP Bridge app on your Android phone to make and take calls on it.</p>
+
+    <p style="margin-bottom: 4px;"><strong>1. Install the app</strong></p>
+    <p style="margin-top: 0;">On your Android phone, open
+        <a t-att-href="ctx.get('install_url')" t-out="ctx.get('install_url')"/> and tap <strong>Download the app</strong>.</p>
+    <ol style="margin-top: 0;">
+        <li>If Chrome warns the file might be harmful, tap <strong>Download anyway</strong>.</li>
+        <li>When it has downloaded, tap <strong>Open</strong> (or open <em>voip-bridge.apk</em> from your notifications or Downloads).</li>
+        <li>If Android says Chrome isn't allowed to install apps, tap <strong>Settings</strong>, turn on <strong>Allow from this source</strong>, then go back.</li>
+        <li>Tap <strong>Install</strong>. Some phones (Xiaomi, Redmi) run a security scan first: wait, then tap <strong>Install</strong> or <strong>Continue</strong>.</li>
+    </ol>
+
+    <p style="margin-bottom: 4px;"><strong>2. Set it up</strong></p>
+    <p style="margin-top: 0;">Once the app is installed, open this email on the same phone and tap:</p>
+    <p style="margin: 16px 0;">
+        <a t-att-href="ctx.get('setup_url')"
+           style="background: #2563eb; color: #ffffff; padding: 12px 22px; border-radius: 8px; text-decoration: none; font-weight: bold;">Set up my phone app</a>
+    </p>
+    <p>The app opens and signs itself in as extension <t t-out="object.number"/>; you don't need a password.
+        The button works once, on one phone, for <t t-out="ctx.get('link_days')"/> days. If it has expired or you are
+        setting up another phone, ask for a new invite.</p>
+
+    <p style="margin-bottom: 4px;"><strong>3. Let calls ring</strong></p>
+    <ol style="margin-top: 0;">
+        <li>Allow the <strong>microphone</strong> and <strong>notifications</strong> when the app asks.</li>
+        <li>So calls ring when the phone is locked: Settings → Apps → VoIP Bridge → allow <strong>full-screen notifications</strong>,
+            and set Battery to <strong>Unrestricted</strong>.</li>
+    </ol>
+
+    <p style="color: #666; font-size: 12px;">Already had an older VoIP Bridge app? If installing says <em>App not installed</em>
+        or that it conflicts with an existing package, uninstall the old one first (press and hold its icon, then Uninstall), then install again.</p>
+</div>
+        </field>
+    </record>
 </odoo>

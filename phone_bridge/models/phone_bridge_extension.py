@@ -43,6 +43,9 @@ class PhoneBridgeExtension(models.Model):
     wake_app = fields.Boolean("Wake the Phone App",
                               help="The Android app signs in as this extension: send it a push to wake it before ringing.")
     active = fields.Boolean(default=True)
+    invite_sent = fields.Datetime("App Invite Sent", readonly=True, copy=False,
+                                  help="When the user was last emailed how to install the phone app, with a "
+                                       "one-time link that signs the app in as this extension.")
 
     forward_mode = fields.Selection([("never", "Never"), ("always", "Always"), ("busy", "When busy or offline"),
                                      ("noanswer", "When not answered"),
@@ -112,6 +115,7 @@ class PhoneBridgeExtension(models.Model):
         for ext in exts:
             ext._push_box(with_greeting=True)
         self._sync_pbx()
+        exts._auto_invite()
         return exts
 
     def write(self, vals):
@@ -126,6 +130,8 @@ class PhoneBridgeExtension(models.Model):
                     ext._push_box(with_greeting="greeting" in vals or "number" in vals)
         if any(f in vals for f in self.PBX_FIELDS):
             self._sync_pbx()
+        if vals.get("user_id"):
+            self._auto_invite()
         return res
 
     def unlink(self):
@@ -157,3 +163,43 @@ class PhoneBridgeExtension(models.Model):
         self.ensure_one()
         self.env["phone_bridge.installation"]._get_installation()._sync_voicemail_box(
             self.number, self.voicemail_enabled, self.greeting if with_greeting else None, with_greeting)
+
+    # ── Onboarding: email the user how to install the phone app ──
+
+    def _invite_ready(self):
+        self.ensure_one()
+        return self.active and self.device_type == "webrtc" and self.user_id and self.user_id.email
+
+    def _auto_invite(self):
+        """A browser/app extension that gets a user: email them the app.
+        Never fails the save; the Send App Invite button tries again."""
+        for ext in self.filtered(lambda e: e._invite_ready()):
+            try:
+                ext._send_app_invite(force_send=False)
+            except UserError as e:
+                _logger.warning("phone_bridge: app invite for extension %s not sent: %s", ext.number, e)
+
+    def action_send_app_invite(self):
+        for ext in self:
+            if not ext.user_id:
+                raise UserError(_("Extension %s has no user to send the app to.", ext.number))
+            if not ext.user_id.email:
+                raise UserError(_("%s has no email address.", ext.user_id.name))
+            if ext.device_type != "webrtc":
+                raise UserError(_("Extension %s is a desk phone; the app needs a Browser or app extension.", ext.number))
+            ext._send_app_invite(force_send=True)
+        return {"type": "ir.actions.client", "tag": "display_notification",
+                "params": {"type": "success", "message": _("App invite sent to %s.", ", ".join(self.mapped("user_id.email")))}}
+
+    def _send_app_invite(self, force_send):
+        """Ask the worker for a one-time setup link (POST /onboard/link) and
+        email it with the install steps. A new link cancels any unused one."""
+        self.ensure_one()
+        installation = self.env["phone_bridge.installation"].sudo()._get_installation()
+        link = installation._worker_request("POST", "/onboard/link", {"ext": self.number})
+        if not link or not link.get("url"):
+            raise UserError(_("The phone bridge worker isn't deployed yet, so there's no app to invite to."))
+        template = self.env.ref("phone_bridge.mail_template_app_invite")
+        template.with_context(setup_url=link["url"], install_url=link.get("install_url") or "",
+                              link_days=link.get("days") or 7).send_mail(self.id, force_send=force_send)
+        self.sudo().invite_sent = fields.Datetime.now()

@@ -23,6 +23,14 @@
         <field name="model">phone_bridge.extension</field>
         <field name="arch" type="xml">
             <form string="Extension">
+                <header>
+                    <button name="action_send_app_invite" type="object" string="Send App Invite" class="btn-primary"
+                            invisible="device_type != 'webrtc' or not user_id or invite_sent"
+                            help="Email the user how to install the phone app, with a one-time link that signs it in."/>
+                    <button name="action_send_app_invite" type="object" string="Resend App Invite"
+                            invisible="device_type != 'webrtc' or not user_id or not invite_sent"
+                            help="Send a new link; any unused earlier link stops working."/>
+                </header>
                 <sheet>
                     <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger" invisible="active"/>
                     <div class="oe_title">
@@ -40,6 +48,7 @@
                             <field name="device_type"/>
                             <field name="sip_password" password="True"/>
                             <field name="wake_app" invisible="device_type != 'webrtc'"/>
+                            <field name="invite_sent" invisible="not invite_sent"/>
                             <field name="active" invisible="1"/>
                         </group>
                         <group string="Forwarding">
