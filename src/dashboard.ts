@@ -4196,8 +4196,9 @@ function loadT9Corpus(force) {
     var list = d.contacts || [], out = [];
     for (var i = 0; i < list.length; i++) {
       var c = list[i];
-      if (c.mobile) out.push(t9Entry(c.name, c.mobile));
-      if (c.phone && digitsOnly(c.phone) !== digitsOnly(c.mobile)) out.push(t9Entry(c.name, c.phone));
+      var e1 = null, e2 = null;
+      if (c.mobile) { e1 = t9Entry(c.name, c.mobile); e1.c = c; out.push(e1); }
+      if (c.phone && digitsOnly(c.phone) !== digitsOnly(c.mobile)) { e2 = t9Entry(c.name, c.phone); e2.c = c; out.push(e2); }
     }
     t9Corpus = out;
   }).catch(function(){ t9LoadedAt = 0; });
@@ -6949,7 +6950,21 @@ function loadGoogleContacts() {
 }
 function loadOdooContacts(q) {
   return fetch(API + "/contacts/cache?q=" + encodeURIComponent(q) + "&limit=" + PV.contactsLimit).then(function(r){return r.json();}).then(function(d){
-    return d.contacts || [];
+    var list = d.contacts || [];
+    // Keypad digits: add initials matches ("57" → John Smith) from the T9
+    // corpus History uses — the server matches word starts and numbers only.
+    if (/^[0-9]{2,}$/.test(q) && t9Corpus.length) {
+      var seen = {};
+      for (var i = 0; i < list.length; i++) seen[list[i].id] = 1;
+      for (var j = 0; j < t9Corpus.length && list.length < PV.contactsLimit; j++) {
+        var e = t9Corpus[j];
+        if (!e.c || seen[e.c.id] || !t9Match(e, q, false)) continue;
+        seen[e.c.id] = 1;
+        list.push(e.c);
+      }
+      list.sort(byName);
+    }
+    return list;
   });
 }
 function contactMatches(c, q) {

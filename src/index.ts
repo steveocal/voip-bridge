@@ -824,7 +824,7 @@ async function handleGoogleContacts(env: Env, user: User): Promise<Response> {
 // Every dialable contact, slim, for the dialpad's client-side T9 search.
 async function handleContactsT9(env: Env): Promise<Response> {
   const rows = await env.DB.prepare(
-    "SELECT name, phone, mobile FROM contacts WHERE active = 1 AND (COALESCE(phone, '') != '' OR COALESCE(mobile, '') != '') ORDER BY name"
+    "SELECT id, name, phone, mobile, email, is_company FROM contacts WHERE active = 1 AND (COALESCE(phone, '') != '' OR COALESCE(mobile, '') != '') ORDER BY name"
   ).all<Record<string, unknown>>();
   return Response.json({ contacts: rows.results || [] });
 }
