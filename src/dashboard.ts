@@ -95,9 +95,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .call-banner .keypad{width:40px;height:40px;border-radius:50%;border:none;background:#2c2c2c;color:#ececec;font-size:16px;cursor:pointer;flex-shrink:0;margin-right:8px}
 .call-banner .keypad.active{background:#2563eb}
 .call-ctl,.consult-bar{display:flex;gap:8px;margin:0 16px 8px}
-.ring-pop{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:16px}
+.ring-pop{margin:0 16px 8px}
 .ring-pop.hidden{display:none}
-.rg-card{width:100%;max-width:400px;max-height:100%;overflow-y:auto;background:#141414;border:1px solid #333;border-radius:18px;padding:20px 18px 16px}
+.rg-card{width:100%;max-width:560px;margin:0 auto;background:#141414;border:1px solid #10b981;border-radius:16px;padding:16px 16px 14px}
 .rg-label{font-size:12px;color:#6ee7b7;text-transform:uppercase;letter-spacing:.6px}
 .rg-name{font-size:24px;font-weight:700;color:#fff;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rg-num{font-size:13px;color:#999;min-height:16px}
@@ -171,8 +171,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .dial-scroll{flex:1;overflow-y:auto;min-height:60px}
 #view-dial .suggestions{padding:4px 0}
 #dial-entry{padding:6px 0 0}
-#dialpad{gap:8px 12px;padding:8px 28px 4px}
-#dialpad .key{height:56px}
+#dialpad,#ct-dialpad{gap:8px 12px;padding:8px 28px 4px}
+#dialpad .key,#ct-dialpad .key{height:56px}
+/* contacts: same shape as History — filter on top, list scrolls, search + keypad at the bottom */
+#view-contacts{display:flex;flex-direction:column;height:100%;min-height:0}
+#view-contacts .ct-filter{flex-shrink:0;margin:6px 0 8px}
+#ct-entry{padding:6px 0 0}
 .sugg-row b{color:#4db8ff;font-weight:700}
 .sugg-row .call{background:none;border:none;font-size:18px;cursor:pointer;padding:4px 6px;flex-shrink:0}
 .dir-ic{display:inline-block;flex-shrink:0;line-height:1;text-align:center}
@@ -240,7 +244,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .set-google{display:flex;align-items:center;gap:8px;margin:4px 0}
 #view-settings,#view-params{max-width:560px;margin:0 auto;width:100%}
 #view-params .cp-tabs{margin:0 0 10px;padding:0;position:sticky;top:44px;z-index:6;background:#000}
-#view-params .cp-tab{font-size:13px;padding:10px 8px}
+#view-params .cp-tabs{flex-wrap:wrap;overflow:visible}
+#view-params .cp-tab{flex:0 0 auto;font-size:13px;padding:9px 10px}
 #view-params .ptable .p-group.tabbed{display:none}
 #view-settings .cp-tabs{margin:0 0 12px;padding:0;position:sticky;top:44px;z-index:6;background:#000}
 #view-settings .cp-tab{font-size:13px;padding:10px 8px}
@@ -760,8 +765,9 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <button class="answer hidden" id="banner-answer" onclick="answerCall()">📞</button>
     <button class="end" onclick="hangup()">📴</button>
   </div>
-  <!-- Incoming call: who, their last call and quote, then answer / voicemail / transfer -->
-  <div class="ring-pop hidden" id="ring-pop" role="dialog" aria-label="Incoming call">
+  <!-- Incoming call, at the top of the main page in place of the call banner:
+       who, their last call and quote, then answer / voicemail / transfer -->
+  <div class="ring-pop hidden" id="ring-pop" role="region" aria-label="Incoming call">
     <div class="rg-card">
       <div class="rg-label">Incoming call</div>
       <div class="rg-name" id="rg-name"></div>
@@ -876,7 +882,8 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       <div class="dial-bottom" id="dial-bottom">
         <div class="entry" id="dial-entry">
           <input id="dial-input" type="text" placeholder="Number or name (T9)" autocomplete="off" autocapitalize="off">
-          <button class="backspace" id="dial-bksp" title="Clear" aria-label="Clear">✕</button>
+          <button class="backspace" id="dial-back" title="Backspace" aria-label="Backspace">⌫</button>
+          <button class="backspace" id="dial-bksp" title="Clear all" aria-label="Clear all">✕</button>
           <button class="hist-tx-btn" id="hist-search-btn" onclick="histSearch()" title="Search" aria-label="Search"><svg class="srch-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg></button>
         </div>
         <div class="dialpad" id="dialpad">
@@ -1194,7 +1201,6 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 
     <!-- CONTACTS VIEW -->
     <div class="view hidden" id="view-contacts">
-      <h2>👥 Contacts</h2>
       <div class="ct-filter" id="ct-filter">
         <button data-src="all" onclick="setContactsTab('all')">All</button>
         <button data-src="fav" class="active" onclick="setContactsTab('fav')">★ Favourites</button>
@@ -1202,10 +1208,28 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
         <button data-src="odoo" onclick="setContactsTab('odoo')"><img src="/icons/icon-192.png" alt="">Odoo</button>
         <button data-src="gmail" onclick="setContactsTab('gmail')">✉️ Gmail</button>
       </div>
-      <div class="entry">
-        <input id="contact-search" type="text" placeholder="Search contacts" autocomplete="off">
+      <div class="dial-scroll" id="contacts-list"><div class="empty">Type to search</div></div>
+      <div class="dial-bottom" id="ct-bottom">
+        <div class="entry" id="ct-entry">
+          <input id="contact-search" type="text" placeholder="Search contacts (name, number or T9)" autocomplete="off" autocapitalize="off">
+          <button class="backspace" id="ct-back" title="Backspace" aria-label="Backspace">⌫</button>
+          <button class="backspace" id="ct-clear" title="Clear all" aria-label="Clear all">✕</button>
+        </div>
+        <div class="dialpad hidden" id="ct-dialpad">
+          <button class="key" data-d="1"><span class="digit">1</span><span class="letters"></span></button>
+          <button class="key" data-d="2"><span class="digit">2</span><span class="letters">ABC</span></button>
+          <button class="key" data-d="3"><span class="digit">3</span><span class="letters">DEF</span></button>
+          <button class="key" data-d="4"><span class="digit">4</span><span class="letters">GHI</span></button>
+          <button class="key" data-d="5"><span class="digit">5</span><span class="letters">JKL</span></button>
+          <button class="key" data-d="6"><span class="digit">6</span><span class="letters">MNO</span></button>
+          <button class="key" data-d="7"><span class="digit">7</span><span class="letters">PQRS</span></button>
+          <button class="key" data-d="8"><span class="digit">8</span><span class="letters">TUV</span></button>
+          <button class="key" data-d="9"><span class="digit">9</span><span class="letters">WXYZ</span></button>
+          <button class="key" data-d="*"><span class="digit">*</span><span class="letters"></span></button>
+          <button class="key" data-d="0"><span class="digit">0</span><span class="letters">+</span></button>
+          <button class="key" data-d="#"><span class="digit">#</span><span class="letters"></span></button>
+        </div>
       </div>
-      <div id="contacts-list"><div class="empty">Type to search</div></div>
     </div>
 
     <!-- MESSAGES VIEW -->
@@ -1571,6 +1595,10 @@ function openParams() {
   renderParams();
 }
 function closeParams() { switchView(paramsReturnView || "dial"); }
+// Short tab names so the tabs fit a phone screen (wrapping onto a second row).
+var PARAM_TAB_LABEL = { "Calls & audio": "Calls", "Lists & search": "Lists", "Timing (typing & taps)": "Timing",
+  "Jot: ink": "Jot ink", "Jot: word detection": "Jot words", "Jot: layout & splitting": "Jot layout",
+  "Jot: periods": "Jot periods", "Jot: gestures": "Jot gestures", "Jot: page & zoom": "Jot page" };
 function paramGroups() {
   var g = [];
   PARAMS.forEach(function(p) { if (g.indexOf(p.group) === -1) g.push(p.group); });
@@ -1601,7 +1629,7 @@ function renderParams() {
   var groups = paramGroups();
   if (groups.indexOf(paramsTab) === -1) paramsTab = groups[0] || "";
   document.getElementById("params-tabs").innerHTML = groups.map(function(g) {
-    return '<button class="cp-tab" data-g="' + esc(g) + '">' + esc(g) + '</button>';
+    return '<button class="cp-tab" data-g="' + esc(g) + '" title="' + esc(g) + '">' + esc(PARAM_TAB_LABEL[g] || g) + '</button>';
   }).join("");
   filterParams();
 }
@@ -2126,8 +2154,10 @@ function navHistory() {
   switchView("dial");
 }
 function onDialView() { return !document.getElementById("view-dial").classList.contains("hidden"); }
+function onContactsView() { return !document.getElementById("view-contacts").classList.contains("hidden"); }
 function navDialAction() {
   if (currentCall) { hangup(); return; }
+  if (onContactsView()) { ctKeypadOpen = !ctKeypadOpen; updateCtKeypad(); return; }
   if (!onDialView()) { switchView("dial"); dialKeypadOpen = true; updateDialBottomVisibility(); return; }
   if (histTab !== "calls") { setHistTab("calls"); dialKeypadOpen = true; updateDialBottomVisibility(); return; }
   if (document.getElementById("dial-input").value.trim()) { dialAction(); return; }
@@ -2149,9 +2179,9 @@ function switchView(name) {
   if (b) b.classList.add("active");
   if (name === "dial") { loadHistory(); loadT9Corpus(); }
   if (name === "activities") loadActivities();
-  if (name === "contacts") loadContacts(document.getElementById("contact-search").value);
+  if (name === "contacts") { loadContacts(document.getElementById("contact-search").value); loadT9Corpus(); }
   if (name === "messages") loadMessages();
-  updateBottomMenuHide();
+  updateDialBottomVisibility();
 }
 // A call's Notes or Transcript gets the whole screen: the bottom menu goes
 // (and comes back on Details, on leaving, or when a call starts).
@@ -2175,6 +2205,12 @@ function backspace() {
   onDialInput();
 }
 
+document.getElementById("dial-back").addEventListener("click", function() {
+  var inp = document.getElementById("dial-input");
+  if (!inp.value) return;
+  backspace();
+  if (histTab !== "calls" && !inp.value) histSearch();
+});
 // ✕ clears the box (and what it was searching).
 document.getElementById("dial-bksp").addEventListener("click", function() {
   var inp = document.getElementById("dial-input");
@@ -4861,7 +4897,7 @@ document.addEventListener("pointerdown", function(e) {
   var btn = e.target.closest && e.target.closest(CALL_BTNS);
   if (!btn || currentCall || !(simPlugin() || settings.mobileNumber)) return;
   var num = callButtonNumber(btn);
-  if (btn.id === "nav-dial" && histTab !== "calls") return;
+  if (btn.id === "nav-dial" && (histTab !== "calls" || onContactsView())) return;
   if (!num ? !(btn.id === "nav-dial" && settings.mobileNumber) : isExtensionNumber(num)) return;
   lpFired = false; lpX = e.clientX; lpY = e.clientY;
   clearTimeout(lpTimer);
@@ -5613,8 +5649,8 @@ function backToCaller() {
   ensureRemoteAudio(sipSession);
   holdLeg(false).then(function() { onHold = false; renderCallUI(); }).catch(function() { renderCallUI(); });
 }
-// ── incoming-call popup ────────────────────────────────────────
-// Shown while a call rings in: the caller, their last call and last quote,
+// ── incoming-call card ─────────────────────────────────────────
+// At the top of the main page while a call rings in (not a popup): the caller, their last call and last quote,
 // then Answer, Hang up (603 Decline; the dialplan sends them to voicemail)
 // or Transfer to extension (answer, then REFER straight on).
 var ringPopCall = null, ringXferTo = "";
@@ -6049,7 +6085,7 @@ function updateDialBottomVisibility() {
   var connected = !!(currentCall && currentCall.state === "active");
   // Typing shows T9 matches in place of the list — unless 💬 is on, when the
   // box searches transcripts and the list itself shows the hits.
-  var hasNum = !!document.getElementById("dial-input").value.trim() && histTab === "calls";
+  var hasNum = !!document.getElementById("dial-input").value.trim() && histTab === "calls" && !onContactsView();
   var typed = hasNum && !histFilter;
   // Green handset when there's a number to call (or red to hang up);
   // otherwise a keypad, which opens and closes the dialpad.
@@ -6063,6 +6099,7 @@ function updateDialBottomVisibility() {
   updateBottomMenuHide();
   renderCallBar();
   document.getElementById("dialpad").classList.toggle("hidden", inAnyCall || !dialKeypadOpen || histTab !== "calls");
+  if (typeof updateCtKeypad === "function") updateCtKeypad();
   document.getElementById("dial-entry").classList.toggle("hidden", inAnyCall);
   document.getElementById("dial-callbar").classList.toggle("hidden", inAnyCall);
   document.getElementById("hist-toolbar").classList.toggle("hidden", inAnyCall);
@@ -6090,7 +6127,9 @@ function renderCallUI() {
     updateDialBottomVisibility();
     return;
   }
-  banner.classList.remove("hidden");
+  // A call ringing in shows as the incoming card (renderRingPop) instead.
+  var ringingIn = currentCall.state === "ringing" && currentCall.dir === "in";
+  banner.classList.toggle("hidden", ringingIn);
   var conf = !!currentCall.conf;
   document.getElementById("banner-remote").textContent = conf ? "👥 " + currentCall.confWith.join(", ") : callerLabel();
   var si = { ringing: "🔔 Incoming…", calling: "📞 Calling…", active: "🔊 Connected" }[currentCall.state] || currentCall.state;
@@ -6118,7 +6157,7 @@ function renderCallUI() {
     document.getElementById("consult-merge").disabled = !up;
     document.getElementById("consult-xfer").classList.toggle("hidden", conf);
   }
-  showCallPanel(true);
+  showCallPanel(!ringingIn);
   updateDialBottomVisibility();
 }
 
@@ -6179,7 +6218,8 @@ function histSearch() {
   if (histTab === "transcripts") { loadHistory(); return; }
   if (q) setPickedNumber(q, /[a-zA-Z]/.test(q) ? q : ""); else setPickedNumber("");
 }
-// Emails tab: the last days' emails, or a Gmail search for what's in the box.
+// Emails tab: the last days' emails from contacts or labelled Mail Vault, or a
+// Gmail search of all mail for what's in the box.
 var histEmailsSeq = 0;
 function loadHistEmails() {
   var el = document.getElementById("hist-emails");
@@ -6189,7 +6229,7 @@ function loadHistEmails() {
   fetch(API + "/messages/recent?days=" + PV.recentMessagesDays + "&limit=" + PV.recentMessagesLimit + (q ? "&q=" + encodeURIComponent(q) : "")).then(function(r) { return r.json(); }).then(function(d) {
     if (seq !== histEmailsSeq) return;
     var msgs = d.messages || [];
-    if (!msgs.length) { el.innerHTML = '<div class="empty">' + (q ? "No emails match" : d.gmailOk === false ? "Gmail isn't connected (Settings)" : "No emails in the last " + PV.recentMessagesDays + " days") + '</div>'; return; }
+    if (!msgs.length) { el.innerHTML = '<div class="empty">' + (q ? "No emails match" : d.gmailOk === false ? "Gmail isn't connected (Settings)" : "No emails from contacts or Mail Vault in the last " + PV.recentMessagesDays + " days") + '</div>'; return; }
     el.innerHTML = msgs.map(function(m) { return renderMessageRow(m); }).join("");
   }).catch(function() { if (seq === histEmailsSeq) el.innerHTML = '<div class="empty">Error loading emails</div>'; });
 }
@@ -6918,6 +6958,8 @@ function contactMatches(c, q) {
   if ((c.name || "").toLowerCase().indexOf(lq) >= 0 || (c.email || "").toLowerCase().indexOf(lq) >= 0) return true;
   var dq = q.replace(/[^0-9]/g, "");
   if (!dq) return false;
+  // Keypad digits also match names the T9 way (564 → JOHn).
+  if (/^[0-9]+$/.test(q) && t9Match(t9Entry(c.name, ""), q, false)) return true;
   var nums = c.numbers || [c.phone, c.mobile];
   for (var i = 0; i < nums.length; i++) if (nums[i] && nums[i].replace(/[^0-9]/g, "").indexOf(dq) >= 0) return true;
   return false;
@@ -6971,10 +7013,39 @@ function loadContacts(q) {
     el.innerHTML = list.map(function(c) { return contactRowHtml(c, tab === "all" || tab === "fav"); }).join("");
   }).catch(function(){ if (seq === contactsSeq) el.innerHTML = '<div class="empty">Error</div>'; });
 }
-document.getElementById("contact-search").addEventListener("input", function(e) {
-  var q = e.target.value.trim();
+function onContactSearch() {
+  var q = document.getElementById("contact-search").value.trim();
   if (contactTimer) clearTimeout(contactTimer);
   contactTimer = setTimeout(function() { loadContacts(q); }, PV.contactsDebounceMs);
+}
+document.getElementById("contact-search").addEventListener("input", onContactSearch);
+// Contacts keypad: closed by default (the list gets the room); the green
+// button opens and closes it while Contacts is showing.
+var ctKeypadOpen = false;
+function updateCtKeypad() {
+  document.getElementById("ct-dialpad").classList.toggle("hidden", !ctKeypadOpen || !!currentCall);
+}
+function ctInsert(c) { var inp = document.getElementById("contact-search"); inp.value += c; onContactSearch(); }
+document.getElementById("ct-back").addEventListener("click", function() {
+  var inp = document.getElementById("contact-search");
+  if (!inp.value) return;
+  inp.value = inp.value.slice(0, -1); onContactSearch();
+});
+document.getElementById("ct-clear").addEventListener("click", function() {
+  var inp = document.getElementById("contact-search");
+  if (!inp.value) return;
+  inp.value = ""; onContactSearch();
+});
+var ctPressTimer = null, ctLongFired = false;
+document.getElementById("ct-dialpad").addEventListener("pointerdown", function(e) {
+  var k = e.target.closest(".key"); if (!k) return;
+  var d = k.getAttribute("data-d");
+  if (d === "0") { ctLongFired = false; ctPressTimer = setTimeout(function() { ctLongFired = true; ctInsert("+"); }, PV.longPressPlusMs); return; }
+  ctInsert(d);
+});
+document.getElementById("ct-dialpad").addEventListener("pointerup", function(e) {
+  var k = e.target.closest(".key"); if (!k) return;
+  if (k.getAttribute("data-d") === "0") { clearTimeout(ctPressTimer); if (!ctLongFired) ctInsert("0"); }
 });
 document.getElementById("contacts-list").addEventListener("click", function(e) {
   var fav = e.target.closest(".fav-star");
@@ -7597,12 +7668,12 @@ function loadMessages() {
     return;
   }
   if (!activeContact) {
-    document.getElementById("msg-title").textContent = "📥 Recent emails (7 days)";
+    document.getElementById("msg-title").textContent = "📥 Contacts & Mail Vault (" + PV.recentMessagesDays + " days)";
     el.innerHTML = '<div class="empty">Downloading recent emails…</div>';
     messagesCache = {};
     fetch(API + "/messages/recent?days=" + PV.recentMessagesDays + "&limit=" + PV.recentMessagesLimit).then(function(r){return r.json();}).then(function(d){
       var msgs = d.messages || [];
-      if (!msgs.length) { el.innerHTML = '<div class="empty">No emails in the last week</div>'; return; }
+      if (!msgs.length) { el.innerHTML = '<div class="empty">No emails from contacts or Mail Vault in the last ' + PV.recentMessagesDays + ' days</div>'; return; }
       el.innerHTML = msgs.map(function(m) { return renderMessageRow(m); }).join("");
     }).catch(function(){ el.innerHTML = '<div class="empty">Error loading emails</div>'; });
     return;

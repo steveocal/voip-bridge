@@ -148,22 +148,22 @@ export async function handleGoogleDisconnect(env: Env, userId: number): Promise<
 
 const OUR_SENDERS = /(systecgroup\.info|ihproducts\.co\.uk|infracool\.co\.uk|infraredheaterpanels\.co\.uk)/i;
 
+const METADATA_QUERY = "format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date";
+interface GmailMeta {
+  id: string;
+  internalDate?: string;
+  snippet?: string;
+  labelIds?: string[];
+  payload?: { headers?: Array<{ name: string; value: string }> };
+}
+
 async function getMessage(token: string, id: string): Promise<Message | null> {
-  const url = new URL(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}`);
-  url.searchParams.set("format", "metadata");
-  // append() (not set()) — repeated metadataHeaders params, one per header.
-  url.searchParams.append("metadataHeaders", "From");
-  url.searchParams.append("metadataHeaders", "To");
-  url.searchParams.append("metadataHeaders", "Subject");
-  url.searchParams.append("metadataHeaders", "Date");
-  const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?${METADATA_QUERY}`, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) return null;
-  const m = await res.json() as {
-    id: string;
-    internalDate?: string;
-    snippet?: string;
-    payload?: { headers?: Array<{ name: string; value: string }> };
-  };
+  return toMessage(await res.json() as GmailMeta);
+}
+
+function toMessage(m: GmailMeta): Message {
   const headers: Record<string, string> = {};
   for (const h of m.payload?.headers ?? []) headers[h.name.toLowerCase()] = h.value;
   const from = headers["from"] ?? "";
@@ -521,4 +521,92 @@ export async function calendarEvents(env: Env, userId: number, days = 14): Promi
       phone: (PHONE_IN_TEXT.exec(location) ?? PHONE_IN_TEXT.exec(note))?.[0].replace(/[^\d+]/g, "") ?? "",
     };
   });
+}
+
+// ── Recent emails: from known contacts, or labelled Mail Vault ─
+// The Emails tab lists only the last days' mail that came from a contact
+// (Odoo, cached in D1) or that carries the "Mail Vault" label or one under it
+// ("Mail Vault/…"). Filtering needs each message's sender and labels, so up
+// to RECENT_SCAN recent messages are read with Gmail's batch endpoint: one
+// request per BATCH_SIZE messages, which keeps a page load well inside the
+// Workers subrequest limit. Vault mail older than the scan window's newest
+// RECENT_SCAN is fetched by its own search, so none is missed.
+const RECENT_SCAN = 100;
+const VAULT_SCAN = 50;
+const BATCH_SIZE = 50;
+const VAULT_LABEL = /^mail vault(\/|$)/i;
+const vaultLabelCache = new Map<number, { ids: string[]; query: string; at: number }>();
+
+export interface RecentGmail extends Message { vault: boolean; from_address: string }
+
+async function vaultLabels(token: string, userId: number): Promise<{ ids: string[]; query: string }> {
+  const hit = vaultLabelCache.get(userId);
+  if (hit && hit.at > Date.now() - 3600_000) return hit;
+  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/labels", { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) return { ids: [], query: "" };
+  const data = await res.json() as { labels?: Array<{ id: string; name: string }> };
+  const vault = (data.labels ?? []).filter(l => VAULT_LABEL.test(l.name));
+  // Gmail search spells a label in lower case with spaces and "/" as "-".
+  const names = vault.map(l => `label:${l.name.toLowerCase().replace(/[\s/]+/g, "-")}`);
+  const out = { ids: vault.map(l => l.id), query: names.length ? `{${names.join(" ")}}` : "", at: Date.now() };
+  vaultLabelCache.set(userId, out);
+  return out;
+}
+
+async function listIds(token: string, q: string, max: number): Promise<string[]> {
+  const url = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
+  url.searchParams.set("q", q);
+  url.searchParams.set("maxResults", String(max));
+  const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`Gmail list failed: ${res.status}`);
+  return ((await res.json() as { messages?: Array<{ id: string }> }).messages ?? []).map(m => m.id);
+}
+
+/** Metadata for many messages, BATCH_SIZE per request (Gmail's batch API). */
+async function batchMetadata(token: string, ids: string[]): Promise<GmailMeta[]> {
+  const out: GmailMeta[] = [];
+  for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+    const boundary = `vb${crypto.randomUUID().replace(/-/g, "")}`;
+    const body = ids.slice(i, i + BATCH_SIZE).map((id, n) =>
+      `--${boundary}\r\nContent-Type: application/http\r\nContent-ID: <m${n}>\r\n\r\nGET /gmail/v1/users/me/messages/${id}?${METADATA_QUERY}\r\n`
+    ).join("") + `--${boundary}--`;
+    const res = await fetch("https://gmail.googleapis.com/batch/gmail/v1", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/mixed; boundary=${boundary}` },
+      body,
+    });
+    if (!res.ok) throw new Error(`Gmail batch failed: ${res.status}`);
+    const reply = /boundary="?([^";]+)"?/.exec(res.headers.get("Content-Type") ?? "")?.[1];
+    if (!reply) throw new Error("Gmail batch: no boundary");
+    for (const part of (await res.text()).split(`--${reply}`)) {
+      const a = part.indexOf("{"), b = part.lastIndexOf("}");
+      if (a < 0 || b < a) continue;
+      try {
+        const m = JSON.parse(part.slice(a, b + 1)) as GmailMeta & { error?: unknown };
+        if (m.id && !m.error) out.push(m);
+      } catch { /* one bad part doesn't lose the rest */ }
+    }
+  }
+  return out;
+}
+
+/** The last `days` days' messages with their sender address and whether
+ *  they carry a Mail Vault label, newest first; the caller keeps the ones
+ *  from known contacts. Empty when Gmail isn't connected. */
+export async function recentGmailCandidates(env: Env, userId: number, days: number): Promise<RecentGmail[]> {
+  const token = await getAccessToken(env, userId);
+  if (!token) return [];
+  const vault = await vaultLabels(token, userId);
+  const [recent, vaulted] = await Promise.all([
+    listIds(token, `newer_than:${days}d -in:drafts -in:chats -in:spam -in:trash`, RECENT_SCAN),
+    vault.query ? listIds(token, `newer_than:${days}d ${vault.query}`, VAULT_SCAN) : Promise.resolve([] as string[]),
+  ]);
+  const ids = [...new Set([...recent, ...vaulted])];
+  const vaultIds = new Set(vault.ids);
+  return (await batchMetadata(token, ids)).map(m => {
+    const msg = toMessage(m);
+    const from = msg.email_from ?? "";
+    const from_address = (/<([^>]+)>/.exec(from)?.[1] ?? from).trim().toLowerCase();
+    return { ...msg, vault: (m.labelIds ?? []).some(l => vaultIds.has(l)), from_address };
+  }).sort((x, y) => (y.date ?? 0) - (x.date ?? 0));
 }

@@ -1,6 +1,6 @@
 import type { Env, ExecutionContext, D1PreparedStatement, D1Result } from "./types";
 import { lookupCaller, pushCallToOdoo, pushCallHistory, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages, searchQuotations, contactTotals, phoneKey, sqlPhoneKey, findCachedContact, createContactForNumber, renameContact, forgetCalls, forgetContacts, userActivities, activityDone, callLegs } from "./odoo";
-import { searchGmailMessages, searchRecentGmailMessages, getGmailBody, sendGmailMessage, listGoogleContacts, googleAccount, handleGoogleConnect, handleGoogleCallback, handleGoogleDisconnect, calendarEvents } from "./gmail";
+import { searchGmailMessages, searchRecentGmailMessages, recentGmailCandidates, getGmailBody, sendGmailMessage, listGoogleContacts, googleAccount, handleGoogleConnect, handleGoogleCallback, handleGoogleDisconnect, calendarEvents } from "./gmail";
 import { ariRequest, ariParkedCalls } from "./asterisk";
 import { playbackResponse } from "./recording";
 import { transcribeCall } from "./transcribe";
@@ -661,15 +661,35 @@ async function handleRecentMessages(request: Request, env: Env, user: User): Pro
   const days = Math.max(1, Math.min(parseInt(url.searchParams.get("days") ?? "7", 10) || 7, 30));
   const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50", 10) || 50, 100);
 
+  const q = (url.searchParams.get("q") ?? "").slice(0, 200).trim();
   let gmailOk = false;
   let messages: Message[] = [];
   try {
-    messages = await searchRecentGmailMessages(env, user.id, days, limit, (url.searchParams.get("q") ?? "").slice(0, 200));
+    // A search looks through all mail; the plain list is only mail from
+    // known contacts, or labelled Mail Vault (gmail.ts recentGmailCandidates).
+    messages = q ? await searchRecentGmailMessages(env, user.id, days, limit, q) : await recentFromContacts(env, user.id, days, limit);
     gmailOk = true;
   } catch (e) {
     console.error("Recent Gmail sync failed:", e);
   }
-  return Response.json({ days, gmailOk, messages });
+  return Response.json({ days, gmailOk, messages, filtered: !q });
+}
+
+async function recentFromContacts(env: Env, userId: number, days: number, limit: number): Promise<Message[]> {
+  const all = await recentGmailCandidates(env, userId, days);
+  const senders = [...new Set(all.filter(m => !m.vault && m.direction !== "outgoing" && m.from_address).map(m => m.from_address))];
+  const known = new Set<string>();
+  // D1 allows 100 bound values per statement.
+  for (let i = 0; i < senders.length; i += 90) {
+    const chunk = senders.slice(i, i + 90);
+    const { results } = await env.DB.prepare(
+      `SELECT DISTINCT lower(trim(email)) AS e FROM contacts WHERE lower(trim(email)) IN (${chunk.map((_, n) => `?${n + 1}`).join(",")})`
+    ).bind(...chunk).all<{ e: string }>();
+    for (const r of results ?? []) known.add(r.e);
+  }
+  return all.filter(m => m.vault || (m.direction !== "outgoing" && known.has(m.from_address)))
+    .slice(0, limit)
+    .map(({ vault: _v, from_address: _f, ...m }) => m);
 }
 
 async function handleQuotations(request: Request, env: Env): Promise<Response> {
