@@ -132,6 +132,14 @@ What the phone system does today (main branch, November 2026). It has four parts
 - The PBX's call events carry its secret (`pb-event.sh`), and softphones must be signed in, so nobody else can post events to `/call-event`. The dialplan filters caller IDs before they reach a shell command.
 - The page ships no built-in SIP account. Each person enters their own extension and password.
 
+## UK compliance
+
+- **Recording notice**: each number set to Record Calls in Odoo also has "Tell Callers Calls Are Recorded" (off by default, phone_bridge 19.0.0.17.0) and the words to say. The PBX plays it first, before anything rings, as early media so the call isn't answered yet.
+- **999 and 112** (and 911): from any extension they skip the call limits and blocked lists, have no time limit and never go to voicemail. The caller ID is a number with an **Emergency Address** set in Odoo (the first one that rings that extension, else the first one), so register that same address with the carrier for that number. In the Android app, 999 and 112 go out over the phone's own network instead, which gives the operator the real location; in a browser a warning says the office address is used. Every 999 call goes in the audit log. Installed on the PBX by `scripts/vps-emergency-calls.sh`.
+- **Admins** are the Odoo users in Settings administrators (`base.group_system`), copied with every extension sync. Only they see the Privacy and Audit tabs and can change Retention.
+- **Privacy** (Configuration → Privacy): a caller's data by phone number (any format). Export downloads everything held about them as JSON (calls, notes, transcripts, summaries, recordings listed, the Odoo contact, emails cached here, website callbacks, spam and block entries). Erase first shows what it would remove, then needs the number typed again. It deletes the calls, their Odoo copies, callback requests and spam marks, and queues the recordings for deletion on the PBX (a few each hour). Calls marked ⭐ Important are kept unless ticked. The Odoo contact, its quotes and invoices, Gmail and a block on the number are left for the admin.
+- **Audit log** (Configuration → Audit): who played a recording (once per person and call every 10 minutes), signed in or got the password wrong, changed retention, call limits or blocked numbers, exported or erased data, plus recordings deleted by retention or erasure and every 999 call, with time, extension and IP. Kept 2 years. Recordings played from Odoo's own copies are not in it.
+
 ## Odoo integration
 
 - Calls are pushed into Odoo (`phone_bridge.call` / `voip.call`): one record per call, withheld callers included.

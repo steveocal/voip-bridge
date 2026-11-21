@@ -13,6 +13,7 @@
 #   queue <our number> <strategy> <ring secs> <max wait> <position 0|1> <options 0|1> <prompt> <thanks|-> <legs|->
 #   block <last 9 digits> / blockwithheld: blocked callers (below)
 #   limits <at once> <per ext at once> <per ext per hour> <all per hour>: outgoing call limits
+#   notice <our number> <prompt> / emergency <extension|default> <our number>: recording notice, 999 caller ID
 # Each extension becomes an endpoint, auth and aor in $OUT, on the templates
 # in pjsip-phone-bridge.conf. An extension that is already defined by hand in
 # another pjsip*.conf is skipped (and logged), so hand-made ones can be moved
@@ -131,6 +132,8 @@ sync_family pbfwd "$fwds"
 #   pbmenu/<id> = <prompt|->|<key timeout>|<retries>|<direct dial 0|1>|<spoken 0|1>|<sorry prompt|->|<while ringing prompt|->
 #   pbkey/<menu id>-<0-9|s|h|t> = <action>
 #   pbsay/<menu id>-<0-9|s|h> = <prompt> (spoken menus: "Putting you through to ...")
+#   pbnotice/<our number> = <prompt>: "calls may be recorded", played first by [pb-route]
+#   pbemerg/<extension|default> = <our number>: caller ID for 999 / 112 ([pb-emergency])
 # Actions: vm, hangup, repeat, fwd|<number>, menu|<id>, ring|<secs>|<Dial targets|->,
 # owner|<secs>|<all|each>|<team Dial targets|-> (keys only)
 # (out of hours: the same, or -|- with no hours). Prompts are WAV files in
@@ -191,6 +194,8 @@ ivr=$(echo "$cfg" | awk '
     if ($3 != "t" && hash($5) && $5 != "-") print "pbsay", $2 "-" $3, $5
   }
   $1 == "prompt" && hash($2) && $2 != "-" { print "prompt", $2 }
+  $1 == "notice" && phone($2) && hash($3) && $3 != "-" { print "pbnotice", $2, $3 }
+  $1 == "emergency" && ($2 == "default" || ($2 ~ /^[0-9]+$/ && length($2) >= 2 && length($2) <= 6)) && phone($3) { print "pbemerg", $2, $3 }
   END { for (d in tz) print "pbhours", d, tz[d] "|" (op[d] == "" ? "-" : op[d]) "|" (sh[d] == "" ? "-" : sh[d]) }')
 fam() { echo "$ivr" | awk -v f="$1" '$1 == f { print $2, $3 }'; }
 sync_family pbwhen "$(fam pbwhen)"
@@ -198,6 +203,8 @@ sync_family pbhours "$(fam pbhours)"
 sync_family pbmenu "$(fam pbmenu)"
 sync_family pbkey "$(fam pbkey)"
 sync_family pbsay "$(fam pbsay)"
+sync_family pbnotice "$(fam pbnotice)"
+sync_family pbemerg "$(fam pbemerg)"
 mkdir -p "${SAY_DIR:-/var/spool/asterisk/phone-bridge-say}" 2>/dev/null   # spoken answers, while pb-say.sh sends them
 
 PROMPTS=${PROMPTS:-/var/spool/asterisk/phone-bridge-prompts}

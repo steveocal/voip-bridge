@@ -254,3 +254,22 @@ CREATE TABLE IF NOT EXISTS setup_links (
   used_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_setup_links_ext ON setup_links(ext);
+-- UK compliance: audit log and the erase queue (migrations/0029_compliance.sql, src/compliance.ts)
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at INTEGER NOT NULL,
+  user_id INTEGER,
+  user_name TEXT,
+  ext TEXT,
+  ip TEXT,
+  action TEXT NOT NULL,     -- recording.play, retention.set, retention.run, privacy.export, privacy.erase, auth.login, auth.fail, limits.set, block.add, block.remove, block.withheld
+  target TEXT,              -- call id, phone number, extension …
+  detail TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_audit_at ON audit_log(at);
+CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action, at);
+
+CREATE TABLE IF NOT EXISTS erase_recordings (
+  name TEXT PRIMARY KEY,
+  at INTEGER NOT NULL
+);

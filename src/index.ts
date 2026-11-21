@@ -26,6 +26,7 @@ import { checkSpam, markSpam, spamReason, clearSpam } from "./spam";
 import { handleReports } from "./reports";
 import { handlePresence } from "./presence";
 import { handleGetRetention, handleSetRetention, handleCallImportant, runRetention } from "./retention";
+import { isAdmin, adminOnly, audit, auditPlay, clientIp, handleAudit, handlePrivacyExport, handlePrivacyErase, runCompliance } from "./compliance";
 import { handleWebCallback, handleWebCallbackConfig, handleWebCallbackStatus, handleWebCallbackEvent } from "./webcallback";
 import { noteLimitHit, handleGetCallLimits, handleSetCallLimits } from "./limits";
 import { callerBlocked, noteBlockedCall, handleBlockedList, handleBlockNumber, handleUnblockNumber, handleBlockWithheld } from "./blocked";
@@ -50,6 +51,11 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
   const event = params.get("event") ?? "unknown";
   if (!fromPbx && !SOFTPHONE_EVENTS.has(event)) return Response.json({ error: "forbidden" }, { status: 403 });
 
+  // Posted by [pb-emergency] for every 999 / 112 call (compliance.ts).
+  if (event === "emergency") {
+    await audit(env, { name: "PBX", ext: params.get("ext") ?? "" }, "call.emergency", params.get("number") ?? "", { caller_id: params.get("cli") ?? "" });
+    return Response.json({ action: "emergency" });
+  }
   // Posted by [pb-out-limit] when it refuses an outgoing call (limits.ts).
   if (event === "limit") {
     await noteLimitHit(env, params);
@@ -557,6 +563,7 @@ async function handleGetRecording(request: Request, env: Env, user: User): Promi
   const row = await env.DB.prepare("SELECT recording FROM call_log WHERE call_id = ?1")
     .bind(callId).first<{ recording: string | null }>();
   if (!row?.recording) return Response.json({ error: "no recording" }, { status: 404 });
+  await auditPlay(env, user, clientIp(request), callId, row.recording.endsWith("-vm") ? "voicemail" : "call");
   return playbackResponse(env, row.recording);
 }
 
@@ -1057,11 +1064,33 @@ export default {
       else if (request.method === "POST" && url.pathname === "/odoo/push-calls") response = await handlePushCalls(request, env);
       else if (request.method === "GET" && url.pathname === "/push/status") response = await handlePushStatus(env);
       else if (m === "GET" && p === "/call-limits") response = await handleGetCallLimits(env);
-      else if (m === "POST" && p === "/call-limits") response = await handleSetCallLimits(request, env, ctx);
+      else if (m === "POST" && p === "/call-limits") {
+        const body = await request.clone().text();
+        response = await handleSetCallLimits(request, env, ctx);
+        if (response.ok) ctx.waitUntil(audit(env, { user, ip: clientIp(request) }, "limits.set", "", body));
+      }
       else if (m === "GET" && p === "/blocked") response = await handleBlockedList(env);
-      else if (m === "POST" && p === "/blocked") response = await handleBlockNumber(request, env, ctx, user);
-      else if (m === "POST" && p === "/blocked/withheld") response = await handleBlockWithheld(request, env, ctx);
-      else if (m === "DELETE" && /^\/blocked\/\d+$/.test(p)) response = await handleUnblockNumber(env, ctx, p.split("/")[2]);
+      else if (m === "POST" && p === "/blocked") {
+        const body = await request.clone().json().catch(() => ({})) as { number?: unknown };
+        response = await handleBlockNumber(request, env, ctx, user);
+        if (response.ok) ctx.waitUntil(audit(env, { user, ip: clientIp(request) }, "block.add", String(body.number ?? "")));
+      }
+      else if (m === "POST" && p === "/blocked/withheld") {
+        const body = await request.clone().text();
+        response = await handleBlockWithheld(request, env, ctx);
+        if (response.ok) ctx.waitUntil(audit(env, { user, ip: clientIp(request) }, "block.withheld", "", body));
+      }
+      else if (m === "DELETE" && /^\/blocked\/\d+$/.test(p)) {
+        response = await handleUnblockNumber(env, ctx, p.split("/")[2]);
+        if (response.ok) ctx.waitUntil(audit(env, { user, ip: clientIp(request) }, "block.remove", p.split("/")[2]));
+      }
+      else if (m === "GET" && p === "/admin") response = Response.json({ admin: await isAdmin(env, user) });
+      else if (m === "GET" && p === "/audit") response = await isAdmin(env, user) ? await handleAudit(request, env) : adminOnly();
+      else if (m === "GET" && p === "/privacy/export") response = await isAdmin(env, user) ? await handlePrivacyExport(request, env, user) : adminOnly();
+      else if (m === "POST" && p === "/privacy/erase") {
+        response = await isAdmin(env, user) ? await handlePrivacyErase(request, env, user) : adminOnly();
+        if (response.ok) ctx.waitUntil(runCompliance(env).catch((e) => console.error("erase run failed:", e)));
+      }
       else if (request.method === "GET" && url.pathname === "/settings") response = await handleGetSettings(env, user);
       else if (request.method === "POST" && url.pathname === "/settings") response = await handleSetSettings(request, env, user);
       else if (request.method === "GET" && url.pathname === "/active-calls") response = await handleActiveCalls(request, env);
@@ -1092,8 +1121,8 @@ export default {
       else if (request.method === "GET" && url.pathname === "/parked") response = await handleParked(env);
       else if (m === "GET" && p === "/presence") response = await handlePresence(env);
       else if (m === "GET" && p === "/retention") response = await handleGetRetention(env);
-      else if (m === "POST" && p === "/retention") response = await handleSetRetention(request, env);
-      else if (m === "POST" && p === "/retention/run") response = Response.json({ ok: true, done: await runRetention(env) });
+      else if (m === "POST" && p === "/retention") response = await isAdmin(env, user) ? await handleSetRetention(request, env, user) : adminOnly();
+      else if (m === "POST" && p === "/retention/run") response = await isAdmin(env, user) ? Response.json({ ok: true, done: await runRetention(env) }) : adminOnly();
       else if (m === "POST" && p === "/call-important") response = await handleCallImportant(request, env, ctx, user, (id) => mayOpenCall(env, user, id));
       else if (request.method === "POST" && url.pathname === "/summarize") response = await handleSummarize(request, env, ctx, user);
       else if (request.method === "GET" && url.pathname === "/voicemail") response = await handleGetVoicemail(env, user.id);
@@ -1126,6 +1155,7 @@ export default {
 
   // Cron trigger (wrangler.toml [triggers]): call retention (retention.ts).
   async scheduled(_event: unknown, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(runRetention(env).catch((e) => console.error("retention failed:", e)));
+    ctx.waitUntil(runRetention(env).catch((e) => console.error("retention failed:", e))
+      .then(() => runCompliance(env)).catch((e) => console.error("compliance run failed:", e)));
   },
 };

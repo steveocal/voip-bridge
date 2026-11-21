@@ -2,6 +2,7 @@ import type { Env } from "./types";
 import { odooAuth, odooCall } from "./odoo";
 import { nudgePbxIfChanged } from "./pbxsync";
 import { syncIvr } from "./ivr";
+import { audit, syncAdmins } from "./compliance";
 
 // ── Users ─────────────────────────────────────────────────────
 // Every extension belongs to an Odoo user (Odoo phone_bridge.extension
@@ -125,6 +126,7 @@ export async function syncExtensions(env: Env): Promise<number | null> {
   ).bind(full ? String(now) : "0", now));
   await env.DB.batch(stmts);
   ownersCache = null;
+  await syncAdmins(env, uid);
   if (full) await nudgePbxIfChanged(env);
   return exts.length;
 }
@@ -249,6 +251,7 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
   }
   const fail = async (status: number, error: string) => {
     await env.DB.prepare("INSERT INTO login_failures (ext, ip, at) VALUES (?1, ?2, ?3)").bind(ext, ip, Date.now()).run();
+    await audit(env, { ext, ip }, "auth.fail", ext, error);
     return Response.json({ error }, { status });
   };
   const uid = await odooAuth(env);
@@ -264,6 +267,7 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
   await env.DB.prepare("DELETE FROM login_failures WHERE ext = ?1 OR at < ?2").bind(ext, since).run();
   const user: User = { id: rec.user_id[0] as number, name: String(rec.user_id[1]), ext };
   userNames.set(user.id, user.name);
+  await audit(env, { user, ip }, "auth.login", ext);
   return Response.json({ ok: true, user, token: await sessionToken(env, user.id, ext) });
 }
 
@@ -367,5 +371,6 @@ export async function handleSetupRedeem(request: Request, env: Env): Promise<Res
   if (!claim.meta.changes) return Response.json({ error: "This setup link has already been used." }, { status: 410 });
   const user: User = { id: rec.user_id[0] as number, name: String(rec.user_id[1]), ext: row.ext };
   userNames.set(user.id, user.name);
+  await audit(env, { user, ip: request.headers.get("CF-Connecting-IP") || "" }, "auth.setup", row.ext, "one-time setup link");
   return Response.json({ ok: true, user, token: await sessionToken(env, user.id, row.ext), ext: row.ext, password: String(rec.sip_password) });
 }

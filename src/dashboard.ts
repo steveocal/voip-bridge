@@ -571,6 +571,18 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 .act-note{font-size:12px;color:#f0a33c;padding:8px 4px}
 .menu-btn{position:relative}
 .nav-badge{position:absolute;top:2px;left:50%;margin-left:6px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center}
+/* audit log, privacy */
+.au-list{margin-top:8px}
+.au-row{padding:8px 10px;border-radius:8px;background:#151515;margin-bottom:6px}
+.au-top{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;font-size:13px}
+.au-act{font-weight:600}
+.au-tgt{color:#4db8ff}
+.au-at{margin-left:auto;color:#888;font-size:11px}
+.au-sub{color:#999;font-size:12px;margin-top:2px;word-break:break-word}
+.pv-check{display:flex;gap:8px;align-items:center;font-size:13px;margin:6px 0}
+.loc-box .pv-check input{flex:0 0 auto}
+#au-q{padding:8px 10px;border:none;border-radius:8px;background:#1a1a1a;color:#fff;font-size:14px;outline:none}
+#view-settings button.danger{background:#7f1d1d;border-color:#b91c1c;color:#fff}
 /* contacts source filter */
 .ct-filter{display:flex;gap:6px;margin:0 0 10px;overflow-x:auto;scrollbar-width:none}
 .ct-filter button{flex:0 0 auto;display:flex;align-items:center;gap:5px;background:#1a1a1a;border:1px solid #2c2c2c;border-radius:16px;color:#bbb;font-size:13px;padding:6px 12px;cursor:pointer}
@@ -968,6 +980,8 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
         <button class="cp-tab" data-tab="blocked" onclick="setSettingsTab('blocked')">Blocked</button>
         <button class="cp-tab" data-tab="limits" onclick="setSettingsTab('limits')">Limits</button>
         <button class="cp-tab" data-tab="retention" onclick="setSettingsTab('retention')">Retention</button>
+        <button class="cp-tab hidden admin-only" data-tab="privacy" onclick="setSettingsTab('privacy')">Privacy</button>
+        <button class="cp-tab hidden admin-only" data-tab="audit" onclick="setSettingsTab('audit')">Audit</button>
         <button class="cp-tab" data-tab="device" onclick="setSettingsTab('device')">Device</button>
         <button class="cp-tab" data-tab="text" onclick="setSettingsTab('text')">Quick text</button>
       </div>
@@ -1084,8 +1098,48 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       <div class="set-field"><label>Delete transcripts after</label><input id="ret-transcriptsDays" type="number" min="0" step="1"></div>
       <div class="set-field"><label>Delete the whole call (History, notes, summary, recording, transcript) after</label><input id="ret-callsDays" type="number" min="0" step="1"></div>
       <div class="loc-row"><button id="ret-save" onclick="saveRetention(false)">Save</button><button id="ret-confirm" class="hidden" onclick="saveRetention(true)">Confirm</button></div>
+      <div class="set-note hidden" id="ret-admin-note">Only Odoo administrators can change these.</div>
       <div class="set-note" id="ret-status"></div>
       <div class="set-note" id="ret-last"></div>
+    </div>
+    </div>
+
+    <div class="set-pane" data-pane="privacy">
+    <div class="loc-box">
+      <div class="loc-title">🔐 A caller's data (UK GDPR requests)</div>
+      <div class="set-note" style="margin:0 0 6px">For a request to see, or to delete, what we hold about someone. Enter their phone number; it matches every way it's written (07…, +44 7…, 447…).</div>
+      <div class="set-field"><label>Phone number</label><input id="pv-number" type="text" inputmode="tel" placeholder="07700 900123" autocomplete="off"></div>
+      <div class="loc-row"><button onclick="privacyExport()">⬇ Export their data</button><button onclick="privacyCheck()">🗑 Erase…</button></div>
+      <div class="set-note" id="pv-status"></div>
+      <div class="hidden" id="pv-erase">
+        <div class="set-note" id="pv-summary"></div>
+        <label class="pv-check"><input type="checkbox" id="pv-important" onchange="privacyCheck()"> Also erase calls marked ⭐ Important</label>
+        <div class="set-field"><label>Type the number again to confirm</label><input id="pv-confirm" type="text" inputmode="tel" autocomplete="off"></div>
+        <div class="loc-row"><button class="danger" onclick="privacyErase()">Erase for good</button><button onclick="privacyCancel()">Cancel</button></div>
+      </div>
+      <div class="set-note" style="margin-top:8px">Erasing removes their calls from History (notes, summaries, transcripts), the recordings on the phone system (within a few hours), the call copies in Odoo, website callback requests and spam marks. It does not touch the Odoo contact, their quotes or invoices, emails in Gmail, or a block on their number: deal with those yourself if the request covers them. Everything here goes in the Audit log.</div>
+    </div>
+    </div>
+
+    <div class="set-pane" data-pane="audit">
+    <div class="loc-box">
+      <div class="loc-title">📜 Audit log</div>
+      <div class="set-note" style="margin:0 0 6px">Who listened to recordings, signed in, changed retention, limits or blocked numbers, exported or erased someone's data, and every 999 call. Kept for <span id="au-days">2 years</span>.</div>
+      <div class="loc-row">
+        <select id="au-action" class="acc-select" onchange="loadAudit(false)">
+          <option value="">Everything</option>
+          <option value="recording.">Recordings</option>
+          <option value="auth.">Sign-ins</option>
+          <option value="privacy.">Data requests</option>
+          <option value="retention.">Retention</option>
+          <option value="limits.">Call limits</option>
+          <option value="block.">Blocked numbers</option>
+          <option value="call.emergency">999 calls</option>
+        </select>
+        <input id="au-q" type="text" placeholder="Search name, number, IP" autocomplete="off" style="flex:1;min-width:0">
+      </div>
+      <div id="au-list" class="au-list"><div class="empty">Loading…</div></div>
+      <div class="loc-row"><button id="au-more" class="hidden" onclick="loadAudit(true)">More</button></div>
     </div>
     </div>
 
@@ -4407,6 +4461,13 @@ function dialOut(num) {
   }
   var pick = routeOverride;
   routeOverride = null;
+  // 999 / 112: in the app, always the phone's own network (it gives the
+  // operator your real location); otherwise the PBX sends it out with the
+  // emergency address registered for your number.
+  if (isEmergencyNumber(num)) {
+    if (simPlugin()) { simCallOut(num, pick && pick.sim); return; }
+    showToast("🚨 Emergency call over the internet: the operator gets the address registered for this office's number, not where you are. Tell them your location.", null, 12000);
+  }
   if ((pick ? pick.route : autoRoute(num)) === "sim") { simCallOut(num, pick && pick.sim); return; }
   num = normalizeDial(num);
   if (!sipUA) { setStatus("❌ Not registered", true); return; }
@@ -4474,6 +4535,7 @@ function deviceContactFor(num) {
   }
   return null;
 }
+function isEmergencyNumber(num) { var d = String(num).replace(/[^0-9]/g, ""); return d === "999" || d === "112" || d === "911"; }
 function isExtensionNumber(num) { var d = String(num).replace(/[^+0-9*#]/g, ""); return d.charAt(0) !== "+" && d.length <= 6; }
 function autoRoute(num) {
   if (!simPlugin() || isExtensionNumber(num)) return "voip";
@@ -6714,6 +6776,103 @@ function saveRetention(confirmed) {
   document.getElementById("ret-" + k).addEventListener("input", function() { document.getElementById("ret-confirm").classList.add("hidden"); });
 });
 
+// ── Admins (Odoo Settings administrators): Privacy and Audit tabs, and
+// only they can change Retention (the worker checks too).
+var isAdminUser = false;
+function loadAdmin() {
+  fetch(API + "/admin").then(function(r) { return r.json(); }).then(function(d) {
+    isAdminUser = !!(d && d.admin);
+    document.querySelectorAll(".admin-only").forEach(function(el) { el.classList.toggle("hidden", !isAdminUser); });
+    document.getElementById("ret-save").disabled = !isAdminUser;
+    RET_FIELDS.forEach(function(k) { document.getElementById("ret-" + k).disabled = !isAdminUser; });
+    document.getElementById("ret-admin-note").classList.toggle("hidden", isAdminUser);
+  }).catch(function() {});
+}
+document.addEventListener("DOMContentLoaded", function() { setTimeout(loadAdmin, 1500); });
+
+// ── Privacy: a caller's data, exported or erased (admins) ──────
+function pvNumber() { return document.getElementById("pv-number").value.trim(); }
+function pvStatus(t) { document.getElementById("pv-status").textContent = t; }
+function privacyExport() {
+  var n = pvNumber();
+  if (!n) { pvStatus("Enter a phone number."); return; }
+  pvStatus("Collecting…");
+  fetch(API + "/privacy/export?number=" + encodeURIComponent(n)).then(function(r) {
+    if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || ("HTTP " + r.status)); });
+    var name = ((r.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/) || [])[1] || "data.json";
+    return r.blob().then(function(b) {
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(b); a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function() { URL.revokeObjectURL(a.href); }, 5000);
+      pvStatus("⬇ Saved " + name + ". Recordings are listed in it: play or download them from History.");
+    });
+  }).catch(function(e) { pvStatus("❌ " + e.message); });
+}
+function pvPost(body) {
+  return fetch(API + "/privacy/erase", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+    .then(function(r) { return r.json().then(function(d) { if (!r.ok) throw new Error(d.error || ("HTTP " + r.status)); return d; }); });
+}
+function pvLeft(left) {
+  var out = [];
+  if (left.important_kept) out.push(left.important_kept + " call(s) marked ⭐ Important are kept");
+  if (left.odoo_contacts && left.odoo_contacts.length) out.push("Odoo contact(s) not touched: " + left.odoo_contacts.map(function(c) { return c.name + " (#" + c.id + ")"; }).join(", "));
+  if (left.blocked) out.push("the number stays blocked");
+  return out.length ? " " + out.join("; ") + "." : "";
+}
+function privacyCheck() {
+  var n = pvNumber();
+  if (!n) { pvStatus("Enter a phone number."); return; }
+  pvStatus("Checking…");
+  pvPost({ number: n, dry: true, include_important: document.getElementById("pv-important").checked }).then(function(d) {
+    pvStatus("");
+    document.getElementById("pv-summary").textContent = "This erases " + d.calls + " call(s) and " + d.recordings + " recording(s)." + pvLeft(d.left);
+    document.getElementById("pv-confirm").value = "";
+    document.getElementById("pv-erase").classList.remove("hidden");
+  }).catch(function(e) { pvStatus("❌ " + e.message); });
+}
+function privacyCancel() { document.getElementById("pv-erase").classList.add("hidden"); pvStatus(""); }
+function privacyErase() {
+  var n = pvNumber();
+  pvStatus("Erasing…");
+  pvPost({ number: n, confirm: document.getElementById("pv-confirm").value, include_important: document.getElementById("pv-important").checked }).then(function(d) {
+    document.getElementById("pv-erase").classList.add("hidden");
+    var x = d.done;
+    pvStatus("✅ Erased " + x.calls + " call(s), " + x.odoo_calls + " Odoo call copy(ies) and " + x.website_callbacks + " callback request(s). " + x.recordings_queued + " recording(s) are being deleted on the phone system." + pvLeft(d.left));
+    if (onDialView()) loadHistory();
+  }).catch(function(e) { pvStatus("❌ " + e.message); });
+}
+
+// ── Audit log (admins) ─────────────────────────────────────────
+var AUDIT_LABEL = { "recording.play": "▶ Played recording", "recording.delete": "🗑 Recordings deleted", "auth.login": "🔑 Signed in", "auth.fail": "⛔ Wrong password", "auth.setup": "🔑 Set up by link",
+  "privacy.export": "⬇ Exported data", "privacy.erase": "🗑 Erased data", "retention.set": "⚙ Retention changed", "retention.run": "🗑 Retention clean-up",
+  "limits.set": "⚙ Call limits changed", "block.add": "🚫 Blocked", "block.remove": "✅ Unblocked", "block.withheld": "🚫 Withheld setting", "call.emergency": "🚨 Emergency call" };
+var auditLast = 0, auditTimer = null;
+function auditDetail(d) {
+  if (!d) return "";
+  try { var o = JSON.parse(d); if (o && typeof o === "object") return Object.keys(o).map(function(k) { return k.replace(/_/g, " ") + ": " + o[k]; }).join(", "); } catch (e) {}
+  return d;
+}
+function loadAudit(more) {
+  var list = document.getElementById("au-list");
+  if (!more) { auditLast = 0; list.innerHTML = '<div class="empty">Loading…</div>'; }
+  var q = "?limit=100&action=" + encodeURIComponent(document.getElementById("au-action").value) + "&q=" + encodeURIComponent(document.getElementById("au-q").value.trim()) + (more && auditLast ? "&before=" + auditLast : "");
+  fetch(API + "/audit" + q).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.error) throw new Error(d.error);
+    if (d.days) document.getElementById("au-days").textContent = Math.round(d.days / 365) + " years";
+    var rows = d.entries || [];
+    var html = rows.map(function(e) {
+      var who = e.user_name || (e.ext ? "ext " + e.ext : "");
+      return '<div class="au-row"><div class="au-top"><span class="au-act">' + esc(AUDIT_LABEL[e.action] || e.action) + '</span>' + (e.target ? ' <span class="au-tgt">' + esc(e.target) + '</span>' : '') + '<span class="au-at">' + esc(new Date(e.at).toLocaleString()) + '</span></div>'
+        + '<div class="au-sub">' + esc(who) + (e.ext && e.user_name ? " · ext " + esc(e.ext) : "") + (e.ip ? " · " + esc(e.ip) : "") + (e.detail ? " · " + esc(auditDetail(e.detail)) : "") + '</div></div>';
+    }).join("");
+    if (more) list.insertAdjacentHTML("beforeend", html); else list.innerHTML = html || '<div class="empty">Nothing yet</div>';
+    if (rows.length) auditLast = rows[rows.length - 1].id;
+    document.getElementById("au-more").classList.toggle("hidden", rows.length < 100);
+  }).catch(function(e) { list.innerHTML = '<div class="empty">❌ ' + esc(e.message) + '</div>'; });
+}
+document.getElementById("au-q").addEventListener("input", function() { clearTimeout(auditTimer); auditTimer = setTimeout(function() { loadAudit(false); }, 400); });
+
 // Important on a call (call details → Details tab): retention never
 // removes it, and the flag goes to Odoo with the call.
 function setCallImportant(c, on, input) {
@@ -8521,11 +8680,12 @@ function setSettingsTab(tab) {
   settingsTab = tab;
   document.querySelectorAll("#set-tabs button").forEach(function(b) { b.classList.toggle("active", b.getAttribute("data-tab") === tab); });
   document.querySelectorAll("#view-settings .set-pane").forEach(function(p) { p.classList.toggle("hidden", p.getAttribute("data-pane") !== tab); });
-  document.getElementById("set-foot").classList.toggle("hidden", tab === "voicemail" || tab === "limits" || tab === "retention");
+  document.getElementById("set-foot").classList.toggle("hidden", tab === "voicemail" || tab === "limits" || tab === "retention" || tab === "privacy" || tab === "audit");
   if (tab !== was) {
     if (tab === "voicemail") loadVoicemail();
     if (tab === "limits") loadCallLimits();
     if (tab === "retention") loadRetention();
+    if (tab === "audit") loadAudit(false);
   }
   btn = document.querySelector('#set-tabs [data-tab="' + tab + '"]');
   if (btn && btn.scrollIntoView) btn.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -9085,7 +9245,7 @@ function showSetupModal(kind, arg) {
     btn("Use this browser instead", "", function() { closeSetupModal(); redeemSetup(arg); });
   } else if (kind === "done") {
     title.textContent = "All set";
-    text.textContent = arg + " Allow the microphone and notifications when asked, so calls can ring.";
+    text.textContent = arg + " Allow the microphone and notifications when asked, so calls can ring. 999 and 112 dialled in the app go out over your mobile network, so the emergency services get your real location.";
     btn("OK", "go", closeSetupModal);
   } else {
     title.textContent = "Setup link";

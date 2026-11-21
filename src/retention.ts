@@ -2,6 +2,7 @@ import type { Env, ExecutionContext } from "./types";
 import type { User } from "./users";
 import { callLegs, pushCallToOdoo } from "./odoo";
 import { ariDeleteRecording } from "./asterisk";
+import { audit, clientIp } from "./compliance";
 
 // ── Retention: how long calls are kept ────────────────────────
 // Settings → Retention sets, in days (0 = keep for ever):
@@ -117,7 +118,10 @@ export async function runRetention(env: Env): Promise<Counts & { more: boolean }
     ]);
     done.calls = Number(res[2].meta.changes) || 0;
   }
-  if (done.recordings || done.transcripts || done.calls) console.log("retention:", done);
+  if (done.recordings || done.transcripts || done.calls) {
+    console.log("retention:", done);
+    await audit(env, { name: "System" }, "retention.run", "", done);
+  }
   let total: Counts = { recordings: 0, transcripts: 0, calls: 0 };
   try { total = { ...total, ...JSON.parse(await setting(env, LAST) || "{}").total }; } catch { /* first run */ }
   for (const k of ["recordings", "transcripts", "calls"] as const) total[k] += done[k];
@@ -135,7 +139,7 @@ export async function handleGetRetention(env: Env): Promise<Response> {
 
 /** POST /retention {recordingsDays, transcriptsDays, callsDays, dry?}.
  *  dry: only count what the new settings would remove, save nothing. */
-export async function handleSetRetention(request: Request, env: Env): Promise<Response> {
+export async function handleSetRetention(request: Request, env: Env, user: User): Promise<Response> {
   let body: Record<string, unknown>;
   try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
   const r: Retention = { recordingsDays: 0, transcriptsDays: 0, callsDays: 0 };
@@ -147,6 +151,7 @@ export async function handleSetRetention(request: Request, env: Env): Promise<Re
   const would = await preview(env, r);
   if (body.dry === true) return Response.json({ ok: true, retention: r, would });
   await putSetting(env, KEY, JSON.stringify(r)).run();
+  await audit(env, { user, ip: clientIp(request) }, "retention.set", "", r);
   return Response.json({ ok: true, retention: r, would });
 }
 

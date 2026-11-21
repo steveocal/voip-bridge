@@ -39,8 +39,10 @@ export interface Queue {
   options: boolean;       // 1 = leave a message, 2 = call me back
   message: string;        // spoken every so often while they wait
 }
-interface NumberIvr { number: string; answer: "ring" | "menu"; menu: number | null; hours: Hours | null; closed: Action; closedPrompt: string | null; voice: string; queue?: Queue | null }
-export interface Ivr { numbers: NumberIvr[]; menus: Menu[] }
+interface NumberIvr { number: string; answer: "ring" | "menu"; menu: number | null; hours: Hours | null; closed: Action; closedPrompt: string | null; voice: string; queue?: Queue | null; notice?: string | null }
+/** emergency: our numbers with a 999 address, each with the extensions it
+ *  rings (their 999 calls show that number). */
+export interface Ivr { numbers: NumberIvr[]; menus: Menu[]; emergency?: Array<{ number: string; exts: string[] }> }
 
 const str = (v: unknown) => (typeof v === "string" ? v : null);
 const id = (v: unknown) => (Array.isArray(v) ? v[0] as number : typeof v === "number" ? v : null);
@@ -87,6 +89,7 @@ export function queueText(q: Queue): string {
   return q.options ? `${hold} To leave a message, press 1. Or press 2, and we'll call you back.` : hold;
 }
 /** Said after a caller presses 2 for a callback. */
+export const RECORD_NOTICE = "Calls may be recorded for training and quality purposes.";
 export const QUEUE_THANKS = "Thank you. We'll call you back as soon as we can on the number you're calling from. Goodbye.";
 
 // A "while ringing" prompt is stored with voice "<voice>:ring": its WAV is the
@@ -203,6 +206,19 @@ export async function syncIvr(env: Env, uid: number, numberOfExt: Map<number, st
     });
   }
   const exts = (v: unknown) => (Array.isArray(v) ? v as number[] : []).map((i) => numberOfExt.get(i)).filter((x): x is string => !!x).sort();
+  // Recording notice and 999 address (phone_bridge 0.17), read on their own
+  // like the queues: an older addon has neither.
+  const lr = await sr("phone_bridge.number", [], ["number", "record", "record_notice", "record_notice_text", "emergency_address", "extension_ids"]);
+  if (lr.fault) console.warn("Odoo phone numbers: no recording notice / 999 fields (phone_bridge before 0.17):", String(lr.fault).slice(-200));
+  const notices = new Map<string, string>();
+  const emergency: Array<{ number: string; exts: string[] }> = [];
+  for (const l of lr.fault ? [] : (lr.parsed ?? []) as Rec[]) {
+    const num = digits(l.number);
+    if (!num) continue;
+    if (l.record === true && l.record_notice === true) notices.set(num, clean(l.record_notice_text, 300) || RECORD_NOTICE);
+    if (clean(l.emergency_address, 500)) emergency.push({ number: num, exts: exts(l.extension_ids) });
+  }
+  emergency.sort((a, b) => a.number.localeCompare(b.number));
   const nums = (nr.parsed ?? []) as Rec[];
   const calIds = [...new Set(nums.map((n) => id(n.calendar_id)).filter((x): x is number => !!x))];
   const cals = new Map<number, Hours>();
@@ -260,9 +276,10 @@ export async function syncIvr(env: Env, uid: number, numberOfExt: Map<number, st
       closedPrompt: cal ? (str(n.closed_message) ?? "").trim().slice(0, 1000) || null : null,
       voice: voice(n.voice),
       queue: queues.get(num) ?? null,
+      notice: notices.get(num) ?? null,
     });
   }
-  const ivr: Ivr = { numbers, menus };
+  const ivr: Ivr = { numbers, menus, emergency };
   // The prompts to speak: text and voice by hash (the audio comes later).
   const prompts = new Map<string, [string, string]>();
   for (const m of menus) {
@@ -271,6 +288,7 @@ export async function syncIvr(env: Env, uid: number, numberOfExt: Map<number, st
     if (m.ringPrompt) prompts.set(await promptHash(ringVoice(m.voice), m.ringPrompt), [ringVoice(m.voice), m.ringPrompt]);
   }
   for (const n of numbers) if (n.closedPrompt) prompts.set(await promptHash(n.voice, n.closedPrompt), [n.voice, n.closedPrompt]);
+  for (const n of numbers) if (n.notice) prompts.set(await promptHash(n.voice, n.notice), [n.voice, n.notice]);
   for (const n of numbers) {
     if (!n.queue) continue;
     const t = queueText(n.queue);
@@ -295,6 +313,8 @@ export async function syncIvr(env: Env, uid: number, numberOfExt: Map<number, st
  *    menu <id> <prompt|-> <key timeout> <retries> <direct dial 0|1> <spoken 0|1> <sorry prompt|-> <while ringing prompt|->
  *    key <menu id> <0-9, s (*), h (#), t (no key)> <action> <spoken confirmation prompt|->
  *    queue <our number> <ringall|rrmemory|leastrecent> <ring secs> <max wait> <position 0|1> <options 0|1> <message prompt> <thanks prompt|-> <legs|->
+ *    notice <our number> <prompt>   ("calls may be recorded", played first)
+ *    emergency <extension|default> <our number>   (caller ID for 999 / 112)
  *    prompt <hash>
  *  A queue line replaces the route's ringing (same legs and ring time, each
  *  ring attempt) for a number that answers by ringing.
@@ -360,6 +380,21 @@ export async function ivrSyncLines(env: Env, routed: Map<string, { secs: number;
       lines.push(`key ${m.id} ${KEY[k] ?? k} ${act(a, true)} ${c}`);
     }
     lines.push(`key ${m.id} t ${act(m.noinput, false)}`);
+  }
+  // "Calls may be recorded", before anything else on a number that records.
+  for (const n of ivr.numbers) {
+    if (!n.notice || !routed.has(n.number)) continue;
+    const h = await promptHash(n.voice, n.notice);
+    prompts.add(h);
+    lines.push(`notice ${n.number} ${h}`);
+  }
+  // 999 / 112 caller ID: each extension shows the first of its numbers that
+  // has a registered emergency address, anyone else the first such number.
+  const em = ivr.emergency ?? [];
+  if (em.length) {
+    lines.push(`emergency default ${em[0].number}`);
+    const done = new Set<string>();
+    for (const e of em) for (const x of e.exts) if (!done.has(x)) { done.add(x); lines.push(`emergency ${x} ${e.number}`); }
   }
   for (const h of [...prompts].sort()) lines.push(`prompt ${h}`);
   return lines;
