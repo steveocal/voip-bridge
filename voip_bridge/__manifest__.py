@@ -1,6 +1,6 @@
 {
-    "name": "VoIP Bridge Call Log",
-    "version": "19.0.1.0.0",
+    "name": "Call Vault Call Log",
+    "version": "19.0.1.0.1",
     "category": "Productivity/VoIP",
     "summary": "Asterisk calls from voip-bridge in voip.call: recording, transcript, notes",
     "description": """

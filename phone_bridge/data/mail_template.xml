@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <odoo>
     <record id="mail_template_voicemail" model="mail.template">
-        <field name="name">Phone Bridge: new voicemail</field>
+        <field name="name">Call Vault: new voicemail</field>
         <field name="model_id" ref="model_phone_bridge_call"/>
         <field name="subject">Voicemail from {{ object.partner_id.name or object.phone_number }} for {{ object._voicemail_box_label() }}</field>
         <field name="email_from">{{ (object.env.company.email_formatted or user.email_formatted) }}</field>
@@ -26,9 +26,9 @@
         </field>
     </record>
     <record id="mail_template_app_invite" model="mail.template">
-        <field name="name">Phone Bridge: install the phone app</field>
+        <field name="name">Call Vault: install the phone app</field>
         <field name="model_id" ref="model_phone_bridge_extension"/>
-        <field name="subject">Set up the VoIP Bridge phone app (extension {{ object.number }})</field>
+        <field name="subject">Set up the Call Vault phone app (extension {{ object.number }})</field>
         <field name="email_from">{{ (object.env.company.email_formatted or user.email_formatted) }}</field>
         <field name="email_to">{{ object.user_id.email_formatted }}</field>
         <field name="auto_delete" eval="True"/>
@@ -36,7 +36,7 @@
 <div style="font-family: sans-serif; font-size: 14px; line-height: 1.5; max-width: 600px;">
     <p>Hello <t t-out="object.user_id.name"/>,</p>
     <p>You have a phone extension: <strong t-out="object.number"/>.
-        Install the VoIP Bridge app on your Android phone to make and take calls on it.</p>
+        Install the Call Vault app on your Android phone to make and take calls on it.</p>
 
     <p style="margin-bottom: 4px;"><strong>1. Install the app</strong></p>
     <p style="margin-top: 0;">On your Android phone, open
@@ -61,11 +61,11 @@
     <p style="margin-bottom: 4px;"><strong>3. Let calls ring</strong></p>
     <ol style="margin-top: 0;">
         <li>Allow the <strong>microphone</strong> and <strong>notifications</strong> when the app asks.</li>
-        <li>So calls ring when the phone is locked: Settings → Apps → VoIP Bridge → allow <strong>full-screen notifications</strong>,
+        <li>So calls ring when the phone is locked: Settings → Apps → Call Vault → allow <strong>full-screen notifications</strong>,
             and set Battery to <strong>Unrestricted</strong>.</li>
     </ol>
 
-    <p style="color: #666; font-size: 12px;">Already had an older VoIP Bridge app? If installing says <em>App not installed</em>
+    <p style="color: #666; font-size: 12px;">Already had an older Call Vault app? If installing says <em>App not installed</em>
         or that it conflicts with an existing package, uninstall the old one first (press and hold its icon, then Uninstall), then install again.</p>
 </div>
         </field>

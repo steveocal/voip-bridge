@@ -1,10 +1,10 @@
 {
-    "name": "Phone Bridge",
-    "version": "19.0.0.17.0",
+    "name": "Call Vault",
+    "version": "19.0.0.18.0",
     "category": "Productivity/VoIP",
     "summary": "Phone system for Odoo: softphone, call history, recordings and transcripts, run on your own Cloudflare account",
     "description": """
-Phone Bridge deploys a Cloudflare Worker into your own Cloudflare account and
+Call Vault deploys a Cloudflare Worker into your own Cloudflare account and
 connects it to your phone system (Asterisk today). The worker handles call
 state, recordings, Whisper transcripts, push and the website callback
 widget; Odoo holds the call history and is where you make and take calls.
