@@ -7,7 +7,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 // otherwise get packaged into the next APK.
 const config: CapacitorConfig = {
   appId: "info.systecgroup.voipbridge",
-  appName: "VoIP Bridge",
+  appName: "Call Vault",
   webDir: "app-shell",
   server: {
     url: "https://voip.ihpltd.co.uk/dashboard",

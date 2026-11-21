@@ -99,7 +99,7 @@ export async function emailVoicemail(env: Env, callId: string): Promise<void> {
       `<p style="color:#666;margin:0 0 12px">${esc(when)}${esc(lineTo)} · ${len}</p>` +
       `<p><b>Transcript</b></p>` +
       (transcript ? `<pre style="white-space:pre-wrap;font-family:inherit;font-size:13px">${esc(transcript)}</pre>` : `<p style="color:#888">(no transcript)</p>`) +
-      `<p style="color:#888;font-size:12px">The recording is attached and is also under History in the VoIP Bridge dashboard. ` +
+      `<p style="color:#888;font-size:12px">The recording is attached and is also under History in the Call Vault dashboard. ` +
       `Speech recognition can get words wrong.</p></div>`;
     const stamp = new Date(row.start_date || Date.now()).toISOString().slice(0, 16).replace(/[-:T]/g, "");
     const file = { filename: `voicemail-${callerNum.replace(/\D/g, "") || "unknown"}-${stamp}.wav`, mime: "audio/wav", data: monoWav(audio.samples, audio.rate) };

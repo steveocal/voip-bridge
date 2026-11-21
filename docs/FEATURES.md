@@ -1,4 +1,4 @@
-# voip-bridge: features
+# Call Vault (repo: voip-bridge): features
 
 What the phone system does today (main branch, November 2026). It has four parts:
 

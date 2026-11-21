@@ -13,7 +13,7 @@
 .th{font-size:12px;font-weight:700;fill:#92400e}
 </style></defs>
 <rect width="1940" height="1810" fill="#ffffff"/>
-<text x="30" y="40" class="h1">VoIP Bridge: how the parts fit together</text>
+<text x="30" y="40" class="h1">Call Vault: how the parts fit together</text>
 <text x="30" y="62" class="h2">Infrared Heating Products phone system · Odoo (CloudPepper) · Cloudflare Worker + D1 · Asterisk on the VPS · browser dashboard and Android app · as of 13 Nov 2026</text>
 <rect x="20" y="90" width="1860" height="250" rx="14" fill="none" stroke="#3b82f6" stroke-width="2.2" stroke-dasharray="2 0"/>
 <rect x="34" y="78" width="179.6" height="24" rx="6" fill="#3b82f6"/>

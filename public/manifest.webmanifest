@@ -1,6 +1,6 @@
 {
-  "name": "VoIP Bridge",
-  "short_name": "VoIP",
+  "name": "Call Vault",
+  "short_name": "Call Vault",
   "description": "Softphone dashboard for calls, contacts, and messages.",
   "start_url": "/dashboard",
   "scope": "/",

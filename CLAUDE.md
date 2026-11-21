@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Softphone and call dashboard for Infrared Heating Products (IHP) staff, served at https://voip.ihpltd.co.uk/dashboard. `docs/FEATURES.md` describes what it does today. `docs/architecture.svg` and the other docs cover Android, PBX sync, parking and conferences.
+Call Vault is the softphone and call dashboard for Infrared Heating Products (IHP) staff (the repo, Worker, D1 and Odoo modules keep the technical names voip-bridge / phone_bridge), served at https://voip.ihpltd.co.uk/dashboard. `docs/FEATURES.md` describes what it does today. `docs/architecture.svg` and the other docs cover Android, PBX sync, parking and conferences.
 
 ## Commands
 

@@ -52,7 +52,7 @@ export async function sendAlert(env: Env, key: string, title: string, text: stri
     if (to.emails.length) {
       const body = text + "\n\n" + new Date(now).toUTCString() +
         "\nConfiguration → Audit in the phone dashboard has the details: https://voip.ihpltd.co.uk/dashboard";
-      const r = await sendGmailMessage(env, 0, { shared: true, to: to.emails.join(", "), subject: "⚠ Phone system: " + title, body, fromName: "Phone system" });
+      const r = await sendGmailMessage(env, 0, { shared: true, to: to.emails.join(", "), subject: "⚠ Call Vault: " + title, body, fromName: "Call Vault" });
       done.push(r.ok ? "email " + to.emails.length : "email failed: " + (r.error || "").slice(0, 80));
     }
     if (to.exts.length) {

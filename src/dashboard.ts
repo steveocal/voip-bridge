@@ -5,7 +5,7 @@ export function serveDashboard(): Response {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="theme-color" content="#0b0f19">
-<title>VoIP Bridge</title>
+<title>Call Vault</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icons/icon-192.png">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
@@ -802,7 +802,7 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
   <!-- Setup link from the onboarding email (checkSetupLink) -->
   <div class="modal hidden" id="setup-modal" role="dialog" aria-label="Set up">
     <div class="modal-card">
-      <div class="modal-head"><span id="setup-title">Set up VoIP Bridge</span><button onclick="closeSetupModal()" aria-label="Close">✕</button></div>
+      <div class="modal-head"><span id="setup-title">Set up Call Vault</span><button onclick="closeSetupModal()" aria-label="Close">✕</button></div>
       <p class="setup-text" id="setup-text"></p>
       <div class="setup-actions" id="setup-actions"></div>
     </div>
@@ -7118,7 +7118,7 @@ function loadDeviceContacts() {
     deviceContactsError = "";
     return deviceContacts;
   }).catch(function(e) {
-    deviceContactsError = e && e.code === "DENIED" ? "Allow Contacts for VoIP Bridge in Android Settings to see phone contacts" : "Couldn't read phone contacts";
+    deviceContactsError = e && e.code === "DENIED" ? "Allow Contacts for Call Vault in Android Settings to see phone contacts" : "Couldn't read phone contacts";
     return [];
   });
 }
@@ -8059,7 +8059,7 @@ function checkAppUpdate() {
     var text = document.getElementById("update-text");
     text.textContent = "";
     if (installed >= 2) {
-      text.append("VoIP Bridge " + latest.versionName + " is available. ");
+      text.append("Call Vault " + latest.versionName + " is available. ");
       var a = document.createElement("a");
       a.href = API + "/app/";
       a.textContent = "Update";
@@ -9139,7 +9139,7 @@ function registerPush() {
     return PN.requestPermissions();
   }).then(function(r) {
     if (r && r.receive === "granted") return PN.register();
-    reportPush("notifications not allowed (" + (r && r.receive) + "). Allow them for VoIP Bridge in Android Settings, then reopen the app");
+    reportPush("notifications not allowed (" + (r && r.receive) + "). Allow them for Call Vault in Android Settings, then reopen the app");
   }).catch(function(e) {
     reportPush("setup failed: " + ((e && e.message) || e));
   });
@@ -9354,7 +9354,7 @@ function showSetupModal(kind, arg) {
   function btn(label, cls, fn) { var b = document.createElement("button"); b.textContent = label; if (cls) b.className = cls; b.onclick = fn; acts.appendChild(b); }
   if (kind === "browser") {
     title.textContent = "Install the app first";
-    text.textContent = "On an Android phone: install the VoIP Bridge app, then tap the link in your email again and the app sets itself up. The link works once.";
+    text.textContent = "On an Android phone: install the Call Vault app, then tap the link in your email again and the app sets itself up. The link works once.";
     var a = document.createElement("a"); a.href = "/app/"; a.className = "go"; a.textContent = "Install the app"; acts.appendChild(a);
     btn("Use this browser instead", "", function() { closeSetupModal(); redeemSetup(arg); });
   } else if (kind === "done") {

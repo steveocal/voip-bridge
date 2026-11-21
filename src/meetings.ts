@@ -248,7 +248,7 @@ async function emailNotes(env: Env, user: User, m: MeetingRow, a: Assembled): Pr
     `<p style="color:#666;margin:0 0 12px">${esc(m.label || "")}${m.label ? " · " : ""}${mins} min recorded${m.parts > 1 ? ` in ${m.parts} parts` : ""}</p>` +
     (a.html || "<p>(no summary)</p>") +
     `<hr><p><b>Transcript</b></p><pre style="white-space:pre-wrap;font-family:inherit;font-size:13px">${esc(a.transcript)}</pre>` +
-    `<p style="color:#888;font-size:12px">Recorded with the VoIP Bridge dashboard (*91 or *93). Speech recognition can get words wrong; ` +
+    `<p style="color:#888;font-size:12px">Recorded with the Call Vault dashboard (*91 or *93). Speech recognition can get words wrong; ` +
     `the recording is under History.</p></div>`;
   const r = await sendGmailMessage(env, user.id, { to, subject: `Meeting notes${again}: ${a.title}`, html });
   if (r.ok) return { ok: true, error: "" };

@@ -95,7 +95,7 @@ A("""<defs>
 .th{font-size:12px;font-weight:700;fill:#92400e}
 </style></defs>""")
 A(f'<rect width="{W}" height="{H}" fill="#ffffff"/>')
-A('<text x="30" y="40" class="h1">VoIP Bridge: how the parts fit together</text>')
+A('<text x="30" y="40" class="h1">Call Vault: how the parts fit together</text>')
 A('<text x="30" y="62" class="h2">Infrared Heating Products phone system · Odoo (CloudPepper) · Cloudflare Worker + D1 · Asterisk on the VPS · browser dashboard and Android app · as of 13 Nov 2026</text>')
 
 

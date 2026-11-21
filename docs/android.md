@@ -50,7 +50,7 @@ Phones install from **https://voip.ihpltd.co.uk/app/**
     npm run deploy
     git commit android/app/version.properties
 
-Users of build 2+ then see "VoIP Bridge 1.x is available. Update" in the
+Users of build 2+ then see "Call Vault 1.x is available. Update" in the
 dashboard; downloads tapped inside the app are handed to Chrome
 (`MainActivity`'s download listener). The APK and `version.json` are
 gitignored, so deploying from a fresh checkout drops them until the next
@@ -76,7 +76,7 @@ hosted APK never gets packaged into the next one.
 
 ### Phone
 - Allow the mic and notification prompts on first launch.
-- Android 14+: Settings → Apps → VoIP Bridge → allow **full-screen
+- Android 14+: Settings → Apps → Call Vault → allow **full-screen
   notifications**, or the call only shows as a heads-up banner on the lock screen.
 - Turn off battery optimisation for the app (Settings → Battery → Unrestricted).
 - Set the app's SIP account to the phone's own extension (202) in the dashboard.
