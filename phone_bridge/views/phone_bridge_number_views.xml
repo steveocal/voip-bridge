@@ -54,6 +54,9 @@
                             <field name="no_answer_number" invisible="no_answer != 'forward'"
                                    required="no_answer == 'forward'" placeholder="+44 7700 900123"/>
                             <field name="record"/>
+                            <field name="record_notice" invisible="not record"/>
+                            <field name="record_notice_text" invisible="not record or not record_notice"
+                                   required="record and record_notice"/>
                         </group>
                         <group string="Opening Hours">
                             <field name="calendar_id"/>
@@ -64,7 +67,14 @@
                                    required="calendar_id and closed_action == 'menu'"/>
                             <field name="closed_message" invisible="not calendar_id"
                                    placeholder="We're closed at the moment. Our hours are 9 till 5, Monday to Friday."/>
-                            <field name="voice" invisible="not calendar_id or not closed_message"/>
+                            <field name="voice" invisible="(not calendar_id or not closed_message) and (not record or not record_notice)"/>
+                        </group>
+                        <group string="Emergency Calls (999 / 112)">
+                            <field name="emergency_address" placeholder="Unit 4, Example Park, Burton upon Trent, DE14 1AA"/>
+                            <div class="text-muted" colspan="2">
+                                999 and 112 always go straight out, whatever the call limits. From the phone app on
+                                a mobile, use the phone's own dialler for 999 when you can: it gives your real location.
+                            </div>
                         </group>
                     </group>
                     <div class="text-muted">

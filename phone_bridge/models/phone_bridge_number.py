@@ -41,6 +41,17 @@ class PhoneBridgeNumber(models.Model):
                                  "When Nobody Answers", default="voicemail", required=True)
     no_answer_number = fields.Char("Forward To", help="In international format, e.g. +44 7700 900123.")
     record = fields.Boolean("Record Calls", default=True)
+    record_notice = fields.Boolean("Tell Callers Calls Are Recorded", default=False,
+                                   help="Play the notice below before anything else, while the call is still "
+                                        "ringing. UK GDPR expects callers to be told before they are recorded.")
+    record_notice_text = fields.Char("Recording Notice",
+                                     default="Calls may be recorded for training and quality purposes.")
+    emergency_address = fields.Text("Emergency Address (999)",
+                                    help="Where this number's phones are, for 999 and 112 calls: building, street, "
+                                         "town and postcode. Calls to 999 from the extensions this number rings show "
+                                         "this number, so the operator finds this address. Register the same address "
+                                         "for this number with the phone carrier: the carrier holds the address the "
+                                         "emergency services see.")
     answer = fields.Selection([("ring", "Ring extensions"), ("menu", "Play a menu")], "Answer With",
                               default="ring", required=True,
                               help="During opening hours (or always, without opening hours).")
