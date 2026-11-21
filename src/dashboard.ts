@@ -1088,6 +1088,13 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
       <div class="loc-row"><button onclick="saveCallLimits()">Save limits</button><span class="set-note" id="lim-status"></span></div>
       <div class="set-note" id="lim-hits"></div>
     </div>
+    <div class="loc-box" id="desk-box">
+      <div class="loc-title">☎️ Desk phone networks</div>
+      <div class="set-note" style="margin:0 0 6px">Extensions set to a desk phone or SIP app in Odoo connect straight to the PBX, so the PBX only accepts them from these networks: the office's public IP address, or a range such as 81.2.3.0/24, one per line. Leave it empty and no desk phone can connect. Browser and app extensions aren't affected: they always come in through the website.</div>
+      <textarea id="desk-nets" rows="3" placeholder="81.2.3.4" style="width:100%;box-sizing:border-box;font-family:monospace"></textarea>
+      <div class="loc-row"><button onclick="saveCallLimits()">Save networks</button><span class="set-note" id="desk-status"></span></div>
+      <div class="set-note">Admins get an email and a phone notification when an extension dials an international or premium-rate number, a call is refused at the limits, a password is guessed repeatedly, or someone dials 999.</div>
+    </div>
     </div>
 
     <div class="set-pane" data-pane="retention">
@@ -1135,6 +1142,8 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
           <option value="limits.">Call limits</option>
           <option value="block.">Blocked numbers</option>
           <option value="call.emergency">999 calls</option>
+          <option value="call.">Flagged calls</option>
+          <option value="alert.">Alerts sent</option>
         </select>
         <input id="au-q" type="text" placeholder="Search name, number, IP" autocomplete="off" style="flex:1;min-width:0">
       </div>
@@ -6719,16 +6728,22 @@ function loadCallLimits() {
     document.getElementById("lim-hits").textContent = h && h.count
       ? "Calls refused so far: " + h.count + ". Last: " + new Date(h.at).toLocaleString() + ", " + (LIMIT_REASONS[h.reason] || h.reason) + (h.ext ? " (ext " + h.ext + ")" : "") + "."
       : "No calls refused so far.";
+    document.getElementById("desk-nets").value = (d.deskNetworks || []).join(NL);
   }).catch(function(e) { st.textContent = "Couldn't load: " + e.message; });
 }
 function saveCallLimits() {
   var body = {}, st = document.getElementById("lim-status");
   LIMIT_FIELDS.forEach(function(k) { body[k] = Number(document.getElementById("lim-" + k).value); });
-  st.textContent = "Saving…";
+  body.deskNetworks = document.getElementById("desk-nets").value.split(NL).map(function(x) { return x.trim(); }).filter(function(x) { return x; });
+  var ds = document.getElementById("desk-status");
+  st.textContent = "Saving…"; ds.textContent = "";
   fetch(API + "/call-limits", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
     .then(function(r) { return r.json().then(function(d) { if (!r.ok) throw new Error(d.error || ("HTTP " + r.status)); return d; }); })
-    .then(function() { st.textContent = "Saved. The PBX picks it up within a minute."; })
-    .catch(function(e) { st.textContent = "❌ " + e.message; });
+    .then(function(d) {
+      st.textContent = ds.textContent = "Saved. The PBX picks it up within a minute.";
+      document.getElementById("desk-nets").value = (d.deskNetworks || []).join(NL);
+    })
+    .catch(function(e) { st.textContent = ds.textContent = "❌ " + e.message; });
 }
 
 // ── Retention (src/retention.ts) ──────────────────────────────
@@ -6846,7 +6861,8 @@ function privacyErase() {
 // ── Audit log (admins) ─────────────────────────────────────────
 var AUDIT_LABEL = { "recording.play": "▶ Played recording", "recording.delete": "🗑 Recordings deleted", "auth.login": "🔑 Signed in", "auth.fail": "⛔ Wrong password", "auth.setup": "🔑 Set up by link",
   "privacy.export": "⬇ Exported data", "privacy.erase": "🗑 Erased data", "retention.set": "⚙ Retention changed", "retention.run": "🗑 Retention clean-up",
-  "limits.set": "⚙ Call limits changed", "block.add": "🚫 Blocked", "block.remove": "✅ Unblocked", "block.withheld": "🚫 Withheld setting", "call.emergency": "🚨 Emergency call" };
+  "limits.set": "⚙ Call limits changed", "block.add": "🚫 Blocked", "block.remove": "✅ Unblocked", "block.withheld": "🚫 Withheld setting", "call.emergency": "🚨 Emergency call",
+  "call.international": "🌍 International call", "call.premium": "💷 Premium-rate call", "alert.sent": "⚠ Alert sent to admins" };
 var auditLast = 0, auditTimer = null;
 function auditDetail(d) {
   if (!d) return "";

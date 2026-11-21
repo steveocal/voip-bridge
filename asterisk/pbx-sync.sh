@@ -14,6 +14,7 @@
 #   block <last 9 digits> / blockwithheld: blocked callers (below)
 #   limits <at once> <per ext at once> <per ext per hour> <all per hour>: outgoing call limits
 #   notice <our number> <prompt> / emergency <extension|default> <our number>: recording notice, 999 caller ID
+#   sipallow <ipv4[/bits]>: a network desk phones (pb-sip) may connect from
 # Each extension becomes an endpoint, auth and aor in $OUT, on the templates
 # in pjsip-phone-bridge.conf. An extension that is already defined by hand in
 # another pjsip*.conf is skipped (and logged), so hand-made ones can be moved
@@ -54,6 +55,10 @@ case "$cfg" in "version 1"*) ;; *) exit 1 ;; esac
 hand=$(for f in "$ETC"/pjsip*.conf; do [ "$f" = "$OUT" ] || cat "$f"; done 2>/dev/null |
   sed -n 's/^\[\([0-9][0-9]*\)\].*/\1/p' | sort -u)
 
+# Desk phone networks: a permit on every pb-sip endpoint (the template
+# denies everything else).
+sipallow=$(echo "$cfg" | awk '$1 == "sipallow" && $2 ~ /^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+([/][0-9]+)?$/ { print $2 }' | head -n 20)
+
 tmp="$OUT.tmp.$$"
 {
   echo "; Written by pbx-sync.sh from the extensions in Odoo. Don't edit: the next sync overwrites it."
@@ -70,6 +75,7 @@ tmp="$OUT.tmp.$$"
       continue
     fi
     printf '\n[%s](pb-%s)\nauth = %s-auth\naors = %s\ncallerid = "%s" <%s>\n' "$num" "$type" "$num" "$num" "${name:-$num}" "$num"
+    if [ "$type" = sip ]; then for net in $sipallow; do printf 'permit = %s\n' "$net"; done; fi
     printf '\n[%s-auth](pb-auth)\nusername = %s\npassword = %s\n' "$num" "$num" "$pw"
     printf '\n[%s](pb-aor)\n' "$num"
   done

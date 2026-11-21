@@ -26,6 +26,7 @@ import { checkSpam, markSpam, spamReason, clearSpam } from "./spam";
 import { handleReports } from "./reports";
 import { handlePresence } from "./presence";
 import { handleGetRetention, handleSetRetention, handleCallImportant, runRetention } from "./retention";
+import { sendAlert, noteDialAlert } from "./alerts";
 import { isAdmin, adminOnly, audit, auditPlay, clientIp, handleAudit, handlePrivacyExport, handlePrivacyErase, runCompliance } from "./compliance";
 import { handleWebCallback, handleWebCallbackConfig, handleWebCallbackStatus, handleWebCallbackEvent } from "./webcallback";
 import { noteLimitHit, handleGetCallLimits, handleSetCallLimits } from "./limits";
@@ -53,8 +54,16 @@ async function handleCallEvent(request: Request, env: Env, ctx: ExecutionContext
 
   // Posted by [pb-emergency] for every 999 / 112 call (compliance.ts).
   if (event === "emergency") {
-    await audit(env, { name: "PBX", ext: params.get("ext") ?? "" }, "call.emergency", params.get("number") ?? "", { caller_id: params.get("cli") ?? "" });
+    const ext = (params.get("ext") ?? "").replace(/\D/g, ""), number = (params.get("number") ?? "").replace(/\D/g, "");
+    await audit(env, { name: "PBX", ext }, "call.emergency", number, { caller_id: params.get("cli") ?? "" });
+    ctx.waitUntil(sendAlert(env, "call.emergency", "Emergency call " + number + (ext ? " from ext " + ext : ""),
+      (ext ? "Extension " + ext : "Someone") + " called " + number + ", showing caller ID +" + (params.get("cli") ?? "").replace(/\D/g, "") + ".", true));
     return Response.json({ action: "emergency" });
+  }
+  // Posted by [pb-out-limit] for an international or premium-rate number (alerts.ts).
+  if (event === "dialalert") {
+    ctx.waitUntil(noteDialAlert(env, params));
+    return Response.json({ action: "dialalert" });
   }
   // Posted by [pb-out-limit] when it refuses an outgoing call (limits.ts).
   if (event === "limit") {
@@ -1066,7 +1075,7 @@ export default {
       else if (m === "GET" && p === "/call-limits") response = await handleGetCallLimits(env);
       else if (m === "POST" && p === "/call-limits") {
         const body = await request.clone().text();
-        response = await handleSetCallLimits(request, env, ctx);
+        response = await isAdmin(env, user) ? await handleSetCallLimits(request, env, ctx) : adminOnly();
         if (response.ok) ctx.waitUntil(audit(env, { user, ip: clientIp(request) }, "limits.set", "", body));
       }
       else if (m === "GET" && p === "/blocked") response = await handleBlockedList(env);

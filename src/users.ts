@@ -3,6 +3,7 @@ import { odooAuth, odooCall } from "./odoo";
 import { nudgePbxIfChanged } from "./pbxsync";
 import { syncIvr } from "./ivr";
 import { audit, syncAdmins } from "./compliance";
+import { checkLoginBurst } from "./alerts";
 
 // ── Users ─────────────────────────────────────────────────────
 // Every extension belongs to an Odoo user (Odoo phone_bridge.extension
@@ -252,6 +253,7 @@ export async function handleLogin(request: Request, env: Env): Promise<Response>
   const fail = async (status: number, error: string) => {
     await env.DB.prepare("INSERT INTO login_failures (ext, ip, at) VALUES (?1, ?2, ?3)").bind(ext, ip, Date.now()).run();
     await audit(env, { ext, ip }, "auth.fail", ext, error);
+    await checkLoginBurst(env, ext, ip);
     return Response.json({ error }, { status });
   };
   const uid = await odooAuth(env);

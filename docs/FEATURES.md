@@ -131,6 +131,9 @@ What the phone system does today (main branch, November 2026). It has four parts
 - Signing in with an extension locks for 15 minutes after 5 wrong passwords for that extension, or 20 from one address.
 - The PBX's call events carry its secret (`pb-event.sh`), and softphones must be signed in, so nobody else can post events to `/call-event`. The dialplan filters caller IDs before they reach a shell command.
 - The page ships no built-in SIP account. Each person enters their own extension and password.
+- Browser and app extensions are only accepted by the PBX through the website's WebSocket proxy, so a stolen password can't be used from a plain SIP client. Desk phones and SIP apps are only accepted from the networks in Configuration → Call limits → **Desk phone networks** (empty = none). Saving limits or networks is admin-only.
+- **Alerts**: the admins get an email and a phone notification when an extension dials an international or premium-rate number (09, 118, 070, 084, 087), the call limits refuse a call, an extension is locked out after wrong passwords (or one IP tries 10 times), or someone dials 999. Each alert repeats at most hourly (999 always) and is in the audit log.
+- The PBX keeps call records (`cdr-csv/Master.csv`, unanswered calls too, two years) with the carrier's P-Asserted-Identity on inbound calls, so a call can be traced. Installed by `scripts/vps-sip-hardening.sh`.
 
 ## UK compliance
 

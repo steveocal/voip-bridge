@@ -66,6 +66,34 @@ async function sendData(env: Env, token: string, data: Record<string, string>): 
   }
 }
 
+/** A visible notification (title + text) to every device of these
+ *  extensions, for security alerts (alerts.ts). Sent as an FCM notification
+ *  message, which Android shows by itself while the app is in the
+ *  background; the app's own handler ignores it (it has no "type").
+ *  Returns how many devices it reached. */
+export async function sendPushNotification(env: Env, extensions: string[], title: string, body: string): Promise<number> {
+  if (!env.FCM_SERVICE_ACCOUNT || !extensions.length) return 0;
+  const rows = await env.DB.prepare(`SELECT token FROM push_tokens WHERE extension IN (${extensions.map(() => "?").join(",")})`)
+    .bind(...extensions).all<{ token: string }>();
+  let sent = 0;
+  for (const { token } of rows.results ?? []) {
+    try {
+      const sa = JSON.parse(env.FCM_SERVICE_ACCOUNT) as ServiceAccount;
+      const res = await fetch(`https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${await accessToken(sa)}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ message: { token, notification: { title, body }, android: { priority: "HIGH" } } }),
+      });
+      if (res.ok) sent++;
+      else if (res.status === 404) await env.DB.prepare("DELETE FROM push_tokens WHERE token = ?").bind(token).run();
+      else console.log(`fcm notification failed ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    } catch (e) {
+      console.error("fcm notification:", e);
+    }
+  }
+  return sent;
+}
+
 // Called by the Android app on launch: { token, extension }, or
 // { status, extension } to report how push setup went when there's no token
 // (permission refused, FCM error), which GET /push/status shows.
