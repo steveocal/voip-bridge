@@ -539,6 +539,11 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
 .msg-body{margin-top:14px;font-size:15px;color:#ececec;white-space:pre-wrap;word-break:break-word}
 .msg-html{display:block;width:100%;min-height:200px;margin-top:14px;border:0;border-radius:8px;background:#fff}
 .compose-card{background:#161616;border:1px solid #2c2c2c;border-radius:16px;margin:auto;width:100%;max-width:640px;display:flex;flex-direction:column;overflow:hidden;max-height:92vh}
+.comp-ai-bar{display:flex;align-items:center;gap:10px;padding:8px 20px 0;font-size:12px;color:#9aa0a6}
+.comp-ai-bar b{color:#fbbf24}
+.comp-ai-bar.busy{color:#fbbf24}
+.comp-ai-bar.err{color:#f87171}
+.detail-foot button.ai{background:linear-gradient(135deg,#f59e0b,#d97706);color:#1a1000}
 .compose-field{padding:12px 20px;border-bottom:1px solid #222}
 .compose-field label{display:block;font-size:11px;color:#999;margin-bottom:4px}
 .compose-field input,.compose-field textarea{width:100%;background:none;border:none;color:#fff;font-size:15px;outline:none;resize:none;font-family:inherit}
@@ -1371,8 +1376,10 @@ input.vm-name{padding:7px 8px;border:none;border-radius:8px;background:#1a1a1a;c
     <div class="compose-field"><label>To</label><input id="comp-to" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
     <div class="compose-field"><label>Subject</label><input id="comp-subject" type="text" autocomplete="off"></div>
     <div class="compose-field"><label>Message</label><textarea id="comp-body"></textarea></div>
+    <div class="comp-ai-bar" id="comp-ai-status"></div>
     <div class="detail-foot">
       <button class="primary" id="comp-send" onclick="sendCompose()">Send</button>
+      <button class="ai" id="comp-ai" onclick="aiAssist()" title="Ctrl+1">✨ AI</button>
       <button onclick="closeCompose()">Cancel</button>
     </div>
   </div>
@@ -1969,7 +1976,10 @@ function initComposeEditor() {
     height: 320,
     branding: false,
     skin: "oxide-dark",
-    content_css: "dark"
+    content_css: "dark",
+    setup: function(editor) {
+      editor.on("keydown", function(e) { if (e.ctrlKey && e.key === "1") { e.preventDefault(); aiAssist(); } });
+    }
   });
 }
 
@@ -7792,7 +7802,7 @@ function renderMessageFull(m) {
     + '<div class="detail-row"><span class="k">Subject</span><span class="v">' + esc(m.subject || "(no subject)") + '</span></div>'
     + '<div class="detail-row"><span class="k">When</span><span class="v">' + esc(m.date ? new Date(m.date).toLocaleString() : "—") + '</span></div>'
     + (m.body_html ? '<iframe class="msg-html" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>' : '<div class="msg-body">' + esc(body) + '</div>');
-  var foot = '<button onclick="replyMessage()">↩ Reply</button><button class="primary" onclick="newMessage()">✉️ New Message</button>';
+  var foot = '<button onclick="replyMessage()">↩ Reply</button><button onclick="forwardMessage()">↪ Forward</button><button class="primary" onclick="newMessage()">✉️ New</button>';
   setDetail("✉️ " + (m.subject || "Message"), rows, foot);
   var frame = document.querySelector("#detail-body .msg-html");
   if (frame) {
@@ -7810,13 +7820,29 @@ function replyMessage() {
   if (!m) return;
   var to = extractEmail(m.email_from) || (activeContact && activeContact.email) || "";
   var subject = (m.subject || "").replace(/^Re:[ ]*/i, "");
-  // The composer is a rich editor (and the worker sends HTML as HTML), so
-  // the quote goes in as a blockquote with its line breaks kept.
-  var quote = String(m.body || "").replace(/<[^>]*>/g, " ").replace(/ +/g, " ").trim();
-  var body = "<p></p>" + (m.date ? "<p>On " + esc(new Date(m.date).toLocaleString()) + ", " + esc(m.email_from || "") + " wrote:</p>" : "")
-    + "<blockquote>" + esc(quote).split(NL).join("<br>") + "</blockquote>";
-  openCompose(to, "Re: " + subject, body);
+  var intro = (m.date ? "On " + new Date(m.date).toLocaleString() + ", " : "") + (m.email_from || "") + " wrote:";
+  openCompose(to, "Re: " + subject, quotedOriginal(m, intro));
+  composeOriginal = quoteText(m);
   closeDetail();
+}
+function forwardMessage() {
+  var m = selected && selected.data;
+  if (!m) return;
+  var subject = (m.subject || "").replace(/^Fwd:[ ]*/i, "");
+  var intro = "Forwarded message from " + (m.email_from || "") + (m.date ? ", " + new Date(m.date).toLocaleString() : "") + ":";
+  openCompose("", "Fwd: " + subject, quotedOriginal(m, intro));
+  composeOriginal = quoteText(m);
+  closeDetail();
+}
+// The composer is a rich editor (and the worker sends HTML as HTML), so the
+// original goes in as a blockquote with its line breaks kept, inside a
+// div.vb-quote under the draft, which the AI help leaves alone.
+var composeOriginal = "";
+function quoteText(m) {
+  return String(m.body || "").replace(/<[^>]*>/g, " ").replace(/[ ]+/g, " ").trim();
+}
+function quotedOriginal(m, intro) {
+  return '<p></p><p></p><div class="vb-quote"><p>' + esc(intro) + '</p><blockquote>' + esc(quoteText(m)).split(NL).join("<br>") + '</blockquote></div>';
 }
 function newMessage() {
   var to = (activeContact && activeContact.email) || "";
@@ -7825,14 +7851,86 @@ function newMessage() {
   closeDetail();
 }
 function openCompose(to, subject, body) {
+  composeOriginal = "";
+  aiStatus(AI_HINT);
   document.getElementById("comp-to").value = to || "";
   document.getElementById("comp-subject").value = subject || "";
   document.getElementById("comp-body").value = body || "";
-  document.getElementById("compose-title").textContent = "✉️ " + (subject && subject.indexOf("Re:") === 0 ? "Reply" : "New Message");
+  document.getElementById("compose-title").textContent = "✉️ " + (subject && subject.indexOf("Re:") === 0 ? "Reply" : subject && subject.indexOf("Fwd:") === 0 ? "Forward" : "New Message");
   document.getElementById("compose-modal").classList.remove("hidden");
   loadTinyMce().then(initComposeEditor).catch(function() {});
 }
 function closeCompose() { document.getElementById("compose-modal").classList.add("hidden"); }
+
+// ── AI writing help in compose (src/aiemail.ts) ───────────────
+// Ctrl+1 or ✨ AI sends the draft (without the quoted original) to the
+// worker; lines starting with !! are instructions to the AI and are left out
+// of what comes back. The answer replaces the draft above the quote as one
+// undo step, so Ctrl+Z brings the draft back; more !! lines refine it.
+var AI_HINT = "Start a line with <b>!!</b> to tell the AI what you want, then press <b>Ctrl+1</b> (or ✨ AI). Repeat to refine.";
+var aiBusy = false;
+function aiStatus(html, cls) {
+  var el = document.getElementById("comp-ai-status");
+  el.innerHTML = html;
+  el.className = "comp-ai-bar" + (cls ? " " + cls : "");
+}
+// HTML → text with a line break after each block.
+var TEXT_BLOCKS = ["P", "DIV", "LI", "H1", "H2", "H3", "H4", "H5", "H6", "BLOCKQUOTE", "TR", "TABLE", "UL", "OL"];
+function nodeText(root) {
+  var out = [];
+  (function walk(n) {
+    for (var c = n.firstChild; c; c = c.nextSibling) {
+      if (c.nodeType === 3) out.push(c.nodeValue);
+      else if (c.nodeType === 1) {
+        if (c.tagName === "BR") { out.push(NL); continue; }
+        if (c.tagName === "STYLE" || c.tagName === "SCRIPT" || c.tagName === "HEAD") continue;
+        walk(c);
+        if (TEXT_BLOCKS.indexOf(c.tagName) >= 0) out.push(NL);
+        else if (c.tagName === "TD" || c.tagName === "TH") out.push("  ");
+      }
+    }
+  })(root);
+  var lines = out.join("").split(NL).map(function(l) { return l.trim(); });
+  var kept = [];
+  for (var i = 0; i < lines.length; i++) if (lines[i] || (kept.length && kept[kept.length - 1])) kept.push(lines[i]);
+  return kept.join(NL).trim();
+}
+function aiAssist() {
+  if (aiBusy || document.getElementById("compose-modal").classList.contains("hidden")) return;
+  var ed = (typeof tinymce !== "undefined") ? tinymce.get("comp-body") : null;
+  var holder = document.createElement("div");
+  holder.innerHTML = ed ? ed.getContent() : esc(document.getElementById("comp-body").value).split(NL).join("<br>");
+  var quote = holder.querySelector(".vb-quote");
+  var quoteHtml = quote ? quote.outerHTML : "";
+  if (quote) quote.remove();
+  var draft = nodeText(holder);
+  if (!draft) { aiStatus("Write a draft, or a line starting with <b>!!</b> saying what you want, first.", "err"); return; }
+  aiBusy = true;
+  document.getElementById("comp-ai").disabled = true;
+  aiStatus("✨ Writing with the AI… (about 20 seconds)", "busy");
+  fetch(API + "/ai/email", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ draft: draft, subject: document.getElementById("comp-subject").value, to: document.getElementById("comp-to").value, original: composeOriginal })
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (!d.html) { aiStatus(esc(d.error || "The AI didn't answer."), "err"); return; }
+    if (ed) {
+      ed.undoManager.transact(function() { ed.setContent(d.html + quoteHtml); });
+      ed.focus();
+    } else {
+      document.getElementById("comp-body").value = d.text;
+    }
+    aiStatus("✨ Done. Ctrl+Z undoes it; add more <b>!!</b> lines and press <b>Ctrl+1</b> again to refine.");
+  }).catch(function(e) {
+    aiStatus("AI request failed: " + esc(e.message || String(e)), "err");
+  }).then(function() {
+    aiBusy = false;
+    document.getElementById("comp-ai").disabled = false;
+  });
+}
+// Ctrl+1 anywhere in the compose window (To and Subject too).
+document.addEventListener("keydown", function(e) {
+  if (e.ctrlKey && e.key === "1" && !document.getElementById("compose-modal").classList.contains("hidden")) { e.preventDefault(); aiAssist(); }
+});
 function sendCompose() {
   var to = document.getElementById("comp-to").value.trim();
   var subject = document.getElementById("comp-subject").value.trim();

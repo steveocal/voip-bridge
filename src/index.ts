@@ -27,6 +27,7 @@ import { handleReports } from "./reports";
 import { handlePresence } from "./presence";
 import { handleGetRetention, handleSetRetention, handleCallImportant, runRetention } from "./retention";
 import { sendAlert, noteDialAlert } from "./alerts";
+import { handleAiEmail } from "./aiemail";
 import { isAdmin, adminOnly, audit, auditPlay, clientIp, handleAudit, handlePrivacyExport, handlePrivacyErase, runCompliance } from "./compliance";
 import { handleWebCallback, handleWebCallbackConfig, handleWebCallbackStatus, handleWebCallbackEvent } from "./webcallback";
 import { noteLimitHit, handleGetCallLimits, handleSetCallLimits } from "./limits";
@@ -1146,6 +1147,7 @@ export default {
       else if (request.method === "GET" && url.pathname === "/messages/recent") response = await handleRecentMessages(request, env, user);
       else if (request.method === "GET" && url.pathname === "/message") response = await handleMessageDetail(request, env, user);
       else if (request.method === "POST" && url.pathname === "/send-message") response = await handleSendMessage(request, env, user);
+      else if (m === "POST" && p === "/ai/email") response = await handleAiEmail(request, env);
       else if (request.method === "GET" && url.pathname === "/contacts") response = await handleContacts(request, env);
       else if (request.method === "GET" && url.pathname === "/contacts/t9") response = await handleContactsT9(env);
       else if (request.method === "GET" && url.pathname === "/contacts/google") response = await handleGoogleContacts(env, user);

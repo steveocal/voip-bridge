@@ -98,4 +98,5 @@ export interface Env {
   API_TOKEN?: string; // the Odoo addon's bearer token (secret, src/users.ts); unset = no service access
   MEETINGS: R2Bucket; // meeting recordings, 16 kHz PCM blocks (src/meetings.ts)
   AI: { run(model: string, inputs: Record<string, unknown>): Promise<unknown> }; // Workers AI binding
+  AI_EMAIL_MODEL?: string; // Workers AI model for the compose window's AI help (src/aiemail.ts); DeepSeek R1 distill by default
 }
