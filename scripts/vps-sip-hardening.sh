@@ -96,7 +96,7 @@ PY
 
 AST="docker exec asterisk asterisk -rx"
 $AST "module reload cdr" >/dev/null
-$AST "module show like cdr_csv" | grep -q Running || $AST "module load cdr_csv.so" >/dev/null
+$AST "module show like cdr_csv" | grep -qE "[0-9] +Running" || $AST "module load cdr_csv.so" >/dev/null
 $AST "dialplan reload" >/dev/null
 $AST "module reload res_pjsip.so" >/dev/null
 docker exec -u asterisk asterisk /etc/asterisk/pbx-sync.sh || echo "pbx-sync.sh failed (exit $?)"
