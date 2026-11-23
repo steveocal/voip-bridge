@@ -1,6 +1,6 @@
 {
     "name": "Call Vault",
-    "version": "19.0.0.18.0",
+    "version": "19.0.0.19.0",
     "category": "Productivity/VoIP",
     "summary": "Phone system for Odoo: softphone, call history, recordings and transcripts, run on your own Cloudflare account",
     "description": """

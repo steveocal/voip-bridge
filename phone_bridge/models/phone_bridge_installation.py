@@ -313,6 +313,64 @@ class PhoneBridgeInstallation(models.Model):
 
         self.env.cr.postcommit.add(send)
 
+    # The res.partner fields the worker caches (src/odoo.ts syncContacts).
+    _CONTACT_FIELDS = ["name", "company_type", "is_company", "phone", "mobile", "email",
+                       "website", "vat", "function", "city", "active"]
+    # More than this in one transaction (an import) is left to the worker's
+    # daily full contact sync rather than holding up the commit's callbacks.
+    _CONTACT_PUSH_MAX = 1000
+
+    @api.model
+    def _notify_contacts_changed(self, partner_ids):
+        """Tell the worker about contacts created or edited here, so its
+        cache (dialpad search, call history names) is current. Every change
+        in the transaction is gathered and read just before commit, then sent
+        once it's committed; it never fails the save: a contact the worker
+        misses is refreshed at its daily full sync."""
+        ids = {i for i in partner_ids if i}
+        if not ids:
+            return
+        cr = self.env.cr
+        pending = cr.precommit.data.setdefault("phone_bridge.contacts", set())
+        first = not pending
+        pending.update(ids)
+        if not first:
+            return
+        env = self.env
+
+        def prepare():
+            ids = cr.precommit.data.pop("phone_bridge.contacts", set())
+            if not ids:
+                return
+            if len(ids) > self._CONTACT_PUSH_MAX:
+                _logger.info("phone_bridge: %s contacts changed, left to the worker's daily sync", len(ids))
+                return
+            inst = env[self._name].sudo()._get_installation()
+            url, token = inst.worker_url, inst.api_token
+            if not (url and token):
+                return
+            partners = env["res.partner"].sudo().with_context(active_test=False).browse(sorted(ids)).exists()
+            contacts = partners.read(self._CONTACT_FIELDS)
+            if not contacts:
+                return
+
+            def send():
+                import requests
+                for i in range(0, len(contacts), 200):
+                    try:
+                        res = requests.post(f"{url}/odoo/contacts", json={"contacts": contacts[i:i + 200]},
+                                            timeout=10, headers={"Authorization": f"Bearer {token}"})
+                        if not res.ok:
+                            _logger.warning("phone_bridge: worker refused contacts (%s): %s", res.status_code, res.text[:200])
+                            return
+                    except requests.RequestException as e:
+                        _logger.warning("phone_bridge: couldn't send changed contacts to the worker: %s", e)
+                        return
+
+            cr.postcommit.add(send)
+
+        cr.precommit.add(prepare)
+
     def _sync_voicemail_box(self, box, enabled, greeting, send_greeting, direct=None):
         """greeting is the Binary field's base64 value (False = none); it's
         only sent when send_greeting, as it's the big part."""
