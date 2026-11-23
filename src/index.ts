@@ -1,5 +1,5 @@
 import type { Env, ExecutionContext, D1PreparedStatement, D1Result } from "./types";
-import { lookupCaller, pushCallToOdoo, pushCallHistory, searchContacts, syncContacts, syncCallLog, odooAuth, odooCall, searchContactMessages, upsertMessages, searchQuotations, contactTotals, phoneKey, sqlPhoneKey, findCachedContact, createContactForNumber, renameContact, forgetCalls, forgetContacts, userActivities, activityDone, callLegs } from "./odoo";
+import { lookupCaller, pushCallToOdoo, pushCallHistory, searchContacts, syncContacts, syncCallLog, cacheOdooContacts, odooAuth, odooCall, searchContactMessages, upsertMessages, searchQuotations, contactTotals, phoneKey, sqlPhoneKey, findCachedContact, createContactForNumber, renameContact, forgetCalls, forgetContacts, userActivities, activityDone, callLegs } from "./odoo";
 import { searchGmailMessages, searchRecentGmailMessages, recentGmailCandidates, getGmailBody, sendGmailMessage, listGoogleContacts, googleAccount, handleGoogleConnect, handleGoogleCallback, handleGoogleDisconnect, calendarEvents } from "./gmail";
 import { ariRequest, ariParkedCalls } from "./asterisk";
 import { playbackResponse } from "./recording";
@@ -857,6 +857,17 @@ async function handleSync(env: Env): Promise<Response> {
   }
 }
 
+// The Odoo addon posts here after contacts are created or edited there, so
+// the D1 cache (T9 dialpad, History names) is current without waiting for
+// the daily full sync: { contacts: [res.partner read…] }. API token only.
+async function handleOdooContacts(request: Request, env: Env, user: User): Promise<Response> {
+  if (!user.service) return Response.json({ error: "forbidden" }, { status: 403 });
+  let body: { contacts?: unknown };
+  try { body = await request.json(); } catch { return Response.json({ error: "invalid JSON" }, { status: 400 }); }
+  if (!Array.isArray(body.contacts)) return Response.json({ error: "contacts must be a list" }, { status: 400 });
+  return Response.json({ ok: true, contacts: await cacheOdooContacts(env, body.contacts) });
+}
+
 // The Odoo addon posts here after calls or contacts are deleted there, so
 // the worker's copies go too: { calls: [bridge_call_id…], contacts: [res.partner id…] }.
 // Only the addon (API token) may: this deletes call history for everyone.
@@ -1070,6 +1081,7 @@ export default {
       else if (request.method === "POST" && url.pathname === "/answer") response = await handleAnswer(request, env);
       else if (request.method === "POST" && url.pathname === "/hangup-call") response = await handleHangupCall(request, env);
       else if (request.method === "POST" && url.pathname === "/sync") response = await handleSync(env);
+      else if (m === "POST" && p === "/odoo/contacts") response = await handleOdooContacts(request, env, user);
       else if (m === "POST" && p === "/odoo/deleted") response = await handleOdooDeleted(request, env, user);
       else if (request.method === "POST" && url.pathname === "/odoo/push-calls") response = await handlePushCalls(request, env);
       else if (request.method === "GET" && url.pathname === "/push/status") response = await handlePushStatus(env);
@@ -1164,8 +1176,15 @@ export default {
     return new Response(response.body, { status: response.status, headers });
   },
 
-  // Cron trigger (wrangler.toml [triggers]): call retention (retention.ts).
-  async scheduled(_event: unknown, env: Env, ctx: ExecutionContext): Promise<void> {
+  // Cron triggers (wrangler.toml [triggers]): hourly call retention
+  // (retention.ts) and compliance; daily full Odoo → D1 contact sync.
+  async scheduled(event: { cron: string }, env: Env, ctx: ExecutionContext): Promise<void> {
+    if (event.cron === "41 3 * * *") {
+      ctx.waitUntil(syncContacts(env)
+        .then((r) => console.log("daily contact sync:", JSON.stringify(r)))
+        .catch((e) => console.error("daily contact sync failed:", e)));
+      return;
+    }
     ctx.waitUntil(runRetention(env).catch((e) => console.error("retention failed:", e))
       .then(() => runCompliance(env)).catch((e) => console.error("compliance run failed:", e)));
   },

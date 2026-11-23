@@ -25,8 +25,9 @@ ODOO_DB = "www.infraredheaterpanels.co.uk"
 ASTERISK_URL = "https://64.176.184.11.nip.io"
 
 # Hourly: call retention (src/retention.ts), a few recordings per run.
+# Daily 03:41 UTC: full Odoo → D1 contact sync (syncContacts in src/odoo.ts).
 [triggers]
-crons = ["17 * * * *"]
+crons = ["17 * * * *", "41 3 * * *"]
 
 [[d1_databases]]
 binding = "DB"

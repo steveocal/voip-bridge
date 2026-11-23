@@ -511,6 +511,16 @@ function normalizeContact(c: Contact): Contact {
   };
 }
 
+/** Contacts the Odoo addon sends when they're created or edited there
+ *  (POST /odoo/contacts): raw res.partner reads, cached as they are. */
+export async function cacheOdooContacts(env: Env, raw: unknown[]): Promise<number> {
+  const contacts = raw
+    .filter((c): c is Contact => !!c && typeof c === "object" && Number.isInteger((c as Contact).id) && (c as Contact).id > 0)
+    .map(normalizeContact);
+  await upsertContacts(env, contacts);
+  return contacts.length;
+}
+
 /** Upsert a batch of contacts into D1. D1 caps bound params at 100/query, so
  * each statement carries ≤7 rows (91 params) and statements run via batch(). */
 export async function upsertContacts(env: Env, contacts: Contact[]): Promise<void> {
