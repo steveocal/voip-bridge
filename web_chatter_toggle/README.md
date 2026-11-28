@@ -4,21 +4,23 @@ Collapse / expand the chatter on any form view.
 
 ## What it does
 
-- Adds a small `»` handle to the left of the chatter top bar on every form view.
-- Click it: the chatter collapses to a thin strip, only the handle stays
-  visible (now a `comments` icon), and the form sheet reclaims the space.
-- Click again: the chatter comes back.
+- Adds a chatter button to the form view's top bar, right after the record
+  pager (`1 / 1 < >`). It is right-justified and does not move.
+- Click it: the chatter is hidden and the form sheet takes the full width.
+  Click again: the chatter comes back.
+- Only shown on forms that have a chatter.
 - The state is saved in the browser's `localStorage`, keyed by model
   (`web_chatter_toggle:<model>`), so each model remembers its own preference
   and it survives page reloads. It is per-browser, not stored on the server.
 
 ## How it works
 
-Pure frontend. `chatter_toggle.js` patches the `mail` **Chatter** component to
-carry a reactive `hidden` flag; `chatter_toggle.xml` adds the button to the
-existing `.o-mail-Chatter-topbar`; `chatter_toggle.scss` does the collapsing
-via a `:has([data-chatter-hidden="true"])` rule, so no Chatter markup outside
-the top bar is touched.
+Pure frontend. `chatter_toggle.js` keeps a shared reactive `{model: hidden}`
+store, patches `FormController` (button + click handler) and the `mail`
+**Chatter** component (reads the flag). `chatter_toggle.xml` adds the button to
+the `control-panel-navigation-additional` slot of `web.FormView` and a
+`data-chatter-hidden` attribute to the Chatter root; `chatter_toggle.scss`
+hides the chatter container via `:has()`.
 
 ## Version notes
 
