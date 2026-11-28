@@ -9,11 +9,22 @@ $hidden: '.o_chatter_toggle[data-chatter-hidden]';
 .o_chatter_toggle {
     cursor: pointer;
     line-height: 1;
-    font-size: 0.8rem;
+    font-size: 1.1rem;
+    padding: 0.25rem !important;
+    color: var(--o-action, #017e84) !important;
 
     &:hover {
-        color: var(--primary, #017e84) !important;
+        opacity: 0.75;
     }
+}
+
+// --- Collapsed: drop the sticky header's side padding ---------------------
+// .o-mail-Chatter-top carries ~24px horizontal padding; inside the narrow
+// strip that squeezed the top bar to 0px wide and (with its overflow-x:auto)
+// clipped the handle out of sight, so it could not be clicked to re-open.
+.o-mail-Chatter-top:has(#{$hidden}) {
+    padding: 0 !important;
+    width: 100% !important;
 }
 
 // --- Collapsed: top bar shrinks to just the handle ------------------------
@@ -23,7 +34,9 @@ $hidden: '.o_chatter_toggle[data-chatter-hidden]';
     justify-content: flex-start !important;
     gap: 0 !important;
     min-height: 0 !important;
-    padding: 0 !important;
+    width: 100% !important;
+    overflow: visible !important;
+    padding: 0.5rem 0 0 0 !important;
     border: 0 !important;
 
     > *:not(.o_chatter_toggle) {
@@ -33,21 +46,21 @@ $hidden: '.o_chatter_toggle[data-chatter-hidden]';
 
 // Hide anything that sits next to the top bar (builds where the thread /
 // composer are rendered as its siblings).
-.o-mail-Chatter-topbar:has(> #{$hidden}) ~ * {
+.o-mail-Chatter-topbar:has(> #{$hidden}) ~ *,
+.o-mail-Chatter-top:has(#{$hidden}) ~ * {
     display: none !important;
 }
 
-// --- Collapsed: clip the chatter container down to the handle -------------
-// Structure-agnostic: a fixed-size box with overflow:hidden clips the body no
-// matter how it is nested. These class names are chatter-specific, so clamping
-// them cannot disturb the surrounding form layout.
+// --- Collapsed: shrink the chatter container to a narrow strip -----------
+// Overflow stays visible so the handle can never be clipped away; the body is
+// hidden by the sibling rules above. These class names are chatter-specific,
+// so clamping them cannot disturb the surrounding form layout.
 :is(.o-mail-Chatter, .o-mail-ChatterContainer, .o-mail-Form-chatter):has(#{$hidden}) {
-    width: 1.3rem !important;
+    width: 2.25rem !important;
     min-width: 0 !important;
-    max-width: 1.3rem !important;
-    flex: 0 0 1.3rem !important;
-    max-height: 1.5rem !important;
-    overflow: hidden !important;
+    max-width: 2.25rem !important;
+    flex: 0 0 2.25rem !important;
+    overflow: visible !important;
     margin-top: 0 !important;
     padding: 0 !important;
     border: 0 !important;
