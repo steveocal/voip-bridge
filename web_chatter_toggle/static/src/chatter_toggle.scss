@@ -1,0 +1,64 @@
+// Web Chatter Toggle
+// -----------------------------------------------------------------------------
+// The toggle button carries `data-chatter-hidden` (value "1") while collapsed
+// and no attribute at all while expanded. Everything below hangs off that via
+// :has(), anchored on `.o-mail-Chatter-topbar` (stable since Odoo 16).
+
+$hidden: '.o_chatter_toggle[data-chatter-hidden]';
+
+.o_chatter_toggle {
+    cursor: pointer;
+    line-height: 1;
+    font-size: 0.8rem;
+
+    &:hover {
+        color: var(--primary, #017e84) !important;
+    }
+}
+
+// --- Collapsed: top bar shrinks to just the handle ------------------------
+.o-mail-Chatter-topbar:has(> #{$hidden}) {
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+
+    > *:not(.o_chatter_toggle) {
+        display: none !important;
+    }
+}
+
+// Hide anything that sits next to the top bar (builds where the thread /
+// composer are rendered as its siblings).
+.o-mail-Chatter-topbar:has(> #{$hidden}) ~ * {
+    display: none !important;
+}
+
+// --- Collapsed: clip the chatter container down to the handle -------------
+// Structure-agnostic: a fixed-size box with overflow:hidden clips the body no
+// matter how it is nested. These class names are chatter-specific, so clamping
+// them cannot disturb the surrounding form layout.
+:is(.o-mail-Chatter, .o-mail-ChatterContainer, .o-mail-Form-chatter):has(#{$hidden}) {
+    width: 1.3rem !important;
+    min-width: 0 !important;
+    max-width: 1.3rem !important;
+    flex: 0 0 1.3rem !important;
+    max-height: 1.5rem !important;
+    overflow: hidden !important;
+    margin-top: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    align-self: flex-start !important;
+}
+
+// --- Collapsed: let the form sheet reclaim the freed width ---------------
+// In the side-by-side (wide screen) layout the sheet keeps its max-width, so
+// shrinking the chatter otherwise just leaves a blank gap. Drop the cap while
+// collapsed.
+.o_form_renderer:has(#{$hidden}) :is(.o_form_sheet, .o_form_sheet_bg) {
+    max-width: none !important;
+}
